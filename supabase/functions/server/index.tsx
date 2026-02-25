@@ -56,7 +56,7 @@ async function seedSuperAdmin() {
     if (error) console.log(`[bootstrap] Error creating Super Admin: ${error.message}`);
     else       console.log(`[bootstrap] Super Admin created — uid: ${data.user?.id}`);
   } catch (err) {
-    console.log(`[bootstrap] Unexpected error during Super Admin seed: ${err}`);
+    console.log(`[bootstrap] Unexpected error during Super Admin seed: ${errMsg(err)}`);
   }
 }
 seedSuperAdmin();
@@ -137,7 +137,7 @@ async function seedModulesAndFeatures(): Promise<{ modulesInDb: number; features
     const r = await seedModulesAndFeatures();
     console.log(`[bootstrap] seed OK — ${r.modulesInDb} modules, ${r.featuresInDb} features in DB.`);
   } catch (err) {
-    console.log(`[bootstrap] seedModulesAndFeatures FAILED at startup: ${err}`);
+    console.log(`[bootstrap] seedModulesAndFeatures FAILED at startup: ${errMsg(err)}`);
   }
 })();
 
@@ -156,8 +156,8 @@ app.post("/make-server-309fe679/seed-modules", async (c) => {
       message: `Postgres now has ${result.modulesInDb} module(s) and ${result.featuresInDb} feature flag(s).`,
     });
   } catch (err) {
-    console.log(`[seed-modules] ${err}`);
-    return c.json({ error: String(err) }, 500); // full error forwarded to the UI
+    console.log(`[seed-modules] ${errMsg(err)}`);
+    return c.json({ error: errMsg(err) }, 500); // full error forwarded to the UI
   }
 });
 
@@ -582,50 +582,139 @@ const VALID_PLATFORMS = ["instagram","facebook","twitter","linkedin","tiktok","y
 const VALID_STATUSES  = ["draft","pending_review","approved","rejected","scheduled","published"];
 
 function normPlatform(v: string): string { return VALID_PLATFORMS.includes(v) ? v : "general"; }
-function normStatus(v: string):   string { return VALID_STATUSES.includes(v)  ? v : "draft";   }
+function normStatus(v: string): string {
+  // ContentCard frontend uses "pending_approval"; DB enum uses "pending_review" — map it.
+  if (v === "pending_approval") return "pending_review";
+  return VALID_STATUSES.includes(v) ? v : "draft";
+}
 
+// Safely extract a readable message from any value thrown or returned by Supabase.
+// Supabase errors are plain objects, NOT Error instances — `${err}` → "[object Object]".
+function errMsg(err: unknown): string {
+  if (!err) return "unknown error";
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object") {
+    const e = err as any;
+    const parts: string[] = [];
+    if (e.message) parts.push(e.message);
+    if (e.details) parts.push(`details: ${e.details}`);
+    if (e.hint)    parts.push(`hint: ${e.hint}`);
+    if (e.code)    parts.push(`code: ${e.code}`);
+    return parts.length ? parts.join(" | ") : JSON.stringify(err);
+  }
+  return String(err);
+}
+
+// rowToContentCard — returns the exact ContentCard shape the frontend expects.
+// Maps DB snake_case columns → ContentCard camelCase fields, reverses enum aliases,
+// and restores ContentCard-only fields from the metadata JSONB column.
 function rowToContentCard(r: any) {
+  const meta: Record<string, any> = r.metadata ?? {};
   return {
-    id:             r.id,
-    tenantId:       r.tenant_id        ?? null,
-    title:          r.title            ?? "",
-    body:           r.body             ?? "",
-    platform:       r.platform         ?? "general",
-    status:         r.status           ?? "draft",
-    hashtags:       r.hashtags         ?? [],
-    mediaUrl:       r.media_url        ?? null,
-    createdBy:      r.created_by       ?? "",
-    createdByName:  r.created_by_name  ?? "",
-    approvedBy:     r.approved_by      ?? null,
-    approvedByName: r.approved_by_name ?? null,
-    approvedAt:     r.approved_at      ?? null,
-    rejectedReason: r.rejected_reason  ?? null,
-    scheduledAt:    r.scheduled_at     ?? null,
-    publishedAt:    r.published_at     ?? null,
-    metadata:       r.metadata         ?? {},
-    createdAt:      r.created_at       ?? new Date().toISOString(),
-    updatedAt:      r.updated_at       ?? new Date().toISOString(),
+    id:                r.id,
+    tenantId:          r.tenant_id         ?? null,
+    title:             r.title             ?? "",
+    // DB column is "body"; ContentCard field is "caption"
+    caption:           r.body              ?? "",
+    platform:          r.platform          ?? "general",
+    // Map DB "pending_review" back to ContentCard "pending_approval"
+    status:            r.status === "pending_review" ? "pending_approval" : (r.status ?? "draft"),
+    hashtags:          r.hashtags          ?? [],
+    mediaUrl:          r.media_url         ?? null,
+    createdBy:         r.created_by        ?? "",
+    approvedBy:        r.approved_by       ?? null,
+    approvedByName:    r.approved_by_name  ?? null,
+    approvedAt:        r.approved_at       ?? null,
+    // DB column is "rejected_reason"; ContentCard field is "rejectionReason"
+    rejectionReason:   r.rejected_reason   ?? null,
+    scheduledAt:       r.scheduled_at      ?? null,
+    publishedAt:       r.published_at      ?? null,
+    createdAt:         r.created_at        ?? new Date().toISOString(),
+    updatedAt:         r.updated_at        ?? new Date().toISOString(),
+    // ContentCard-only fields stored in metadata JSONB — restore them
+    channel:           meta.channel           ?? "",
+    projectId:         meta.projectId         ?? null,
+    mediaType:         meta.mediaType         ?? undefined,
+    mediaFileName:     meta.mediaFileName     ?? undefined,
+    scheduledDate:     meta.scheduledDate     ?? undefined,
+    scheduledTime:     meta.scheduledTime     ?? undefined,
+    approvers:         meta.approvers         ?? [],
+    createdByEmail:    meta.createdByEmail    ?? "",
+    lastEditedBy:      meta.lastEditedBy      ?? undefined,
+    lastEditedAt:      meta.lastEditedAt      ?? undefined,
+    auditLog:          meta.auditLog          ?? [],
+    postType:          meta.postType          ?? undefined,
+    visualDescription: meta.visualDescription ?? undefined,
+    callToAction:      meta.callToAction      ?? undefined,
+    rejectedBy:        meta.rejectedBy        ?? undefined,
+    rejectedByName:    meta.rejectedByName    ?? undefined,
+    rejectedAt:        meta.rejectedAt        ?? undefined,
   };
 }
 
+// contentCardToPg — maps a ContentCard (or serialized ContentCard) to DB columns.
+// Handles all field-name mismatches and packs extra ContentCard-only fields into
+// the metadata JSONB column so they survive a round-trip without data loss.
 function contentCardToPg(d: any): Record<string, any> {
   const row: Record<string, any> = {};
-  if (d.tenantId       !== undefined) row.tenant_id        = d.tenantId       || null;
-  if (d.title          !== undefined) row.title            = d.title;
-  if (d.body           !== undefined) row.body             = d.body;
-  if (d.platform       !== undefined) row.platform         = normPlatform(d.platform ?? "general");
-  if (d.status         !== undefined) row.status           = normStatus(d.status     ?? "draft");
-  if (d.hashtags       !== undefined) row.hashtags         = d.hashtags        ?? [];
-  if (d.mediaUrl       !== undefined) row.media_url        = d.mediaUrl        ?? null;
-  if (d.createdBy      !== undefined) row.created_by       = d.createdBy;
-  if (d.createdByName  !== undefined) row.created_by_name  = d.createdByName;
-  if (d.approvedBy     !== undefined) row.approved_by      = d.approvedBy      ?? null;
-  if (d.approvedByName !== undefined) row.approved_by_name = d.approvedByName  ?? null;
-  if (d.approvedAt     !== undefined) row.approved_at      = d.approvedAt      ?? null;
-  if (d.rejectedReason !== undefined) row.rejected_reason  = d.rejectedReason  ?? null;
-  if (d.scheduledAt    !== undefined) row.scheduled_at     = d.scheduledAt     ?? null;
-  if (d.publishedAt    !== undefined) row.published_at     = d.publishedAt     ?? null;
-  if (d.metadata       !== undefined) row.metadata         = d.metadata        ?? {};
+
+  if (d.tenantId !== undefined) row.tenant_id = d.tenantId || null;
+  if (d.title    !== undefined) row.title     = d.title;
+
+  // ContentCard uses "caption"; DB column is "body" — accept either alias
+  const bodyText = d.caption ?? d.body;
+  if (bodyText !== undefined) row.body = bodyText ?? "";
+
+  if (d.platform !== undefined) row.platform  = normPlatform(d.platform ?? "general");
+  if (d.status   !== undefined) row.status    = normStatus(d.status     ?? "draft");
+  if (d.hashtags !== undefined) row.hashtags  = Array.isArray(d.hashtags) ? d.hashtags : [];
+  if (d.mediaUrl !== undefined) row.media_url = d.mediaUrl ?? null;
+
+  if (d.createdBy !== undefined) row.created_by = d.createdBy;
+  // ContentCard has no separate createdByName — fall back to createdBy as the display name
+  row.created_by_name = d.createdByName ?? d.createdBy ?? "";
+
+  if (d.approvedBy     !== undefined) row.approved_by      = d.approvedBy     ?? null;
+  if (d.approvedByName !== undefined) row.approved_by_name = d.approvedByName ?? null;
+  if (d.approvedAt     !== undefined) row.approved_at      = d.approvedAt     ?? null;
+
+  // ContentCard uses "rejectionReason"; DB column is "rejected_reason" — accept either
+  const rejReason = d.rejectionReason ?? d.rejectedReason;
+  if (rejReason !== undefined) row.rejected_reason = rejReason ?? null;
+
+  // ContentCard uses scheduledDate + scheduledTime; DB uses a single scheduled_at ISO string
+  if (d.scheduledAt !== undefined) {
+    row.scheduled_at = d.scheduledAt ?? null;
+  } else if (d.scheduledDate !== undefined) {
+    row.scheduled_at = d.scheduledDate
+      ? `${d.scheduledDate}T${d.scheduledTime ?? "00:00"}:00`
+      : null;
+  }
+
+  if (d.publishedAt !== undefined) row.published_at = d.publishedAt ?? null;
+
+  // Pack all ContentCard-only fields into metadata JSONB for lossless round-trips
+  row.metadata = {
+    ...(d.metadata ?? {}),
+    channel:            d.channel           ?? null,
+    projectId:          d.projectId         ?? null,
+    mediaType:          d.mediaType         ?? null,
+    mediaFileName:      d.mediaFileName     ?? null,
+    scheduledDate:      d.scheduledDate     ?? null,
+    scheduledTime:      d.scheduledTime     ?? null,
+    approvers:          d.approvers         ?? [],
+    createdByEmail:     d.createdByEmail    ?? null,
+    lastEditedBy:       d.lastEditedBy      ?? null,
+    lastEditedAt:       d.lastEditedAt      ?? null,
+    auditLog:           d.auditLog          ?? [],
+    postType:           d.postType          ?? null,
+    visualDescription:  d.visualDescription ?? null,
+    callToAction:       d.callToAction      ?? null,
+    rejectedBy:         d.rejectedBy        ?? null,
+    rejectedByName:     d.rejectedByName    ?? null,
+    rejectedAt:         d.rejectedAt        ?? null,
+  };
+
   return row;
 }
 
@@ -678,7 +767,7 @@ app.post("/make-server-309fe679/bootstrap-super-admin", async (c) => {
     await seedSuperAdmin();
     return c.json({ success: true, message: "Bootstrap complete — check server logs." });
   } catch (err) {
-    return c.json({ error: `Bootstrap failed: ${err}` }, 500);
+    return c.json({ error: `Bootstrap failed: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -695,8 +784,8 @@ app.get("/make-server-309fe679/tenants", async (c) => {
     if (error) throw error;
     return c.json({ tenants: (data ?? []).map(rowToTenant) });
   } catch (err) {
-    console.log(`[tenants GET] ${err}`);
-    return c.json({ error: `fetchTenants: ${err}` }, 500);
+    console.log(`[tenants GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchTenants: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -715,8 +804,8 @@ app.post("/make-server-309fe679/tenants", async (c) => {
     console.log(`[tenants POST] ${id}: ${body.name}`);
     return c.json({ tenant: rowToTenant(data) });
   } catch (err) {
-    console.log(`[tenants POST] ${err}`);
-    return c.json({ error: `createTenant: ${err}` }, 500);
+    console.log(`[tenants POST] ${errMsg(err)}`);
+    return c.json({ error: `createTenant: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -730,8 +819,8 @@ app.put("/make-server-309fe679/tenants/:id", async (c) => {
     if (!data)  return c.json({ error: "Tenant not found" }, 404);
     return c.json({ tenant: rowToTenant(data) });
   } catch (err) {
-    console.log(`[tenants PUT] ${err}`);
-    return c.json({ error: `updateTenant: ${err}` }, 500);
+    console.log(`[tenants PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateTenant: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -742,8 +831,8 @@ app.delete("/make-server-309fe679/tenants/:id", async (c) => {
     if (error) throw error;
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[tenants DELETE] ${err}`);
-    return c.json({ error: `deleteTenant: ${err}` }, 500);
+    console.log(`[tenants DELETE] ${errMsg(err)}`);
+    return c.json({ error: `deleteTenant: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -795,8 +884,8 @@ app.get("/make-server-309fe679/requests", async (c) => {
     if (error) throw error;
     return c.json({ requests: (data ?? []).map(rowToRequest) });
   } catch (err) {
-    console.log(`[requests GET] ${err}`);
-    return c.json({ error: `fetchRequests: ${err}` }, 500);
+    console.log(`[requests GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchRequests: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -816,8 +905,8 @@ app.post("/make-server-309fe679/requests", async (c) => {
     console.log(`[requests POST] ${id}: ${body.companyName}`);
     return c.json({ request: rowToRequest(data) });
   } catch (err) {
-    console.log(`[requests POST] ${err}`);
-    return c.json({ error: `createRequest: ${err}` }, 500);
+    console.log(`[requests POST] ${errMsg(err)}`);
+    return c.json({ error: `createRequest: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -852,8 +941,8 @@ app.put("/make-server-309fe679/requests/:id", async (c) => {
     console.log(`[requests PUT] ${id} → ${body.status ?? existing.status}`);
     return c.json({ request: rowToRequest(data) });
   } catch (err) {
-    console.log(`[requests PUT] ${err}`);
-    return c.json({ error: `updateRequest: ${err}` }, 500);
+    console.log(`[requests PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateRequest: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -870,8 +959,8 @@ app.get("/make-server-309fe679/tenant-users", async (c) => {
     if (error) throw error;
     return c.json({ users: (data ?? []).map(rowToTenantUser) });
   } catch (err) {
-    console.log(`[tenant-users GET] ${err}`);
-    return c.json({ error: `fetchTenantUsers: ${err}` }, 500);
+    console.log(`[tenant-users GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchTenantUsers: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -891,8 +980,8 @@ app.post("/make-server-309fe679/tenant-users", async (c) => {
     console.log(`[tenant-users POST] ${id}: ${body.email}`);
     return c.json({ user: rowToTenantUser(data) });
   } catch (err) {
-    console.log(`[tenant-users POST] ${err}`);
-    return c.json({ error: `createTenantUser: ${err}` }, 500);
+    console.log(`[tenant-users POST] ${errMsg(err)}`);
+    return c.json({ error: `createTenantUser: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -906,8 +995,8 @@ app.put("/make-server-309fe679/tenant-users/:id", async (c) => {
     if (!data)  return c.json({ error: "User not found" }, 404);
     return c.json({ user: rowToTenantUser(data) });
   } catch (err) {
-    console.log(`[tenant-users PUT] ${err}`);
-    return c.json({ error: `updateTenantUser: ${err}` }, 500);
+    console.log(`[tenant-users PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateTenantUser: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -918,8 +1007,8 @@ app.delete("/make-server-309fe679/tenant-users/:id", async (c) => {
     if (error) throw error;
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[tenant-users DELETE] ${err}`);
-    return c.json({ error: `deleteTenantUser: ${err}` }, 500);
+    console.log(`[tenant-users DELETE] ${errMsg(err)}`);
+    return c.json({ error: `deleteTenantUser: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -936,8 +1025,8 @@ app.get("/make-server-309fe679/invoices", async (c) => {
     if (error) throw error;
     return c.json({ invoices: (data ?? []).map(rowToInvoice) });
   } catch (err) {
-    console.log(`[invoices GET] ${err}`);
-    return c.json({ error: `fetchInvoices: ${err}` }, 500);
+    console.log(`[invoices GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchInvoices: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -956,8 +1045,8 @@ app.post("/make-server-309fe679/invoices", async (c) => {
     console.log(`[invoices POST] ${id}`);
     return c.json({ invoice: rowToInvoice(data) });
   } catch (err) {
-    console.log(`[invoices POST] ${err}`);
-    return c.json({ error: `createInvoice: ${err}` }, 500);
+    console.log(`[invoices POST] ${errMsg(err)}`);
+    return c.json({ error: `createInvoice: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -995,8 +1084,8 @@ app.put("/make-server-309fe679/invoices/:id", async (c) => {
     if (error) throw error;
     return c.json({ invoice: rowToInvoice(data) });
   } catch (err) {
-    console.log(`[invoices PUT] ${err}`);
-    return c.json({ error: `updateInvoice: ${err}` }, 500);
+    console.log(`[invoices PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateInvoice: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1013,8 +1102,8 @@ app.get("/make-server-309fe679/modules", async (c) => {
     if (error) throw error;
     return c.json({ modules: (data ?? []).map(rowToModule) });
   } catch (err) {
-    console.log(`[modules GET] ${err}`);
-    return c.json({ error: `fetchModules: ${err}` }, 500);
+    console.log(`[modules GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchModules: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1029,8 +1118,8 @@ app.put("/make-server-309fe679/modules/:id", async (c) => {
     console.log(`[modules PUT] ${id} globalEnabled=${data.global_enabled}`);
     return c.json({ module: rowToModule(data) });
   } catch (err) {
-    console.log(`[modules PUT] ${err}`);
-    return c.json({ error: `updateModule: ${err}` }, 500);
+    console.log(`[modules PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateModule: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1047,8 +1136,8 @@ app.get("/make-server-309fe679/features", async (c) => {
     if (error) throw error;
     return c.json({ features: (data ?? []).map(rowToFeature) });
   } catch (err) {
-    console.log(`[features GET] ${err}`);
-    return c.json({ error: `fetchFeatures: ${err}` }, 500);
+    console.log(`[features GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchFeatures: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1071,8 +1160,8 @@ app.put("/make-server-309fe679/features/:id", async (c) => {
     if (!data)  return c.json({ error: "Feature not found" }, 404);
     return c.json({ feature: rowToFeature(data) });
   } catch (err) {
-    console.log(`[features PUT] ${err}`);
-    return c.json({ error: `updateFeature: ${err}` }, 500);
+    console.log(`[features PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateFeature: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1098,8 +1187,8 @@ app.get("/make-server-309fe679/audit-logs", async (c) => {
     if (error) throw error;
     return c.json({ logs: (data ?? []).map(rowToAuditLog) });
   } catch (err) {
-    console.log(`[audit-logs GET] ${err}`);
-    return c.json({ error: `fetchAuditLogs: ${err}` }, 500);
+    console.log(`[audit-logs GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchAuditLogs: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1111,8 +1200,8 @@ app.post("/make-server-309fe679/audit-logs", async (c) => {
     if (error) throw error;
     return c.json({ success: true, id: row.id });
   } catch (err) {
-    console.log(`[audit-logs POST] ${err}`);
-    return c.json({ error: `appendAuditLog: ${err}` }, 500);
+    console.log(`[audit-logs POST] ${errMsg(err)}`);
+    return c.json({ error: `appendAuditLog: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1135,8 +1224,8 @@ app.get("/make-server-309fe679/usage", async (c) => {
     if (error) throw error;
     return c.json({ data: (data ?? []).map(rowToUsageStat) });
   } catch (err) {
-    console.log(`[usage GET] ${err}`);
-    return c.json({ error: `fetchUsage: ${err}` }, 500);
+    console.log(`[usage GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchUsage: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1157,8 +1246,8 @@ app.post("/make-server-309fe679/usage", async (c) => {
     if (error) throw error;
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[usage POST] ${err}`);
-    return c.json({ error: `recordUsage: ${err}` }, 500);
+    console.log(`[usage POST] ${errMsg(err)}`);
+    return c.json({ error: `recordUsage: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1178,8 +1267,8 @@ app.get("/make-server-309fe679/content-cards", async (c) => {
     if (error) throw error;
     return c.json({ cards: (data ?? []).map(rowToContentCard), initialized: true });
   } catch (err) {
-    console.log(`[content-cards GET] ${err}`);
-    return c.json({ error: `fetchContentCards: ${err}`, cards: [] }, 500);
+    console.log(`[content-cards GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchContentCards: ${errMsg(err)}`, cards: [] }, 500);
   }
 });
 
@@ -1205,8 +1294,8 @@ app.post("/make-server-309fe679/content-cards", async (c) => {
     console.log(`[content-cards POST] upsert ${card.id}`);
     return c.json({ success: true, cardId: card.id, card: rowToContentCard(data) });
   } catch (err) {
-    console.log(`[content-cards POST] ${err}`);
-    return c.json({ error: `saveContentCard: ${err}` }, 500);
+    console.log(`[content-cards POST] ${errMsg(err)}`);
+    return c.json({ error: `saveContentCard: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1232,8 +1321,8 @@ app.post("/make-server-309fe679/content-cards/sync", async (c) => {
     console.log(`[content-cards/sync] Synced ${rows.length} cards`);
     return c.json({ success: true, count: rows.length });
   } catch (err) {
-    console.log(`[content-cards/sync] ${err}`);
-    return c.json({ error: `syncContentCards: ${err}` }, 500);
+    console.log(`[content-cards/sync] ${errMsg(err)}`);
+    return c.json({ error: `syncContentCards: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1246,8 +1335,8 @@ app.delete("/make-server-309fe679/content-cards/:id", async (c) => {
     console.log(`[content-cards DELETE] ${id}`);
     return c.json({ success: true, deletedId: id });
   } catch (err) {
-    console.log(`[content-cards DELETE] ${err}`);
-    return c.json({ error: `deleteContentCard: ${err}` }, 500);
+    console.log(`[content-cards DELETE] ${errMsg(err)}`);
+    return c.json({ error: `deleteContentCard: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1275,8 +1364,8 @@ app.post("/make-server-309fe679/approval-events", async (c) => {
     console.log(`[approval-events POST] ${row.id} type=${row.event_type}`);
     return c.json({ success: true, eventId: row.id });
   } catch (err) {
-    console.log(`[approval-events POST] ${err}`);
-    return c.json({ error: `logApprovalEvent: ${err}` }, 500);
+    console.log(`[approval-events POST] ${errMsg(err)}`);
+    return c.json({ error: `logApprovalEvent: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1296,8 +1385,8 @@ app.get("/make-server-309fe679/approval-events", async (c) => {
     if (error) throw error;
     return c.json({ events: (data ?? []).map(rowToApprovalEvent) });
   } catch (err) {
-    console.log(`[approval-events GET] ${err}`);
-    return c.json({ error: `fetchApprovalEvents: ${err}`, events: [] }, 500);
+    console.log(`[approval-events GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchApprovalEvents: ${errMsg(err)}`, events: [] }, 500);
   }
 });
 
@@ -1312,8 +1401,8 @@ app.get("/make-server-309fe679/smtp/config", async (c) => {
     if (error) throw error;
     return c.json({ config: data ? rowToSmtpConfig(data) : null });
   } catch (err) {
-    console.log(`[smtp/config GET] ${err}`);
-    return c.json({ error: `fetchSmtpConfig: ${err}` }, 500);
+    console.log(`[smtp/config GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchSmtpConfig: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1328,8 +1417,8 @@ app.post("/make-server-309fe679/smtp/config", async (c) => {
     console.log(`[smtp/config POST] Saved SMTP config (host=${row.host})`);
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[smtp/config POST] ${err}`);
-    return c.json({ error: `saveSmtpConfig: ${err}` }, 500);
+    console.log(`[smtp/config POST] ${errMsg(err)}`);
+    return c.json({ error: `saveSmtpConfig: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1402,8 +1491,8 @@ app.post("/make-server-309fe679/smtp/test", async (c) => {
     console.log(`[smtp/test] Test email sent to ${to} via ${config.host}:${config.port}`);
     return c.json({ success: true, message: `Test email sent to ${to}` });
   } catch (err) {
-    console.log(`[smtp/test] Error: ${err}`);
-    return c.json({ error: `SMTP Error: ${String(err)}` }, 500);
+    console.log(`[smtp/test] Error: ${errMsg(err)}`);
+    return c.json({ error: `SMTP Error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1419,8 +1508,8 @@ app.get("/make-server-309fe679/email-templates/:id", async (c) => {
     if (error) throw error;
     return c.json({ template: data ? rowToEmailTemplate(data) : null });
   } catch (err) {
-    console.log(`[email-templates GET] ${err}`);
-    return c.json({ error: `fetchEmailTemplate: ${err}` }, 500);
+    console.log(`[email-templates GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchEmailTemplate: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1442,8 +1531,8 @@ app.put("/make-server-309fe679/email-templates/:id", async (c) => {
     console.log(`[email-templates PUT] Saved template: ${id}`);
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[email-templates PUT] ${err}`);
-    return c.json({ error: `saveEmailTemplate: ${err}` }, 500);
+    console.log(`[email-templates PUT] ${errMsg(err)}`);
+    return c.json({ error: `saveEmailTemplate: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1456,8 +1545,8 @@ app.delete("/make-server-309fe679/email-templates/:id", async (c) => {
     console.log(`[email-templates DELETE] Reset template: ${id}`);
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[email-templates DELETE] ${err}`);
-    return c.json({ error: `resetEmailTemplate: ${err}` }, 500);
+    console.log(`[email-templates DELETE] ${errMsg(err)}`);
+    return c.json({ error: `resetEmailTemplate: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1514,8 +1603,8 @@ app.post("/make-server-309fe679/email-templates/:id/test", async (c) => {
     console.log(`[email-templates/test] Preview sent to ${to}`);
     return c.json({ success: true, message: `Preview sent to ${to}` });
   } catch (err) {
-    console.log(`[email-templates/test] Error: ${err}`);
-    return c.json({ error: `Send error: ${String(err)}` }, 500);
+    console.log(`[email-templates/test] Error: ${errMsg(err)}`);
+    return c.json({ error: `Send error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1611,8 +1700,8 @@ app.post("/make-server-309fe679/auth/confirm-signup", async (c) => {
     console.log(`[auth/confirm-signup] Sent to ${email}`);
     return c.json({ success: true, message: `Confirmation email sent to ${email}` });
   } catch (err) {
-    console.log(`[auth/confirm-signup] Error: ${err}`);
-    return c.json({ error: `confirm-signup error: ${String(err)}` }, 500);
+    console.log(`[auth/confirm-signup] Error: ${errMsg(err)}`);
+    return c.json({ error: `confirm-signup error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1643,8 +1732,8 @@ app.post("/make-server-309fe679/auth/invite-user", async (c) => {
     console.log(`[auth/invite-user] Invite sent to ${email} using template: ${tplId}`);
     return c.json({ success: true, message: `Invite email sent to ${email}` });
   } catch (err) {
-    console.log(`[auth/invite-user] Error: ${err}`);
-    return c.json({ error: `invite-user error: ${String(err)}` }, 500);
+    console.log(`[auth/invite-user] Error: ${errMsg(err)}`);
+    return c.json({ error: `invite-user error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1669,8 +1758,8 @@ app.post("/make-server-309fe679/auth/magic-link", async (c) => {
     console.log(`[auth/magic-link] Sent to ${email}`);
     return c.json({ success: true, message: `Magic link email sent to ${email}` });
   } catch (err) {
-    console.log(`[auth/magic-link] Error: ${err}`);
-    return c.json({ error: `magic-link error: ${String(err)}` }, 500);
+    console.log(`[auth/magic-link] Error: ${errMsg(err)}`);
+    return c.json({ error: `magic-link error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1694,8 +1783,8 @@ app.post("/make-server-309fe679/auth/change-email", async (c) => {
     console.log(`[auth/change-email] Sent to ${newEmail}`);
     return c.json({ success: true, message: `Email change confirmation sent to ${newEmail}` });
   } catch (err) {
-    console.log(`[auth/change-email] Error: ${err}`);
-    return c.json({ error: `change-email error: ${String(err)}` }, 500);
+    console.log(`[auth/change-email] Error: ${errMsg(err)}`);
+    return c.json({ error: `change-email error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1720,8 +1809,8 @@ app.post("/make-server-309fe679/auth/reset-password", async (c) => {
     console.log(`[auth/reset-password] Sent to ${email}`);
     return c.json({ success: true, message: `Password reset email sent to ${email}` });
   } catch (err) {
-    console.log(`[auth/reset-password] Error: ${err}`);
-    return c.json({ error: `reset-password error: ${String(err)}` }, 500);
+    console.log(`[auth/reset-password] Error: ${errMsg(err)}`);
+    return c.json({ error: `reset-password error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1746,8 +1835,8 @@ app.post("/make-server-309fe679/auth/reauth", async (c) => {
     console.log(`[auth/reauth] Sent to ${email}`);
     return c.json({ success: true, message: `Reauthentication email sent to ${email}` });
   } catch (err) {
-    console.log(`[auth/reauth] Error: ${err}`);
-    return c.json({ error: `reauth error: ${String(err)}` }, 500);
+    console.log(`[auth/reauth] Error: ${errMsg(err)}`);
+    return c.json({ error: `reauth error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1762,8 +1851,8 @@ app.get("/make-server-309fe679/payment-gateway/config", async (c) => {
     if (error) throw error;
     return c.json({ config: data ? rowToGatewayConfig(data) : null });
   } catch (err) {
-    console.log(`[payment-gateway/config GET] ${err}`);
-    return c.json({ error: `fetchGatewayConfig: ${err}` }, 500);
+    console.log(`[payment-gateway/config GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchGatewayConfig: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1779,8 +1868,8 @@ app.post("/make-server-309fe679/payment-gateway/config", async (c) => {
     console.log(`[payment-gateway/config POST] Saved config for: ${body.gatewayId} (sandbox=${body.sandboxMode})`);
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[payment-gateway/config POST] ${err}`);
-    return c.json({ error: `saveGatewayConfig: ${err}` }, 500);
+    console.log(`[payment-gateway/config POST] ${errMsg(err)}`);
+    return c.json({ error: `saveGatewayConfig: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1860,8 +1949,8 @@ app.post("/make-server-309fe679/payment-gateway/test", async (c) => {
       }
     }
   } catch (err) {
-    console.log(`[payment-gateway/test] Error: ${err}`);
-    return c.json({ error: `Gateway test error: ${String(err)}` }, 500);
+    console.log(`[payment-gateway/test] Error: ${errMsg(err)}`);
+    return c.json({ error: `Gateway test error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1876,8 +1965,8 @@ app.get("/make-server-309fe679/mfa/policy", async (c) => {
     if (error) throw error;
     return c.json(data ? rowToMfaPolicy(data) : { requireTenantAdminMfa: false });
   } catch (err) {
-    console.log(`[mfa/policy GET] ${err}`);
-    return c.json({ error: `fetchMfaPolicy: ${err}` }, 500);
+    console.log(`[mfa/policy GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchMfaPolicy: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1896,8 +1985,8 @@ app.post("/make-server-309fe679/mfa/policy", async (c) => {
     console.log(`[mfa/policy POST] requireTenantAdminMfa=${requireTenantAdminMfa}`);
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[mfa/policy POST] ${err}`);
-    return c.json({ error: `saveMfaPolicy: ${err}` }, 500);
+    console.log(`[mfa/policy POST] ${errMsg(err)}`);
+    return c.json({ error: `saveMfaPolicy: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1912,8 +2001,8 @@ app.get("/make-server-309fe679/security/policy", async (c) => {
     if (error) throw error;
     return c.json({ policy: data ? rowToSecurityPolicy(data) : null });
   } catch (err) {
-    console.log(`[security/policy GET] ${err}`);
-    return c.json({ error: `fetchSecurityPolicy: ${err}` }, 500);
+    console.log(`[security/policy GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchSecurityPolicy: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1928,8 +2017,8 @@ app.post("/make-server-309fe679/security/policy", async (c) => {
     console.log(`[security/policy POST] Policy saved`);
     return c.json({ success: true });
   } catch (err) {
-    console.log(`[security/policy POST] ${err}`);
-    return c.json({ error: `saveSecurityPolicy: ${err}` }, 500);
+    console.log(`[security/policy POST] ${errMsg(err)}`);
+    return c.json({ error: `saveSecurityPolicy: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1962,8 +2051,8 @@ app.post("/make-server-309fe679/mfa-recovery/store", async (c) => {
     console.log(`[mfa-recovery/store] Stored ${codes.length} recovery codes for user ${userId}`);
     return c.json({ success: true, count: codes.length });
   } catch (err) {
-    console.log(`[mfa-recovery/store] Error: ${err}`);
-    return c.json({ error: `storeRecoveryCodes: ${err}` }, 500);
+    console.log(`[mfa-recovery/store] Error: ${errMsg(err)}`);
+    return c.json({ error: `storeRecoveryCodes: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -2004,8 +2093,8 @@ app.post("/make-server-309fe679/mfa-recovery/verify", async (c) => {
     console.log(`[mfa-recovery/verify] Code used for user ${userId}. ${remaining} codes remaining.`);
     return c.json({ success: true, remaining });
   } catch (err) {
-    console.log(`[mfa-recovery/verify] Error: ${err}`);
-    return c.json({ error: `recoveryVerify: ${err}` }, 500);
+    console.log(`[mfa-recovery/verify] Error: ${errMsg(err)}`);
+    return c.json({ error: `recoveryVerify: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -2037,8 +2126,8 @@ app.post("/make-server-309fe679/mfa/admin/reset-user", async (c) => {
     console.log(`[mfa/admin/reset-user] Reset MFA for ${targetUserId}. Deleted ${deleted} factor(s). Caller: ${caller.email}`);
     return c.json({ success: true, deletedFactors: deleted });
   } catch (err) {
-    console.log(`[mfa/admin/reset-user] Error: ${err}`);
-    return c.json({ error: `MFA reset error: ${String(err)}` }, 500);
+    console.log(`[mfa/admin/reset-user] Error: ${errMsg(err)}`);
+    return c.json({ error: `MFA reset error: ${errMsg(err)}` }, 500);
   }
 });
 
