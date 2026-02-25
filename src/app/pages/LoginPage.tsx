@@ -18,7 +18,7 @@
  *   Views switch via local `viewMode` state (no routing between views).
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -27,7 +27,7 @@ import {
   ShieldCheck, Info, Loader2, FlaskConical,
 } from 'lucide-react';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
-import brandtelligenceLogo from '../../assets/12cb08e986949f1228eef0d76d4fc7b928da05e8.png';
+import brandtelligenceLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 import { useAuth, buildProfileFromSupabaseUser, type UserProfile } from '../components/AuthContext';
 import { BackgroundLayout } from '../components/BackgroundLayout';
 import { MFAChallengeModal } from '../components/saas/MFAChallengeModal';
@@ -81,6 +81,16 @@ export function LoginPage() {
   const [loginLoading,  setLoginLoading]  = useState(false);
   const [showPassword,  setShowPassword]  = useState(false);
   const [showDemoHint,  setShowDemoHint]  = useState(false);
+  const [rememberMe,    setRememberMe]    = useState(false);
+
+  // Pre-fill remembered email on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('bt_remembered_email');
+    if (saved) {
+      setLoginEmail(saved);
+      setRememberMe(true);
+    }
+  }, []);
 
   // ── MFA challenge state (production) ───────────────────────────────────────
   const [mfaPendingProfile,  setMfaPendingProfile]  = useState<UserProfile | null>(null);
@@ -284,6 +294,12 @@ export function LoginPage() {
     e.preventDefault();
     setLoginCaptchaError(false);
     setLoginError('');
+    // Persist or clear remembered email
+    if (rememberMe) {
+      localStorage.setItem('bt_remembered_email', loginEmail);
+    } else {
+      localStorage.removeItem('bt_remembered_email');
+    }
     loginCaptchaRef.current?.execute();
   };
 
@@ -513,6 +529,29 @@ export function LoginPage() {
                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
                     </div>
+                  </div>
+
+                  {/* Remember Me */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRememberMe(v => !v)}
+                      className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-all shrink-0 ${
+                        rememberMe
+                          ? 'bg-teal-500 border-teal-500'
+                          : 'bg-white/10 border-white/30 hover:border-white/50'
+                      }`}
+                      aria-checked={rememberMe}
+                      role="checkbox"
+                    >
+                      {rememberMe && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                    </button>
+                    <span
+                      className="text-white/70 text-sm cursor-pointer select-none"
+                      onClick={() => setRememberMe(v => !v)}
+                    >
+                      Remember me
+                    </span>
                   </div>
 
                   {/* Auth error */}

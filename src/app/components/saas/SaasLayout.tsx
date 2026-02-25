@@ -1,4 +1,5 @@
 import { useState, ReactNode } from 'react';
+import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 import { NavLink, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogOut, ChevronLeft, ChevronRight, Menu, ShieldAlert, Sun, Moon, FlaskConical } from 'lucide-react';
@@ -63,23 +64,22 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Brand */}
-      <div className={`flex items-center gap-3 px-4 py-5 border-b ${t.border} ${collapsed ? 'justify-center' : ''}`}>
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${accentColor === 'teal' ? 'bg-teal-500/20' : 'bg-purple-500/20'}`}>
-          <span className="text-base">⚡</span>
-        </div>
-        <AnimatePresence>
-          {!collapsed && (
-            <motion.div
-              initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }}
-              className="overflow-hidden whitespace-nowrap"
-            >
-              <p className={`${t.text} font-bold text-sm leading-none`}>Brandtelligence</p>
-              <p className={`${t.textFaint} text-[0.65rem] mt-0.5`}>
-                {user?.role === 'SUPER_ADMIN' ? 'Platform Control' : user?.tenantName ?? 'Tenant Portal'}
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <div className={`flex items-center gap-3 px-4 py-4 border-b ${t.border} ${collapsed ? 'justify-center' : ''}`}>
+        {collapsed ? (
+          <div className="w-8 h-8 flex items-center justify-center shrink-0">
+            <img src={brandLogo} alt="Brandtelligence" className="w-8 h-8 object-contain" />
+          </div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="flex flex-col gap-1"
+          >
+            <img src={brandLogo} alt="Brandtelligence" className="h-8 w-auto max-w-[148px] object-contain object-left" />
+            <p className={`${t.textFaint} text-[0.65rem] pl-0.5`}>
+              {user?.role === 'SUPER_ADMIN' ? 'Platform Control' : user?.tenantName ?? 'Tenant Portal'}
+            </p>
+          </motion.div>
+        )}
       </div>
 
       {/* Nav */}
@@ -120,19 +120,38 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
       {/* User Footer */}
       <div className={`border-t ${t.border} p-3 ${collapsed ? 'flex justify-center' : ''}`}>
         {!collapsed ? (
-          <div className={`flex items-center gap-3 px-2 py-2 rounded-xl ${t.hover} transition-colors`}>
-            <img
-              src={user?.profileImage ?? `https://ui-avatars.com/api/?name=${user?.firstName}+${user?.lastName}&background=6366f1&color=fff`}
-              alt={user?.firstName}
-              className="w-8 h-8 rounded-full object-cover shrink-0"
-            />
-            <div className="flex-1 min-w-0">
-              <p className={`${t.text} text-xs font-medium truncate`}>{user?.firstName} {user?.lastName}</p>
-              <RoleBadge role={user?.role ?? 'EMPLOYEE'} />
+          <div className={`flex items-center gap-3 px-2 py-2 rounded-xl ${t.hover} transition-colors group`}>
+            {/* Avatar with online indicator */}
+            <div className="relative shrink-0">
+              <img
+                src={user?.profileImage ?? `https://ui-avatars.com/api/?name=${user?.firstName}+${user?.lastName}&background=6366f1&color=fff`}
+                alt={user?.firstName}
+                className="w-10 h-10 rounded-full object-cover ring-2 ring-offset-1 ring-indigo-400/40"
+                style={{ ringOffsetColor: t.isDark ? '#1e1b2e' : '#f9fafb' }}
+              />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-white dark:border-gray-900 ring-1 ring-emerald-300/50" />
             </div>
+
+            {/* Name + badge */}
+            <div className="flex-1 min-w-0">
+              <p className={`${t.text} text-sm font-semibold truncate leading-tight`}>
+                {user?.firstName} {user?.lastName}
+              </p>
+              <div className="mt-0.5">
+                <span className={`text-[0.65rem] font-medium tracking-wide ${t.textFaint}`}>
+                  {{
+                    SUPER_ADMIN:  'Super Admin',
+                    TENANT_ADMIN: 'Tenant Admin',
+                    EMPLOYEE:     'Employee',
+                  }[user?.role ?? ''] ?? user?.role}
+                </span>
+              </div>
+            </div>
+
+            {/* Sign-out button */}
             <button
               onClick={handleLogout}
-              className={`p-1.5 rounded-lg ${t.hover} ${t.textMd} hover:${t.text} transition-colors`}
+              className="p-2 rounded-lg text-gray-400 transition-all opacity-0 group-hover:opacity-100 hover:bg-red-500/15 hover:text-red-500"
               title="Sign out"
             >
               <LogOut className="w-4 h-4" />
