@@ -27,7 +27,7 @@ import {
   ShieldCheck, Info, Loader2, FlaskConical,
 } from 'lucide-react';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
-import brandtelligenceLogo from 'figma:asset/12cb08e986949f1228eef0d76d4fc7b928da05e8.png';
+import brandtelligenceLogo from '../../assets/12cb08e986949f1228eef0d76d4fc7b928da05e8.png';
 import { useAuth, buildProfileFromSupabaseUser, type UserProfile } from '../components/AuthContext';
 import { BackgroundLayout } from '../components/BackgroundLayout';
 import { MFAChallengeModal } from '../components/saas/MFAChallengeModal';

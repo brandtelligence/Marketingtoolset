@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router';
 import { ArrowRight, Sparkles, TrendingUp, Clock, Layers, BadgeCheck } from 'lucide-react';
-import brandtelligenceLogo from 'figma:asset/12cb08e986949f1228eef0d76d4fc7b928da05e8.png';
+import brandtelligenceLogo from '../../../assets/12cb08e986949f1228eef0d76d4fc7b928da05e8.png';
 
 const STATS = [
   { value: '18', label: 'Marketing Modules', color: 'text-purple-300', bg: 'bg-purple-500/20 border-purple-500/30' },

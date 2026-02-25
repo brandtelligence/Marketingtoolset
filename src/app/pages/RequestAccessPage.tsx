@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BackgroundLayout } from '../components/BackgroundLayout';
-import brandtelligenceLogo from 'figma:asset/12cb08e986949f1228eef0d76d4fc7b928da05e8.png';
+import brandtelligenceLogo from '../../assets/12cb08e986949f1228eef0d76d4fc7b928da05e8.png';
 import {
   createRequest, fetchModules, checkAccessEmail,
   type Module, type EmailCheckStatus,
