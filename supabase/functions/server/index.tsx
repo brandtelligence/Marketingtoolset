@@ -183,8 +183,9 @@ app.post("/make-server-309fe679/content-cards/sync", async (c) => {
 
     return c.json({ success: true, count: cards.length });
   } catch (error) {
-    console.log(`Error syncing content cards: ${error}`);
-    return c.json({ error: `Failed to sync content cards: ${error}` }, 500);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.log(`Error syncing content cards: ${errorMsg}`);
+    return c.json({ error: `syncContentCards: ${errorMsg}` }, 500);
   }
 });
 
