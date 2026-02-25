@@ -1,0 +1,561 @@
+import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
+import { socialMediaCalendar } from '../data/socialMediaCalendar';
+import { toast } from 'sonner';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type ContentStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'rejected';
+
+export interface AuditEntry {
+  id: string;
+  action:
+    | 'created'
+    | 'edited'
+    | 'media_uploaded'
+    | 'media_removed'
+    | 'submitted_for_approval'
+    | 'approved'
+    | 'rejected'
+    | 'scheduled'
+    | 'published'
+    | 'status_changed'
+    | 'email_notification';
+  performedBy: string; // display name
+  performedByEmail: string;
+  timestamp: Date;
+  details?: string;
+}
+
+export interface ContentCard {
+  id: string;
+  projectId: string;
+  platform: string;          // e.g. 'instagram'
+  channel: string;           // e.g. 'social-media'
+
+  // Content
+  title: string;
+  caption: string;
+  hashtags: string[];
+
+  // Media
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'music';
+  mediaFileName?: string;
+
+  // Scheduling
+  scheduledDate?: string;    // YYYY-MM-DD
+  scheduledTime?: string;    // HH:mm
+
+  // Status
+  status: ContentStatus;
+
+  // Approvers — team member IDs from the project
+  approvers: string[];       // e.g. ['tm1', 'tm5']
+  approvedBy?: string;       // team member ID
+  approvedByName?: string;
+  approvedAt?: Date;
+  rejectedBy?: string;
+  rejectedByName?: string;
+  rejectedAt?: Date;
+  rejectionReason?: string;
+
+  // Creator
+  createdBy: string;         // display name
+  createdByEmail: string;
+  createdAt: Date;
+  lastEditedBy?: string;
+  lastEditedAt?: Date;
+
+  // Audit trail
+  auditLog: AuditEntry[];
+
+  // Optional calendar / mockup metadata (for posts imported from content calendar)
+  postType?: string;
+  visualDescription?: string;
+  callToAction?: string;
+}
+
+// ─── Approval Event (for real-time notifications) ─────────────────────────────
+
+export interface ApprovalEvent {
+  id: string;
+  cardId: string;
+  cardTitle: string;
+  platform: string;
+  action: 'approved' | 'rejected' | 'submitted_for_approval' | 'reverted_to_draft';
+  performedBy: string;
+  performedByEmail: string;
+  reason?: string;
+  timestamp: string; // ISO string for JSON serialization
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+let auditIdCounter = 0;
+function createAuditId() {
+  return `audit_${++auditIdCounter}_${Date.now()}`;
+}
+
+let cardIdCounter = 100;
+export function createCardId() {
+  return `cc_${++cardIdCounter}_${Date.now()}`;
+}
+
+// ─── API Helper ───────────────────────────────────────────────────────────────
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${publicAnonKey}`,
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`API ${options.method || 'GET'} ${path} failed (${res.status}): ${errorBody}`);
+  }
+  return res.json();
+}
+
+// Serialize dates in a card for JSON storage
+function serializeCard(card: ContentCard): any {
+  return {
+    ...card,
+    approvedAt: card.approvedAt ? (card.approvedAt instanceof Date ? card.approvedAt.toISOString() : card.approvedAt) : undefined,
+    rejectedAt: card.rejectedAt ? (card.rejectedAt instanceof Date ? card.rejectedAt.toISOString() : card.rejectedAt) : undefined,
+    createdAt: card.createdAt instanceof Date ? card.createdAt.toISOString() : card.createdAt,
+    lastEditedAt: card.lastEditedAt ? (card.lastEditedAt instanceof Date ? card.lastEditedAt.toISOString() : card.lastEditedAt) : undefined,
+    auditLog: card.auditLog.map(e => ({
+      ...e,
+      timestamp: e.timestamp instanceof Date ? e.timestamp.toISOString() : e.timestamp,
+    })),
+  };
+}
+
+// Deserialize dates from JSON back to Date objects
+function deserializeCard(raw: any): ContentCard {
+  return {
+    ...raw,
+    approvedAt: raw.approvedAt ? new Date(raw.approvedAt) : undefined,
+    rejectedAt: raw.rejectedAt ? new Date(raw.rejectedAt) : undefined,
+    createdAt: new Date(raw.createdAt),
+    lastEditedAt: raw.lastEditedAt ? new Date(raw.lastEditedAt) : undefined,
+    auditLog: (raw.auditLog || []).map((e: any) => ({
+      ...e,
+      timestamp: new Date(e.timestamp),
+    })),
+  };
+}
+
+// ─── Mock Data ────────────────────────────────────────────────────────────────
+
+// Platform name normaliser: Calendar uses title-case ('Instagram'), ContentCard uses lower-case ('instagram')
+const platformToLower: Record<string, string> = {
+  Instagram: 'instagram', Facebook: 'facebook', LinkedIn: 'linkedin',
+  Twitter: 'twitter', TikTok: 'tiktok',
+};
+
+/** Convert a static SocialPost from the calendar data file into a ContentCard */
+function calendarPostToCard(post: (typeof socialMediaCalendar)[number]): ContentCard {
+  // Parse "09:00 AM" → "09:00" (24-h)
+  const timeParts = post.time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  let time24 = post.time;
+  if (timeParts) {
+    let hours = parseInt(timeParts[1], 10);
+    const mins = timeParts[2];
+    const ampm = timeParts[3].toUpperCase();
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    time24 = `${String(hours).padStart(2, '0')}:${mins}`;
+  }
+
+  // Build a safe title without toLocaleDateString at module scope
+  const dateParts = post.date.split('-');
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthIdx = parseInt(dateParts[1], 10) - 1;
+  const dayNum = parseInt(dateParts[2], 10);
+  const dateLabel = `${monthNames[monthIdx] || dateParts[1]} ${dayNum}`;
+
+  return {
+    id: `cal_${post.id}`,
+    projectId: '1', // all calendar posts belong to the vCard SaaS project
+    platform: platformToLower[post.platform] || post.platform.toLowerCase(),
+    channel: 'social-media',
+    title: `${post.platform} ${post.postType} — ${dateLabel}`,
+    caption: post.caption,
+    hashtags: post.hashtags.map(tag => tag.replace(/^#/, '')),
+    scheduledDate: post.date,
+    scheduledTime: time24,
+    status: 'scheduled',
+    approvers: ['tm1'],
+    approvedBy: 'tm1',
+    approvedByName: 'Sarah Chen',
+    approvedAt: new Date('2026-02-25T08:00:00'),
+    createdBy: 'Sarah Chen',
+    createdByEmail: 'sarah.chen@brandtelligence.my',
+    createdAt: new Date('2026-02-18T10:00:00'),
+    auditLog: [
+      { id: `cal_a1_${post.id}`, action: 'created', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-18T10:00:00'), details: 'Imported from content calendar' },
+      { id: `cal_a2_${post.id}`, action: 'approved', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-25T08:00:00'), details: 'Bulk-approved calendar content' },
+      { id: `cal_a3_${post.id}`, action: 'scheduled', performedBy: 'System', performedByEmail: 'system', timestamp: new Date('2026-02-25T08:00:01'), details: `Auto-scheduled for ${post.date} at ${post.time}` },
+    ],
+    postType: post.postType,
+    visualDescription: post.visualDescription,
+    callToAction: post.callToAction,
+  };
+}
+
+// Build the initial card list lazily to avoid module-scope errors
+function buildInitialCards(): ContentCard[] {
+  try {
+    const calendarCards = socialMediaCalendar.map(calendarPostToCard);
+    return [...calendarCards, ...manualMockCards];
+  } catch (err) {
+    console.error('[ContentContext] Failed to convert calendar data:', err);
+    return [...manualMockCards];
+  }
+}
+
+// Manually-authored content cards (these may overlap dates with calendar cards — that's fine)
+const manualMockCards: ContentCard[] = [
+  {
+    id: 'cc_1',
+    projectId: '1',
+    platform: 'instagram',
+    channel: 'social-media',
+    title: 'vCard Launch Announcement',
+    caption: 'Meet vCard SaaS — your new digital business card platform. Create, share, and manage your professional identity with NFC technology and real-time analytics.\n\nLink in bio to learn more!\n\n#DigitalBusinessCard #vCard #Networking #TechInnovation #SaaS',
+    hashtags: ['DigitalBusinessCard', 'vCard', 'Networking', 'TechInnovation', 'SaaS'],
+    mediaUrl: 'https://images.unsplash.com/photo-1726607962647-84ec2451d553?w=800&h=450&fit=crop',
+    mediaType: 'image',
+    scheduledDate: '2026-03-02',
+    scheduledTime: '11:00',
+    status: 'approved',
+    approvers: ['tm1', 'tm5', 'tm6'],
+    approvedBy: 'tm5',
+    approvedByName: 'Lisa Anderson',
+    approvedAt: new Date('2026-02-22T14:30:00'),
+    createdBy: 'Sarah Chen',
+    createdByEmail: 'sarah.chen@brandtelligence.my',
+    createdAt: new Date('2026-02-20T09:15:00'),
+    lastEditedBy: 'Sarah Chen',
+    lastEditedAt: new Date('2026-02-21T11:00:00'),
+    auditLog: [
+      { id: 'a1', action: 'created', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-20T09:15:00'), details: 'Content card created via AI Content Studio' },
+      { id: 'a2', action: 'edited', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-21T11:00:00'), details: 'Updated caption and hashtags' },
+      { id: 'a3', action: 'media_uploaded', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-21T11:05:00'), details: 'Uploaded hero banner image' },
+      { id: 'a4', action: 'submitted_for_approval', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-21T15:00:00'), details: 'Submitted to Lisa Anderson, James Wright, Sarah Chen for approval' },
+      { id: 'a5', action: 'approved', performedBy: 'Lisa Anderson', performedByEmail: 'lisa.anderson@brandtelligence.my', timestamp: new Date('2026-02-22T14:30:00'), details: 'Approved — Looks great, ready to publish!' },
+    ],
+  },
+  {
+    id: 'cc_2',
+    projectId: '1',
+    platform: 'facebook',
+    channel: 'social-media',
+    title: 'Feature Highlight: NFC Sharing',
+    caption: 'Did you know? vCard SaaS lets you share your business card instantly with a simple NFC tap.\n\nNo more fumbling with paper cards. Just tap, connect, and grow your network.\n\nTry it today: link in bio',
+    hashtags: ['NFC', 'BusinessCard', 'Digital', 'Networking'],
+    mediaUrl: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=800&h=450&fit=crop',
+    mediaType: 'image',
+    scheduledDate: '2026-03-04',
+    scheduledTime: '14:00',
+    status: 'pending_approval',
+    approvers: ['tm1', 'tm6'],
+    createdBy: 'Sarah Chen',
+    createdByEmail: 'sarah.chen@brandtelligence.my',
+    createdAt: new Date('2026-02-21T10:30:00'),
+    auditLog: [
+      { id: 'a6', action: 'created', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-21T10:30:00'), details: 'Content card created via AI Content Studio' },
+      { id: 'a7', action: 'submitted_for_approval', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-22T09:00:00'), details: 'Submitted to Sarah Chen, James Wright for approval' },
+    ],
+  },
+  {
+    id: 'cc_3',
+    projectId: '1',
+    platform: 'linkedin',
+    channel: 'social-media',
+    title: 'Case Study: Digital Transformation',
+    caption: "I'm excited to share a project our team has been building: vCard SaaS.\n\nA comprehensive platform enabling professionals to create, share, and manage digital business cards with NFC technology, QR codes, and real-time analytics.\n\nAfter months of development, we're seeing incredible results with our early adopters. Here's what we've learned about building products that matter...\n\n[Read the full case study]",
+    hashtags: ['DigitalTransformation', 'SaaS', 'CaseStudy', 'ThoughtLeadership'],
+    status: 'draft',
+    approvers: [],
+    createdBy: 'Marcus Johnson',
+    createdByEmail: 'marcus.johnson@brandtelligence.my',
+    createdAt: new Date('2026-02-23T16:45:00'),
+    auditLog: [
+      { id: 'a8', action: 'created', performedBy: 'Marcus Johnson', performedByEmail: 'marcus.johnson@brandtelligence.my', timestamp: new Date('2026-02-23T16:45:00'), details: 'Content card created manually' },
+    ],
+  },
+  {
+    id: 'cc_4',
+    projectId: '1',
+    platform: 'tiktok',
+    channel: 'social-media',
+    title: 'POV: You Discover vCard',
+    caption: 'POV: You just discovered vCard SaaS and your networking game changed forever\n\n#MarketingTips #DigitalMarketing #BrandGrowth #FYP #vCard',
+    hashtags: ['MarketingTips', 'DigitalMarketing', 'BrandGrowth', 'FYP', 'vCard'],
+    mediaType: 'video',
+    scheduledDate: '2026-03-05',
+    scheduledTime: '19:00',
+    status: 'rejected',
+    approvers: ['tm5', 'tm6'],
+    rejectedBy: 'tm6',
+    rejectedByName: 'James Wright',
+    rejectedAt: new Date('2026-02-23T11:20:00'),
+    rejectionReason: 'Video concept needs more brand alignment. Please revise the opening hook and add our logo animation.',
+    createdBy: 'Sarah Chen',
+    createdByEmail: 'sarah.chen@brandtelligence.my',
+    createdAt: new Date('2026-02-22T14:00:00'),
+    auditLog: [
+      { id: 'a9', action: 'created', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-22T14:00:00'), details: 'Content card created via AI Content Studio' },
+      { id: 'a10', action: 'submitted_for_approval', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-22T16:00:00'), details: 'Submitted to Lisa Anderson, James Wright for approval' },
+      { id: 'a11', action: 'rejected', performedBy: 'James Wright', performedByEmail: 'james.wright@brandtelligence.my', timestamp: new Date('2026-02-23T11:20:00'), details: 'Video concept needs more brand alignment. Please revise the opening hook and add our logo animation.' },
+    ],
+  },
+  {
+    id: 'cc_5',
+    projectId: '1',
+    platform: 'twitter',
+    channel: 'social-media',
+    title: 'Product Launch Thread',
+    caption: 'Introducing vCard SaaS — the smarter way to grow your professional network.\n\nThread incoming...',
+    hashtags: ['vCard', 'Launch', 'SaaS'],
+    scheduledDate: '2026-03-01',
+    scheduledTime: '09:00',
+    status: 'scheduled',
+    approvers: ['tm1'],
+    approvedBy: 'tm1',
+    approvedByName: 'Sarah Chen',
+    approvedAt: new Date('2026-02-24T10:00:00'),
+    createdBy: 'Sarah Chen',
+    createdByEmail: 'sarah.chen@brandtelligence.my',
+    createdAt: new Date('2026-02-20T11:00:00'),
+    auditLog: [
+      { id: 'a12', action: 'created', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-20T11:00:00') },
+      { id: 'a13', action: 'submitted_for_approval', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-23T09:00:00') },
+      { id: 'a14', action: 'approved', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-24T10:00:00'), details: 'Auto-approved by project lead' },
+      { id: 'a15', action: 'scheduled', performedBy: 'System', performedByEmail: 'system', timestamp: new Date('2026-02-24T10:00:01'), details: 'Auto-scheduled for Mar 1, 2026 at 09:00 on X (Twitter)' },
+    ],
+  },
+];
+
+// Combine calendar and manual cards
+const mockCards: ContentCard[] = buildInitialCards();
+
+// ─── Context ──────────────────────────────────────────────────────────────────
+
+interface ContentContextType {
+  cards: ContentCard[];
+  getCardsByProject: (projectId: string) => ContentCard[];
+  addCard: (card: ContentCard) => void;
+  addCards: (cards: ContentCard[]) => void;
+  updateCard: (card: ContentCard) => void;
+  deleteCard: (cardId: string) => void;
+  addAuditEntry: (cardId: string, entry: Omit<AuditEntry, 'id'>) => void;
+  logApprovalEvent: (event: ApprovalEvent) => void;
+  recentEvents: ApprovalEvent[];
+  isLoading: boolean;
+  isSynced: boolean;
+}
+
+const ContentContext = createContext<ContentContextType | undefined>(undefined);
+
+export function ContentProvider({ children }: { children: ReactNode }) {
+  const [cards, setCards] = useState<ContentCard[]>(mockCards);
+  const [recentEvents, setRecentEvents] = useState<ApprovalEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSynced, setIsSynced] = useState(false);
+  const initialLoadDone = useRef(false);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Load cards from Supabase on mount ──
+  useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+
+    (async () => {
+      try {
+        const data = await apiFetch('/content-cards');
+        if (data.initialized && data.cards && data.cards.length > 0) {
+          // Server has data — use it
+          const deserialized = data.cards.map(deserializeCard);
+          setCards(deserialized);
+          setIsSynced(true);
+          console.log(`[ContentContext] Loaded ${deserialized.length} cards from Supabase`);
+        } else {
+          // No data on server — seed with mock data
+          console.log('[ContentContext] No server data found, seeding with mock data...');
+          await syncAllCards(mockCards);
+          setIsSynced(true);
+        }
+      } catch (error) {
+        console.error('[ContentContext] Failed to load from Supabase, using local data:', error);
+        // Continue with local mock data
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  // ── Sync helpers ──
+  const syncAllCards = async (cardsToSync: ContentCard[]) => {
+    try {
+      const serialized = cardsToSync.map(serializeCard);
+      await apiFetch('/content-cards/sync', {
+        method: 'POST',
+        body: JSON.stringify({ cards: serialized }),
+      });
+      setIsSynced(true);
+    } catch (error) {
+      console.error('[ContentContext] Sync failed:', error);
+      setIsSynced(false);
+    }
+  };
+
+  const persistCard = async (card: ContentCard) => {
+    try {
+      await apiFetch('/content-cards', {
+        method: 'POST',
+        body: JSON.stringify({ card: serializeCard(card) }),
+      });
+    } catch (error) {
+      console.error(`[ContentContext] Failed to persist card ${card.id}:`, error);
+    }
+  };
+
+  const deleteCardFromServer = async (cardId: string) => {
+    try {
+      await apiFetch(`/content-cards/${cardId}`, { method: 'DELETE' });
+    } catch (error) {
+      console.error(`[ContentContext] Failed to delete card ${cardId} from server:`, error);
+    }
+  };
+
+  // Debounced full sync after batch operations
+  const debouncedSync = useCallback((updatedCards: ContentCard[]) => {
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => syncAllCards(updatedCards), 2000);
+  }, []);
+
+  const getCardsByProject = useCallback(
+    (projectId: string) => cards.filter(c => c.projectId === projectId),
+    [cards]
+  );
+
+  const addCard = useCallback((card: ContentCard) => {
+    setCards(prev => {
+      const updated = [card, ...prev];
+      persistCard(card); // fire-and-forget
+      return updated;
+    });
+  }, []);
+
+  const addCards = useCallback((newCards: ContentCard[]) => {
+    setCards(prev => {
+      const updated = [...newCards, ...prev];
+      // Persist all new cards
+      newCards.forEach(card => persistCard(card));
+      return updated;
+    });
+  }, []);
+
+  const updateCard = useCallback((updated: ContentCard) => {
+    setCards(prev => {
+      const newCards = prev.map(c => (c.id === updated.id ? updated : c));
+      persistCard(updated); // fire-and-forget
+      return newCards;
+    });
+  }, []);
+
+  const deleteCard = useCallback((cardId: string) => {
+    setCards(prev => {
+      const updated = prev.filter(c => c.id !== cardId);
+      deleteCardFromServer(cardId); // fire-and-forget
+      return updated;
+    });
+  }, []);
+
+  const addAuditEntry = useCallback((cardId: string, entry: Omit<AuditEntry, 'id'>) => {
+    setCards(prev => {
+      const newCards = prev.map(c => {
+        if (c.id !== cardId) return c;
+        const updated = { ...c, auditLog: [...c.auditLog, { ...entry, id: createAuditId() }] };
+        persistCard(updated); // fire-and-forget
+        return updated;
+      });
+      return newCards;
+    });
+  }, []);
+
+  // ── Approval event logging ──
+  const logApprovalEvent = useCallback((event: ApprovalEvent) => {
+    setRecentEvents(prev => [event, ...prev].slice(0, 50));
+
+    // Persist to server
+    apiFetch('/approval-events', {
+      method: 'POST',
+      body: JSON.stringify({ event }),
+    }).catch(error => {
+      console.error('[ContentContext] Failed to log approval event:', error);
+    });
+
+    // Show real-time toast
+    const actionEmojis: Record<string, string> = {
+      approved: '✅',
+      rejected: '❌',
+      submitted_for_approval: '📤',
+      reverted_to_draft: '🔄',
+    };
+    const actionLabels: Record<string, string> = {
+      approved: 'approved',
+      rejected: 'rejected',
+      submitted_for_approval: 'submitted for approval',
+      reverted_to_draft: 'reverted to draft',
+    };
+
+    const emoji = actionEmojis[event.action] || '📋';
+    const label = actionLabels[event.action] || event.action;
+
+    toast(`${emoji} Content ${label}`, {
+      description: `"${event.cardTitle}" on ${event.platform} — by ${event.performedBy}`,
+      duration: 5000,
+    });
+  }, []);
+
+  return (
+    <ContentContext.Provider value={{
+      cards, getCardsByProject, addCard, addCards, updateCard, deleteCard,
+      addAuditEntry, logApprovalEvent, recentEvents, isLoading, isSynced,
+    }}>
+      {children}
+    </ContentContext.Provider>
+  );
+}
+
+export function useContent(): ContentContextType {
+  const ctx = useContext(ContentContext);
+  if (!ctx) {
+    // Return a safe no-op fallback so components can render outside the provider
+    // (e.g. Figma preview iframe, React Router error boundaries)
+    return {
+      cards: [],
+      getCardsByProject: () => [],
+      addCard: () => {},
+      addCards: () => {},
+      updateCard: () => {},
+      deleteCard: () => {},
+      addAuditEntry: () => {},
+      logApprovalEvent: () => {},
+      recentEvents: [],
+      isLoading: false,
+      isSynced: false,
+    };
+  }
+  return ctx;
+}

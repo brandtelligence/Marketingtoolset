@@ -1,0 +1,169 @@
+@import 'tailwindcss' source(none);
+@source '../**/*.{js,ts,jsx,tsx}';
+
+@import 'tw-animate-css';
+
+/* Hide scrollbar for touch-scroll containers while keeping scroll functionality */
+@utility scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FOLDABLE & DUAL-SCREEN UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════════
+   Detects foldable/dual-screen devices via CSS Viewport Segments API
+   and the Device Posture API. Provides utilities for hinge-aware layouts.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── CSS Custom Properties for viewport segments ─────────────────────────────
+   These resolve to 0px on non-foldable devices, so they're always safe to use.
+   The env() values are provided by the browser on foldable devices. */
+:root {
+  /* Left/top segment dimensions */
+  --fold-seg0-width:  env(viewport-segment-width 0 0, 100vw);
+  --fold-seg0-height: env(viewport-segment-height 0 0, 100vh);
+  /* Right/bottom segment (second panel) */
+  --fold-seg1-left:   env(viewport-segment-left 1 0, 100vw);
+  --fold-seg1-top:    env(viewport-segment-top 0 1, 100vh);
+  --fold-seg1-width:  env(viewport-segment-width 1 0, 0px);
+  --fold-seg1-height: env(viewport-segment-height 0 1, 0px);
+  /* Hinge gap — distance between segments */
+  --fold-hinge-width: 0px;
+  --fold-hinge-height: 0px;
+}
+
+/* ── Hinge-aware padding ─────────────────────────────────────────────────────
+   Adds padding to prevent content from sitting behind the physical hinge/seam */
+@utility fold-pad-hinge {
+  padding-left:  var(--fold-hinge-width, 0px);
+  padding-right: var(--fold-hinge-width, 0px);
+}
+
+/* ── Horizontal spanning (side-by-side screens, e.g. Surface Duo unfolded) ── */
+@media (horizontal-viewport-segments: 2) {
+  :root {
+    --fold-hinge-width: calc(
+      env(viewport-segment-left 1 0, 0px) -
+      env(viewport-segment-width 0 0, 0px)
+    );
+  }
+
+  /* Utility: constrain to left panel only */
+  .fold-left-panel {
+    width: env(viewport-segment-width 0 0, 50%);
+    max-width: env(viewport-segment-width 0 0, 50%);
+  }
+
+  /* Utility: constrain to right panel only */
+  .fold-right-panel {
+    margin-left: env(viewport-segment-left 1 0, 50%);
+    width: env(viewport-segment-width 1 0, 50%);
+    max-width: env(viewport-segment-width 1 0, 50%);
+  }
+
+  /* Utility: span across both panels with hinge gap */
+  .fold-span-both {
+    width: 100%;
+    column-gap: var(--fold-hinge-width, 0px);
+  }
+
+  /* Grids automatically get hinge-aware gap */
+  .fold-grid-span {
+    display: grid;
+    grid-template-columns:
+      env(viewport-segment-width 0 0, 1fr)
+      var(--fold-hinge-width, 0px)
+      env(viewport-segment-width 1 0, 1fr);
+  }
+
+  /* Keep primary content centered within each segment half */
+  .fold-content-safe {
+    padding-left: max(1rem, calc(var(--fold-hinge-width) / 2));
+    padding-right: max(1rem, calc(var(--fold-hinge-width) / 2));
+  }
+
+  /* Fixed/overlay elements should avoid the hinge */
+  .fold-modal-safe {
+    max-width: min(
+      calc(env(viewport-segment-width 0 0, 100vw) - 2rem),
+      56rem
+    );
+  }
+}
+
+/* ── Vertical spanning (top-bottom screens, e.g. Galaxy Fold "tabletop") ──── */
+@media (vertical-viewport-segments: 2) {
+  :root {
+    --fold-hinge-height: calc(
+      env(viewport-segment-top 0 1, 0px) -
+      env(viewport-segment-height 0 0, 0px)
+    );
+  }
+
+  /* Top half of the screen */
+  .fold-top-panel {
+    height: env(viewport-segment-height 0 0, 50%);
+    max-height: env(viewport-segment-height 0 0, 50%);
+    overflow-y: auto;
+  }
+
+  /* Bottom half of the screen */
+  .fold-bottom-panel {
+    margin-top: env(viewport-segment-top 0 1, 50%);
+    height: env(viewport-segment-height 0 1, 50%);
+    max-height: env(viewport-segment-height 0 1, 50%);
+    overflow-y: auto;
+  }
+
+  /* Tabletop mode: split scrolling content and controls */
+  .fold-tabletop-content {
+    height: env(viewport-segment-height 0 0, 50vh);
+    overflow-y: auto;
+  }
+
+  .fold-tabletop-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: env(viewport-segment-height 0 1, 50vh);
+    overflow-y: auto;
+  }
+}
+
+/* ── Device Posture API (book mode, flat, tent, etc.) ──────────────────────── */
+@media (device-posture: folded) {
+  /* When device is partially folded — add extra padding near the fold */
+  .fold-posture-aware {
+    --fold-extra-pad: 1.5rem;
+  }
+}
+
+@media (device-posture: continuous) {
+  /* Flat / fully open — no extra padding needed */
+  .fold-posture-aware {
+    --fold-extra-pad: 0px;
+  }
+}
+
+/* ── Aspect ratio flexibility for unfolded screens (4:3, 1:1, etc.) ────────
+   Use flex-wrap and auto-fit grids to handle unconventional aspect ratios */
+@utility fold-auto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  gap: 1rem;
+}
+
+@utility fold-flex-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+
+  & > * {
+    flex: 1 1 min(18rem, 100%);
+  }
+}
