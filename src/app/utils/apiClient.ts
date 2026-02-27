@@ -17,14 +17,14 @@ import { IS_PRODUCTION } from '../config/appConfig';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import type {
   Tenant, PendingRequest, TenantUser, Invoice,
-  AuditLog, Module, Feature, UsageDataPoint,
+  AuditLog, Module, Feature, UsageDataPoint, ModuleRequest,
 } from '../data/mockSaasData';
 
 // ── Demo-only mock imports (never rendered when IS_PRODUCTION is true) ─────────
 import {
   MOCK_TENANTS, MOCK_REQUESTS, MOCK_TENANT_USERS, MOCK_INVOICES,
   MOCK_AUDIT_LOGS, MOCK_MODULES, MOCK_FEATURES, MOCK_USAGE_DATA,
-  MOCK_TENANT_USAGE,
+  MOCK_TENANT_USAGE, MOCK_MODULE_REQUESTS,
 } from '../data/mockSaasData';
 
 // ─── Server base ──────────────────────────────────────────────────────────────
@@ -254,10 +254,44 @@ export async function fetchUsageData(tenantId?: string): Promise<UsageDataPoint[
   return data ?? [];
 }
 
+// ─── Module Requests (employee → tenant admin) ────────────────────────────────
+
+export async function fetchModuleRequests(tenantId: string): Promise<ModuleRequest[]> {
+  if (!IS_PRODUCTION) return MOCK_MODULE_REQUESTS.filter(r => r.tenantId === tenantId);
+  const { requests } = await api<{ requests: ModuleRequest[] }>(`/module-requests?tenantId=${tenantId}`);
+  return requests ?? [];
+}
+
+export async function createModuleRequest(data: Omit<ModuleRequest, 'id' | 'createdAt' | 'status'>): Promise<ModuleRequest> {
+  if (!IS_PRODUCTION) {
+    const r: ModuleRequest = {
+      ...data,
+      id: crypto.randomUUID(),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    MOCK_MODULE_REQUESTS.push(r);
+    return r;
+  }
+  const { request } = await api<{ request: ModuleRequest }>('/module-requests', {
+    method: 'POST', body: JSON.stringify(data),
+  });
+  return request;
+}
+
+export async function updateModuleRequest(id: string, patch: { status: ModuleRequest['status'] }): Promise<void> {
+  if (!IS_PRODUCTION) {
+    const i = MOCK_MODULE_REQUESTS.findIndex(r => r.id === id);
+    if (i >= 0) MOCK_MODULE_REQUESTS[i] = { ...MOCK_MODULE_REQUESTS[i], ...patch };
+    return;
+  }
+  await api(`/module-requests/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
+}
+
 // ─── Re-export types so pages import from here, not from mockSaasData ─────────
 export type {
   Tenant, PendingRequest, TenantUser, Invoice,
-  AuditLog, Module, Feature, UsageDataPoint,
+  AuditLog, Module, Feature, UsageDataPoint, ModuleRequest,
 };
 
 // ─── Email availability check (public, no auth required) ──────────────────────

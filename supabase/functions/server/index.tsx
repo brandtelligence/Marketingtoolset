@@ -2536,4 +2536,78 @@ app.post("/make-server-309fe679/mfa/admin/reset-user", async (c) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE REQUESTS  (employee → tenant admin, stored in KV store)
+// Key pattern: module_requests:{tenantId}
+// ─────────────────────────────────────────────────────────────────────────────
+
+import * as kv from './kv_store.tsx';
+
+interface ModuleRequestRow {
+  id: string; tenantId: string; tenantName: string;
+  moduleId: string; moduleName: string; moduleIcon: string;
+  requesterId: string; requesterName: string; requesterEmail: string;
+  useCase: string; status: 'pending' | 'approved' | 'dismissed';
+  createdAt: string;
+}
+
+app.get("/make-server-309fe679/module-requests", async (c) => {
+  try {
+    const tenantId = c.req.query("tenantId");
+    if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+    const raw = await kv.get(`module_requests:${tenantId}`);
+    const requests: ModuleRequestRow[] = raw ? JSON.parse(raw as string) : [];
+    return c.json({ requests });
+  } catch (err) {
+    console.log(`[module-requests GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchModuleRequests: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.post("/make-server-309fe679/module-requests", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { tenantId } = body;
+    if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+    const key = `module_requests:${tenantId}`;
+    const raw = await kv.get(key);
+    const requests: ModuleRequestRow[] = raw ? JSON.parse(raw as string) : [];
+    // Prevent duplicate pending requests for the same module/requester
+    const isDuplicate = requests.some(
+      r => r.moduleId === body.moduleId && r.requesterEmail === body.requesterEmail && r.status === 'pending'
+    );
+    if (isDuplicate) return c.json({ error: "You have already submitted a pending request for this module." }, 409);
+    const newRequest: ModuleRequestRow = {
+      ...body, id: crypto.randomUUID(), status: 'pending', createdAt: new Date().toISOString(),
+    };
+    requests.push(newRequest);
+    await kv.set(key, JSON.stringify(requests));
+    console.log(`[module-requests POST] New request: ${newRequest.moduleName} by ${newRequest.requesterEmail} for tenant ${tenantId}`);
+    return c.json({ request: newRequest });
+  } catch (err) {
+    console.log(`[module-requests POST] ${errMsg(err)}`);
+    return c.json({ error: `createModuleRequest: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.put("/make-server-309fe679/module-requests/:id", async (c) => {
+  try {
+    const id     = c.req.param("id");
+    const body   = await c.req.json();
+    const tenantId = body.tenantId;
+    if (!tenantId) return c.json({ error: "tenantId is required in body" }, 400);
+    const key = `module_requests:${tenantId}`;
+    const raw = await kv.get(key);
+    const requests: ModuleRequestRow[] = raw ? JSON.parse(raw as string) : [];
+    const idx = requests.findIndex(r => r.id === id);
+    if (idx < 0) return c.json({ error: "Request not found" }, 404);
+    requests[idx] = { ...requests[idx], ...body };
+    await kv.set(key, JSON.stringify(requests));
+    return c.json({ request: requests[idx] });
+  } catch (err) {
+    console.log(`[module-requests PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateModuleRequest: ${errMsg(err)}` }, 500);
+  }
+});
+
 Deno.serve(app.fetch);

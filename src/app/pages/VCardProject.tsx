@@ -7,6 +7,7 @@ import { CalendarDays, ImageIcon, ArrowLeft, Sparkles, LayoutGrid } from 'lucide
 import { useAuth } from '../components/AuthContext';
 import { ProfileBanner } from '../components/ProfileBanner';
 import { BackgroundLayout } from '../components/BackgroundLayout';
+import { EmployeeNav } from '../components/EmployeeNav';
 import { CreateContentWizard } from '../components/ai/CreateContentWizard';
 import { ContentBoard } from '../components/ai/ContentBoard';
 import { useFoldableLayout } from '../hooks/useFoldableLayout';
@@ -50,6 +51,7 @@ export function VCardProject() {
 
   return (
     <BackgroundLayout>
+      <EmployeeNav />
       {/* ── Header Banner ── */}
       <div className="bg-white/5 backdrop-blur-md border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
@@ -59,7 +61,7 @@ export function VCardProject() {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
-              onClick={() => navigate('/projects')}
+              onClick={() => navigate('/app/projects')}
               className="text-white/70 hover:text-white inline-flex items-center gap-2 text-sm w-fit transition-colors min-h-[2.75rem]"
             >
               <ArrowLeft className="w-4 h-4" />

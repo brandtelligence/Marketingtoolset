@@ -11,6 +11,7 @@ import {
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { ProfileBanner } from '../components/ProfileBanner';
 import { BackgroundLayout } from '../components/BackgroundLayout';
+import { EmployeeNav } from '../components/EmployeeNav';
 import { EditProjectModal } from '../components/EditProjectModal';
 import { useAuth } from '../components/AuthContext';
 import {
@@ -76,7 +77,7 @@ export function ProjectDetailPage() {
             <h2 className="text-white mb-2" style={{ fontSize: 'clamp(1.25rem, 3vw, 1.5rem)' }}>Project Not Found</h2>
             <p className="text-white/60 mb-6 text-sm sm:text-base">This project doesn't exist or has been removed.</p>
             <button
-              onClick={() => navigate('/projects')}
+              onClick={() => navigate('/app/projects')}
               className="inline-flex items-center gap-2 bg-white text-teal-600 px-5 py-3 rounded-xl hover:shadow-lg transition-all min-h-[2.75rem]"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -111,8 +112,9 @@ export function ProjectDetailPage() {
 
   return (
     <BackgroundLayout>
+      <EmployeeNav />
       {/* Main Content */}
-      <div className="min-h-screen px-4 py-8 sm:px-6 md:px-8 md:py-12">
+      <div className="min-h-screen px-4 py-6 sm:px-6 md:px-8">
         <div className="max-w-6xl mx-auto">
 
           {/* ── Back + Profile Banner row ── */}
@@ -123,8 +125,8 @@ export function ProjectDetailPage() {
             className="mb-6 sm:mb-8"
           >
             <button
-              onClick={() => navigate('/projects')}
-              className="text-white/80 hover:text-white mb-4 sm:mb-6 inline-flex items-center gap-2 text-sm transition-colors min-h-[2.75rem]"
+              onClick={() => navigate('/app/projects')}
+              className="text-white/70 hover:text-white mb-4 sm:mb-5 inline-flex items-center gap-2 text-sm transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Projects

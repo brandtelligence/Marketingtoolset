@@ -243,7 +243,41 @@ export const MOCK_TENANT_USAGE: { [tenantId: string]: UsageDataPoint[] } = {
 
 // ── Mock Users for Login ──────────────────────────────────────────────────────
 export const MOCK_AUTH_USERS = [
-  { email: 'it@brandtelligence.com.my', password: 'Th1l155a@2506', role: 'SUPER_ADMIN' as RoleType, name: 'IT Admin',    tenantId: null },
-  { email: 'james@acme.com',            password: 'tenant123',      role: 'TENANT_ADMIN' as RoleType, name: 'James Lim',  tenantId: 't1' },
-  { email: 'sarah.chen@brandtelligence.my', password: 'emp123',     role: 'EMPLOYEE' as RoleType,    name: 'Sarah Chen', tenantId: 't1' },
+  // ⚠️ Demo-safe password only — the real production super admin uses Supabase Auth
+  { email: 'it@brandtelligence.com.my', password: 'super123',   role: 'SUPER_ADMIN' as RoleType, name: 'IT Admin',    tenantId: null },
+  { email: 'james@acme.com',            password: 'tenant123',  role: 'TENANT_ADMIN' as RoleType, name: 'James Lim',  tenantId: 't1' },
+  { email: 'sarah.chen@brandtelligence.my', password: 'emp123', role: 'EMPLOYEE' as RoleType,    name: 'Sarah Chen', tenantId: 't1' },
+];
+
+// ── Module Requests (employee → tenant admin) ─────────────────────────────────
+export type ModuleRequestStatus = 'pending' | 'approved' | 'dismissed';
+export interface ModuleRequest {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  moduleId: string;
+  moduleName: string;
+  moduleIcon: string;
+  requesterId: string;
+  requesterName: string;
+  requesterEmail: string;
+  useCase: string;
+  status: ModuleRequestStatus;
+  createdAt: string;
+}
+export let MOCK_MODULE_REQUESTS: ModuleRequest[] = [
+  {
+    id: 'mr1', tenantId: 't1', tenantName: 'Acme Corp',
+    moduleId: 'm5', moduleName: 'Email Marketing', moduleIcon: '📧',
+    requesterId: 'u2', requesterName: 'Mei Ling', requesterEmail: 'mei@acme.com',
+    useCase: 'We need to run drip campaigns for our Q2 product launch.',
+    status: 'pending', createdAt: '2025-02-25T10:00:00Z',
+  },
+  {
+    id: 'mr2', tenantId: 't1', tenantName: 'Acme Corp',
+    moduleId: 'm6', moduleName: 'SEO Toolkit', moduleIcon: '🔍',
+    requesterId: 'u3', requesterName: 'Ravi Kumar', requesterEmail: 'ravi@acme.com',
+    useCase: 'Our organic traffic has dropped 30%. Need rank tracking urgently.',
+    status: 'pending', createdAt: '2025-02-26T14:30:00Z',
+  },
 ];

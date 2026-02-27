@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Lock, Zap, ExternalLink, MessageSquare } from 'lucide-react';
+import { Lock, Zap, ExternalLink, MessageSquare, Bell, CheckCircle, XCircle, Clock, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { StatusBadge } from '../../components/saas/StatusBadge';
@@ -7,7 +7,11 @@ import { DrawerForm, Field, Textarea } from '../../components/saas/DrawerForm';
 import { formatRM } from '../../utils/format';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
-import { fetchTenants, fetchModules, fetchFeatures, type Module } from '../../utils/apiClient';
+import {
+  fetchTenants, fetchModules, fetchFeatures,
+  fetchModuleRequests, updateModuleRequest,
+  type Module, type ModuleRequest,
+} from '../../utils/apiClient';
 
 export function TenantModulesPage() {
   const t = useDashboardTheme();
@@ -18,6 +22,7 @@ export function TenantModulesPage() {
   const [loading, setLoading] = useState(false);
   const [modules, setModules] = useState<Module[]>([]);
   const [features, setFeatures] = useState([]);
+  const [requests, setRequests] = useState<ModuleRequest[]>([]);
 
   useEffect(() => {
     const fetchTenantData = async () => {
@@ -44,11 +49,20 @@ export function TenantModulesPage() {
     fetchFeatureData();
   }, []);
 
+  useEffect(() => {
+    if (!user?.tenantId) return;
+    fetchModuleRequests(user.tenantId)
+      .then(setRequests)
+      .catch(err => console.error('[TenantModulesPage] failed to load module requests:', err));
+  }, [user?.tenantId]);
+
   if (!tenant) return null;
 
-  const entitledModules = modules.filter(m => tenant.moduleIds.includes(m.id));
+  const entitledModules  = modules.filter(m => tenant.moduleIds.includes(m.id));
   const availableModules = modules.filter(m => !tenant.moduleIds.includes(m.id) && m.globalEnabled);
   const featuresForModule = (moduleId: string) => features.filter(f => f.moduleId === moduleId);
+
+  const pendingRequests = requests.filter(r => r.status === 'pending');
 
   const handleUpgradeRequest = async () => {
     setLoading(true);
@@ -59,8 +73,22 @@ export function TenantModulesPage() {
     toast.success('Upgrade request sent to your account manager!');
   };
 
+  const handleRequestAction = async (req: ModuleRequest, status: 'approved' | 'dismissed') => {
+    try {
+      await updateModuleRequest(req.id, { status });
+      setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status } : r));
+      toast.success(status === 'approved'
+        ? `Request for "${req.moduleName}" approved — contact Brandtelligence to activate.`
+        : `Request dismissed.`
+      );
+    } catch (err: any) {
+      toast.error(`Failed to update request: ${err.message}`);
+    }
+  };
+
   const ModuleCard = ({ m, entitled }: { m: Module; entitled: boolean }) => {
-    const features = featuresForModule(m.id);
+    const feats = featuresForModule(m.id);
+    const moduleRequests = requests.filter(r => r.moduleId === m.id && r.status === 'pending');
     return (
       <div className={`rounded-2xl border p-5 transition-all ${
         entitled ? 'bg-teal-500/10 border-teal-500/20' : `${t.s0} ${t.border} opacity-60`
@@ -76,6 +104,11 @@ export function TenantModulesPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {moduleRequests.length > 0 && (
+              <span className="flex items-center gap-1 text-[0.6rem] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-full">
+                <Bell className="w-2.5 h-2.5" /> {moduleRequests.length} request{moduleRequests.length > 1 ? 's' : ''}
+              </span>
+            )}
             {entitled
               ? <StatusBadge status="enabled" />
               : <div className={`flex items-center gap-1.5 ${t.textFaint} text-xs`}><Lock className="w-3 h-3" /> Not Entitled</div>
@@ -85,10 +118,10 @@ export function TenantModulesPage() {
 
         <p className={`${t.textMd} text-xs mb-4 leading-relaxed`}>{m.description}</p>
 
-        {entitled && features.length > 0 && (
+        {entitled && feats.length > 0 && (
           <div className={`border-t ${t.border} pt-3 space-y-1.5`}>
             <p className={`${t.textFaint} text-[0.65rem] uppercase tracking-wider mb-2`}>Features</p>
-            {features.map(f => (
+            {feats.map(f => (
               <div key={f.id} className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Zap className={`w-3.5 h-3.5 ${f.globalEnabled ? 'text-teal-500' : t.textFaint}`} />
@@ -118,6 +151,60 @@ export function TenantModulesPage() {
         }
       />
 
+      {/* ── Employee Module Requests ────────────────────────────────────────── */}
+      {pendingRequests.length > 0 && (
+        <Card
+          title={`Staff Module Requests (${pendingRequests.length})`}
+          className="mb-6"
+          actions={
+            <span className="flex items-center gap-1.5 text-xs text-amber-400">
+              <Bell className="w-3.5 h-3.5" /> {pendingRequests.length} pending
+            </span>
+          }
+        >
+          <div className="space-y-3">
+            {pendingRequests.map(req => (
+              <div key={req.id} className={`flex items-start gap-3 p-3 rounded-xl ${t.s0} border ${t.border}`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base ${t.s1} shrink-0`}>
+                  {req.moduleIcon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <p className={`${t.text} text-sm font-medium`}>{req.moduleName}</p>
+                    <span className="flex items-center gap-1 text-[0.6rem] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-full">
+                      <Clock className="w-2.5 h-2.5" /> Pending
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <User className={`w-3 h-3 ${t.textFaint}`} />
+                    <span className={`${t.textFaint} text-xs`}>{req.requesterName} · {req.requesterEmail}</span>
+                  </div>
+                  {req.useCase && (
+                    <p className={`${t.textMd} text-xs italic leading-relaxed`}>"{req.useCase}"</p>
+                  )}
+                  <p className={`${t.textFaint} text-[0.65rem] mt-1`}>{new Date(req.createdAt).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                </div>
+                <div className="flex flex-col gap-1.5 shrink-0">
+                  <button
+                    onClick={() => handleRequestAction(req, 'approved')}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-500/20 border border-teal-500/30 text-teal-500 text-xs hover:bg-teal-500/30 transition-colors"
+                  >
+                    <CheckCircle className="w-3 h-3" /> Approve
+                  </button>
+                  <button
+                    onClick={() => handleRequestAction(req, 'dismissed')}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs hover:bg-red-500/20 transition-colors"
+                  >
+                    <XCircle className="w-3 h-3" /> Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Active modules ──────────────────────────────────────────────────── */}
       <div className="mb-8">
         <h2 className={`${t.textMd} text-xs uppercase tracking-wider mb-3 flex items-center gap-2`}>
           <StatusBadge status="enabled" dot /> Your Active Modules ({entitledModules.length})

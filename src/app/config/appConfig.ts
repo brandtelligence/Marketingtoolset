@@ -59,7 +59,12 @@
  * Setting no env var = production mode.
  */
 export const IS_DEMO_MODE: boolean =
-  (import.meta as any).env?.VITE_APP_ENV === 'demo';
+  (import.meta as any).env?.VITE_APP_ENV === 'demo' ||
+  // ── FIGMA MAKE PREVIEW ────────────────────────────────────────────────────
+  // Hardcoded true so every dashboard is previewable without real Supabase
+  // credentials. Flip this back to `false` (or remove the `|| true`) before
+  // deploying to marketingtool.brandtelligence.my.
+  true;
 
 /** Convenience inverse alias. */
 export const IS_PRODUCTION: boolean = !IS_DEMO_MODE;

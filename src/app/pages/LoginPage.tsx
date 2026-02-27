@@ -52,8 +52,9 @@ const HCAPTCHA_SITE_KEY = 'c4c493ae-610a-4666-9400-7cf45358637c';
 // Demo accounts chip list — rendered ONLY when SHOW_DEMO_CREDENTIALS is true
 // ⚠️  NEVER hardcode passwords into component JSX. They live in mockSaasData.ts.
 const DEMO_ACCOUNT_DISPLAY = [
-  { label: 'Tenant Admin', email: 'james@acme.com',                password: 'tenant123', badge: 'bg-purple-500/30 text-purple-300 border-purple-500/40' },
-  { label: 'Employee',     email: 'sarah.chen@brandtelligence.my', password: 'emp123',    badge: 'bg-teal-500/30 text-teal-300 border-teal-500/40' },
+  { label: 'Super Admin',  email: 'it@brandtelligence.com.my',  password: 'super123',  badge: 'bg-orange-500/30 text-orange-300 border-orange-500/40' },
+  { label: 'Tenant Admin', email: 'james@acme.com',              password: 'tenant123', badge: 'bg-purple-500/30 text-purple-300 border-purple-500/40' },
+  { label: 'Employee',     email: 'sarah.chen@brandtelligence.my', password: 'emp123', badge: 'bg-teal-500/30 text-teal-300 border-teal-500/40' },
 ];
 
 // ─── Route helper ─────────────────────────────────────────────────────────────
@@ -167,7 +168,7 @@ export function LoginPage() {
   const [loginCaptchaError,  setLoginCaptchaError]  = useState(false);
   const [signupCaptchaError, setSignupCaptchaError] = useState(false);
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────���───────────────────────
   // PRODUCTION AUTH FLOW
   // ─────────────────────────────────────────────────────────────────────────
 

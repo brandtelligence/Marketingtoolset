@@ -38,6 +38,10 @@ import { TenantUsagePage } from "./pages/tenant/UsagePage";
 import { TenantAuditPage } from "./pages/tenant/AuditPage";
 import { TenantSettingsPage } from "./pages/tenant/SettingsPage";
 
+// ── Employee sub-pages ──────────────────────────────────────────────────────
+import { EmployeeProfilePage }  from "./pages/employee/ProfilePage";
+import { EmployeeModulesPage }  from "./pages/employee/EmployeeModulesPage";
+
 // ── Public marketing website (now at root /*) ───────────────────────────────
 import { WebLayout }           from "./pages/web/WebLayout";
 import { WebHomePage }         from "./pages/web/WebHomePage";
@@ -104,6 +108,8 @@ export const router = createBrowserRouter([
       { path: "projects",            Component: ProjectsPage      },
       { path: "projects/vcard-saas", Component: VCardProject      },
       { path: "projects/:slug",      Component: ProjectDetailPage },
+      { path: "profile",             Component: EmployeeProfilePage },
+      { path: "modules",             Component: EmployeeModulesPage },
     ],
   },
 
