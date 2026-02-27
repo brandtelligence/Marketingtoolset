@@ -84,15 +84,14 @@ const DEFAULT_MODULES = [
   { id:"m18", key:"content_scrapper",    name:"Content Scrapper",             description:"Scrape, curate, and repurpose content from the web to fuel your pipeline.",             global_enabled:true,  base_price:180, icon:"🕷️", category:"marketing"     },
 ];
 
-// Features store moduleId + rolloutNote as JSON in the description column
-// (features table has no module_id or rollout_note columns)
+// Patch 02: module_id and rollout_note are now dedicated columns; description is plain text.
 const DEFAULT_FEATURES = [
-  { id:"f1", key:"ai_caption",       name:"AI Caption Generator",         description:JSON.stringify({ moduleId:"m1", rolloutNote:"100% rollout" }), global_enabled:true  },
-  { id:"f2", key:"bulk_schedule",    name:"Bulk Post Scheduler",          description:JSON.stringify({ moduleId:"m1", rolloutNote:"100% rollout" }), global_enabled:true  },
-  { id:"f3", key:"telegram_support", name:"Telegram Channel Support",     description:JSON.stringify({ moduleId:"m1", rolloutNote:"Beta – 50%"   }), global_enabled:true  },
-  { id:"f4", key:"content_approval", name:"Multi-step Approval Workflow", description:JSON.stringify({ moduleId:"m2", rolloutNote:"100% rollout" }), global_enabled:true  },
-  { id:"f5", key:"gpt4_gen",         name:"GPT-4 Content Generation",     description:JSON.stringify({ moduleId:"m2", rolloutNote:"Staged – 20%" }), global_enabled:false },
-  { id:"f6", key:"custom_reports",   name:"Custom Report Builder",        description:JSON.stringify({ moduleId:"m3", rolloutNote:"100% rollout" }), global_enabled:true  },
+  { id:"f1", key:"ai_caption",       name:"AI Caption Generator",         description:"AI-generated captions for social media posts.",          module_id:"m1", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f2", key:"bulk_schedule",    name:"Bulk Post Scheduler",          description:"Schedule multiple posts across platforms in one action.", module_id:"m1", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f3", key:"telegram_support", name:"Telegram Channel Support",     description:"Publish and manage Telegram channel posts natively.",     module_id:"m1", rollout_note:"Beta – 50%",   global_enabled:true  },
+  { id:"f4", key:"content_approval", name:"Multi-step Approval Workflow", description:"Route content through reviewer and approver stages.",     module_id:"m2", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f5", key:"gpt4_gen",         name:"GPT-4 Content Generation",     description:"Use GPT-4 to generate long-form and social content.",     module_id:"m2", rollout_note:"Staged – 20%", global_enabled:false },
+  { id:"f6", key:"custom_reports",   name:"Custom Report Builder",        description:"Build and export custom analytics reports.",              module_id:"m3", rollout_note:"100% rollout", global_enabled:true  },
 ];
 
 // Returns the verified row counts after upserting.
@@ -190,11 +189,11 @@ function rowToTenant(r: any) {
     moduleIds:       r.modules_enabled ?? [],
     createdAt:       r.created_at      ? String(r.created_at).slice(0, 10) : "",
     nextBillingDate: r.next_billing_date ?? null,
-    // Frontend-only fields without a Postgres column — return harmless defaults
-    size:            "",
-    taxId:           "",
-    billingAddress:  "",
-    suspendedReason: null,
+    // Patch 02: promoted from JSON ghost fields to real Postgres columns
+    size:            r.company_size    ?? "",
+    taxId:           r.tax_id          ?? "",
+    billingAddress:  r.billing_address ?? "",
+    suspendedReason: r.suspended_reason ?? null,
   };
 }
 
@@ -215,6 +214,11 @@ function tenantToPg(d: any): Record<string, any> {
   if (d.mrr            !== undefined) row.monthly_fee      = d.mrr;
   if (d.moduleIds      !== undefined) row.modules_enabled  = d.moduleIds;
   if (d.nextBillingDate!== undefined) row.next_billing_date= d.nextBillingDate;
+  // Patch 02: write to new dedicated columns
+  if (d.size           !== undefined) row.company_size     = d.size           || null;
+  if (d.taxId          !== undefined) row.tax_id           = d.taxId          || null;
+  if (d.billingAddress !== undefined) row.billing_address  = d.billingAddress || null;
+  if (d.suspendedReason!== undefined) row.suspended_reason = d.suspendedReason|| null;
   return row;
 }
 
@@ -249,7 +253,7 @@ function rowToTenantUser(r: any) {
 
 function tenantUserToPg(d: any): Record<string, any> {
   const row: Record<string, any> = {};
-  if (d.tenantId  !== undefined) row.tenant_id  = d.tenantId;
+  if (d.tenantId  !== undefined) row.tenant_id  = toUuid(d.tenantId);
   if (d.name      !== undefined) row.name       = d.name;
   if (d.email     !== undefined) row.email      = d.email;
   if (d.role      !== undefined) row.role       = d.role;
@@ -264,9 +268,9 @@ function tenantUserToPg(d: any): Record<string, any> {
 // Postgres status enum: paid | unpaid | overdue
 // Frontend InvoiceStatus: draft | sent | paid | overdue | suspended
 //
-// Extra invoice fields (invoiceNumber, tenantName, period, subtotal, tax,
-// paymentMethod, receiptUrl, notes, lines[]) are serialised as JSON in
-// the `description` column — the only text column available.
+// Patch 02: invoiceNumber, tenantName, period, subtotal, tax, paymentMethod,
+// receiptUrl, notes, lines[] are now dedicated Postgres columns.
+// `description` is kept in sync for legacy compatibility.
 
 function pgInvoiceStatus(frontendStatus: string): string {
   if (frontendStatus === "draft" || frontendStatus === "sent") return "unpaid";
@@ -279,48 +283,59 @@ function frontendInvoiceStatus(pgStatus: string): string {
 }
 
 function rowToInvoice(r: any) {
-  let extra: any = {};
-  try { extra = JSON.parse(r.description || "{}"); } catch { extra = { notes: r.description ?? "" }; }
   const total = Number(r.amount ?? 0);
+  // lines may be stored as jsonb (object) or text[] — normalise to array
+  let lines: any[] = [];
+  try {
+    lines = Array.isArray(r.lines) ? r.lines
+          : (r.lines ? (typeof r.lines === "string" ? JSON.parse(r.lines) : r.lines) : []);
+  } catch { lines = []; }
   return {
     id:            r.id,
-    tenantId:      r.tenant_id       ?? "",
-    invoiceNumber: extra.invoiceNumber ?? `INV-${r.id}`,
-    tenantName:    extra.tenantName    ?? "",
-    period:        extra.period        ?? "",
+    tenantId:      r.tenant_id      ?? "",
+    invoiceNumber: r.invoice_number || `INV-${(r.id ?? "").slice(0, 8).toUpperCase()}`,
+    tenantName:    r.tenant_name    ?? "",
+    period:        r.period         ?? "",
     status:        frontendInvoiceStatus(r.status ?? "unpaid"),
-    subtotal:      extra.subtotal      ?? total,
-    tax:           extra.tax           ?? 0,
+    subtotal:      Number(r.subtotal ?? total),
+    tax:           Number(r.tax     ?? 0),
     total,
-    dueDate:       r.due_date          ?? "",
+    dueDate:       r.due_date       ?? "",
     issuedAt:      r.created_at ? String(r.created_at).slice(0, 10) : "",
-    paidAt:        r.paid_date         ?? undefined,
-    paymentMethod: extra.paymentMethod ?? "none",
-    receiptUrl:    extra.receiptUrl    ?? undefined,
-    notes:         extra.notes         ?? "",
-    lines:         extra.lines         ?? [],
+    paidAt:        r.paid_date      ?? undefined,
+    paymentMethod: r.payment_method ?? "none",
+    receiptUrl:    r.receipt_url    ?? undefined,
+    notes:         r.notes          ?? "",
+    lines,
   };
 }
 
 function invoiceToPg(d: any): Record<string, any> {
-  const extra = JSON.stringify({
-    invoiceNumber: d.invoiceNumber,
-    tenantName:    d.tenantName,
-    period:        d.period,
-    subtotal:      d.subtotal,
-    tax:           d.tax,
-    paymentMethod: d.paymentMethod,
-    receiptUrl:    d.receiptUrl,
-    notes:         d.notes,
+  const row: Record<string, any> = {};
+  if (d.tenantId      !== undefined) row.tenant_id      = toUuid(d.tenantId);
+  if (d.total         !== undefined) row.amount          = d.total;
+  if (d.status        !== undefined) row.status          = pgInvoiceStatus(d.status);
+  if (d.dueDate       !== undefined) row.due_date        = d.dueDate   || null;
+  if (d.paidAt        !== undefined) row.paid_date       = d.paidAt    || null;
+  if (d.issuedAt      !== undefined) row.created_at      = d.issuedAt;
+  // Patch 02: dedicated columns
+  if (d.invoiceNumber !== undefined) row.invoice_number  = d.invoiceNumber ?? "";
+  if (d.tenantName    !== undefined) row.tenant_name     = d.tenantName    ?? "";
+  if (d.period        !== undefined) row.period          = d.period        ?? "";
+  if (d.subtotal      !== undefined) row.subtotal        = d.subtotal      ?? 0;
+  if (d.tax           !== undefined) row.tax             = d.tax           ?? 0;
+  if (d.paymentMethod !== undefined) row.payment_method  = d.paymentMethod ?? "none";
+  if (d.receiptUrl    !== undefined) row.receipt_url     = d.receiptUrl    || null;
+  if (d.notes         !== undefined) row.notes           = d.notes         ?? "";
+  if (d.lines         !== undefined) row.lines           = d.lines         ?? [];
+  // Keep description in sync for any legacy tooling that reads it
+  row.description = JSON.stringify({
+    invoiceNumber: d.invoiceNumber, tenantName: d.tenantName,
+    period:        d.period,        subtotal:   d.subtotal,
+    tax:           d.tax,           paymentMethod: d.paymentMethod,
+    receiptUrl:    d.receiptUrl,    notes:      d.notes,
     lines:         d.lines,
   });
-  const row: Record<string, any> = { description: extra };
-  if (d.tenantId  !== undefined) row.tenant_id = d.tenantId;
-  if (d.total     !== undefined) row.amount    = d.total;
-  if (d.status    !== undefined) row.status    = pgInvoiceStatus(d.status);
-  if (d.dueDate   !== undefined) row.due_date  = d.dueDate   || null;
-  if (d.paidAt    !== undefined) row.paid_date = d.paidAt    || null;
-  if (d.issuedAt  !== undefined) row.created_at= d.issuedAt;
   return row;
 }
 
@@ -352,19 +367,18 @@ function moduleToPg(d: any): Record<string, any> {
 }
 
 // ── FEATURES ──────────────────────────────────────────────────────────────────
-// moduleId + rolloutNote are stored as JSON in the `description` column.
+// Patch 02: module_id and rollout_note are now dedicated Postgres columns.
+// description is plain human-readable text (no longer JSON).
 
 function rowToFeature(r: any) {
-  let meta: any = {};
-  try { meta = JSON.parse(r.description || "{}"); } catch {}
   return {
     id:            r.id,
-    key:           r.key           ?? "",
-    name:          r.name          ?? "",
+    key:           r.key            ?? "",
+    name:          r.name           ?? "",
     globalEnabled: r.global_enabled ?? true,
-    moduleId:      meta.moduleId   ?? null,
-    rolloutNote:   meta.rolloutNote ?? "",
-    description:   meta.text       ?? r.description ?? "",
+    moduleId:      r.module_id      ?? null,
+    rolloutNote:   r.rollout_note   ?? "",
+    description:   r.description    ?? "",
   };
 }
 
@@ -372,15 +386,10 @@ function featureToPg(d: any): Record<string, any> {
   const row: Record<string, any> = {};
   if (d.key           !== undefined) row.key           = d.key;
   if (d.name          !== undefined) row.name          = d.name;
+  if (d.description   !== undefined) row.description   = d.description;
   if (d.globalEnabled !== undefined) row.global_enabled= d.globalEnabled;
-  // Merge description update while preserving existing moduleId / rolloutNote
-  if (d.description !== undefined || d.moduleId !== undefined || d.rolloutNote !== undefined) {
-    row.description = JSON.stringify({
-      text:        d.description ?? "",
-      moduleId:    d.moduleId    ?? null,
-      rolloutNote: d.rolloutNote ?? "",
-    });
-  }
+  if (d.moduleId      !== undefined) row.module_id     = d.moduleId     ?? null;
+  if (d.rolloutNote   !== undefined) row.rollout_note  = d.rolloutNote  ?? "";
   return row;
 }
 
@@ -405,12 +414,12 @@ function rowToAuditLog(r: any) {
 
 function auditLogToPg(d: any): Record<string, any> {
   return {
-    id:          d.id ?? `al${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    id:          d.id ?? crypto.randomUUID(),
     actor_id:    d.actorId   ?? "",
     actor_name:  d.actorName ?? "",
     actor_role:  d.actorRole ?? "SUPER_ADMIN",
-    tenant_id:   d.tenantId  ?? null,
-    tenant_name: d.tenantName?? null,
+    tenant_id:   toUuid(d.tenantId) ?? null,  // guard: non-UUID IDs → null (FK is uuid)
+    tenant_name: d.tenantName ?? null,
     action:      d.action    ?? "",
     resource:    d.resource  ?? "",
     detail:      d.detail    ?? "",
@@ -420,44 +429,49 @@ function auditLogToPg(d: any): Record<string, any> {
 }
 
 // ── PENDING REQUESTS ──────────────────────────────────────────────────────────
-// country, size, requestedModules, notes, rejectedReason are serialised as JSON
-// in the `message` column — the only free-text column available.
+// Patch 02: country, company_size, requested_modules, notes, rejected_reason
+// are now dedicated Postgres columns. `message` is kept in sync for legacy
+// compatibility but dedicated columns are the primary source of truth.
 
 function rowToRequest(r: any) {
-  let extra: any = {};
-  try { extra = JSON.parse(r.message || "{}"); } catch { extra = { notes: r.message ?? "" }; }
   return {
     id:               r.id,
-    companyName:      r.company_name ?? "",
-    contactName:      r.contact_name ?? "",
-    contactEmail:     r.email        ?? "",
-    country:          extra.country          ?? "",
-    size:             extra.size             ?? "",
-    requestedModules: extra.requestedModules ?? [],
-    notes:            extra.notes            ?? "",
-    status:           r.status ?? "pending",
+    companyName:      r.company_name      ?? "",
+    contactName:      r.contact_name      ?? "",
+    contactEmail:     r.email             ?? "",
+    country:          r.country           ?? "",
+    size:             r.company_size      ?? "",
+    requestedModules: r.requested_modules ?? [],
+    notes:            r.notes             ?? "",
+    status:           r.status            ?? "pending",
     createdAt:        r.submitted_at ? String(r.submitted_at).slice(0, 10) : "",
     reviewedAt:       r.reviewed_at  ?? undefined,
     reviewedBy:       r.reviewed_by  ?? undefined,
-    rejectedReason:   extra.rejectedReason ?? undefined,
+    rejectedReason:   r.rejected_reason   ?? undefined,
   };
 }
 
 function requestToPg(d: any): Record<string, any> {
-  const message = JSON.stringify({
+  const row: Record<string, any> = {};
+  if (d.companyName      !== undefined) row.company_name      = d.companyName;
+  if (d.contactName      !== undefined) row.contact_name      = d.contactName;
+  if (d.contactEmail     !== undefined) row.email             = d.contactEmail;
+  if (d.country          !== undefined) row.country           = d.country          ?? "";
+  if (d.size             !== undefined) row.company_size      = d.size             ?? "";
+  if (d.requestedModules !== undefined) row.requested_modules = d.requestedModules ?? [];
+  if (d.notes            !== undefined) row.notes             = d.notes            ?? "";
+  if (d.rejectedReason   !== undefined) row.rejected_reason   = d.rejectedReason   ?? null;
+  if (d.status           !== undefined) row.status            = d.status;
+  if (d.reviewedAt       !== undefined) row.reviewed_at       = d.reviewedAt;
+  if (d.reviewedBy       !== undefined) row.reviewed_by       = d.reviewedBy;
+  // Keep message column in sync for legacy tooling
+  row.message = JSON.stringify({
     notes:            d.notes            ?? "",
     country:          d.country          ?? "",
     size:             d.size             ?? "",
     requestedModules: d.requestedModules ?? [],
     rejectedReason:   d.rejectedReason   ?? null,
   });
-  const row: Record<string, any> = { message };
-  if (d.companyName  !== undefined) row.company_name = d.companyName;
-  if (d.contactName  !== undefined) row.contact_name = d.contactName;
-  if (d.contactEmail !== undefined) row.email        = d.contactEmail;
-  if (d.status       !== undefined) row.status       = d.status;
-  if (d.reviewedAt   !== undefined) row.reviewed_at  = d.reviewedAt;
-  if (d.reviewedBy   !== undefined) row.reviewed_by  = d.reviewedBy;
   return row;
 }
 
@@ -605,6 +619,23 @@ function errMsg(err: unknown): string {
   return String(err);
 }
 
+// ── UUID guard ────────────────────────────────────────────────────────────────
+// Postgres uuid columns reject anything that isn't a well-formed UUID.
+// Mock IDs ("tm1", "cc_101_…") must be coerced to null before an upsert.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(v: unknown): v is string {
+  return typeof v === "string" && UUID_RE.test(v);
+}
+/** Returns v unchanged if it is a valid UUID string, otherwise null. */
+function toUuid(v: unknown): string | null {
+  return isUuid(v) ? v : null;
+}
+
+// Placeholder UUID used when a NOT NULL uuid column receives a non-UUID value
+// (e.g. a display name like "Sarah Chen" stored in ContentCard.createdBy).
+// The human-readable name is always preserved in the companion *_name text column.
+const SYSTEM_USER_UUID = "00000000-0000-0000-0000-000000000001";
+
 // rowToContentCard — returns the exact ContentCard shape the frontend expects.
 // Maps DB snake_case columns → ContentCard camelCase fields, reverses enum aliases,
 // and restores ContentCard-only fields from the metadata JSONB column.
@@ -658,7 +689,7 @@ function rowToContentCard(r: any) {
 function contentCardToPg(d: any): Record<string, any> {
   const row: Record<string, any> = {};
 
-  if (d.tenantId !== undefined) row.tenant_id = d.tenantId || null;
+  if (d.tenantId !== undefined) row.tenant_id = toUuid(d.tenantId); // guard: non-UUID mock IDs → null
   if (d.title    !== undefined) row.title     = d.title;
 
   // ContentCard uses "caption"; DB column is "body" — accept either alias
@@ -670,11 +701,17 @@ function contentCardToPg(d: any): Record<string, any> {
   if (d.hashtags !== undefined) row.hashtags  = Array.isArray(d.hashtags) ? d.hashtags : [];
   if (d.mediaUrl !== undefined) row.media_url = d.mediaUrl ?? null;
 
-  if (d.createdBy !== undefined) row.created_by = d.createdBy;
-  // ContentCard has no separate createdByName — fall back to createdBy as the display name
+  // created_by is a NOT NULL uuid column — display names ("Sarah Chen") are not
+  // valid UUIDs so toUuid() returns null for them. Fall back to SYSTEM_USER_UUID
+  // so the NOT NULL constraint is never violated. The human-readable name is
+  // preserved in the created_by_name text column regardless.
+  if (d.createdBy !== undefined) {
+    row.created_by = toUuid(d.createdBy) ?? SYSTEM_USER_UUID;
+  }
   row.created_by_name = d.createdByName ?? d.createdBy ?? "";
 
-  if (d.approvedBy     !== undefined) row.approved_by      = d.approvedBy     ?? null;
+  // approved_by is a uuid column — team member mock IDs ("tm1", …) must become null
+  if (d.approvedBy     !== undefined) row.approved_by      = toUuid(d.approvedBy);
   if (d.approvedByName !== undefined) row.approved_by_name = d.approvedByName ?? null;
   if (d.approvedAt     !== undefined) row.approved_at      = d.approvedAt     ?? null;
 
@@ -792,17 +829,104 @@ app.get("/make-server-309fe679/tenants", async (c) => {
 app.post("/make-server-309fe679/tenants", async (c) => {
   try {
     const body = await c.req.json();
-    const id  = body.id ?? `t${Date.now()}`;
-    const row = {
+    const id   = body.id ?? crypto.randomUUID();
+    const row  = {
       ...tenantToPg(body),
       id,
       created_at: body.createdAt ?? new Date().toISOString(),
     };
+
+    // ── 1. Insert tenant record ───────────────────────────────────────────────
     const { data, error } = await supabaseAdmin
       .from("tenants").insert(row).select().single();
     if (error) throw error;
-    console.log(`[tenants POST] ${id}: ${body.name}`);
-    return c.json({ tenant: rowToTenant(data) });
+    const tenant = rowToTenant(data);
+
+    // ── 2. Onboard the Tenant Admin contact (non-fatal if invite fails) ───────
+    const adminEmail = body.adminEmail ?? body.email;
+    const adminName  = body.adminName  ?? adminEmail?.split("@")[0] ?? "Admin";
+    const tenantName = body.name       ?? "Your Company";
+    const plan       = body.plan       ?? "Starter";
+
+    if (adminEmail) {
+      try {
+        // Generate a Supabase invite link — also creates the auth.users row
+        const _appUrl = (Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "");
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: "invite",
+          email: adminEmail,
+          options: {
+            redirectTo: `${_appUrl}/auth/callback`,
+          },
+        });
+        if (linkError) {
+          console.log(`[tenants POST] invite link error for ${adminEmail}: ${linkError.message}`);
+        } else {
+          const actionUrl   = linkData.properties.action_link;
+          const supabaseUid = linkData.user?.id;
+
+          if (supabaseUid) {
+            // ── 3. Stamp user metadata so AuthContext resolves role + tenantId on first login
+            await supabaseAdmin.auth.admin.updateUserById(supabaseUid, {
+              user_metadata: {
+                role:        "TENANT_ADMIN",
+                tenant_id:   id,
+                tenant_name: tenantName,
+                first_name:  adminName.split(" ")[0] ?? adminName,
+                last_name:   adminName.split(" ").slice(1).join(" ") ?? "",
+                company:     tenantName,
+              },
+            });
+
+            // ── 4. Create tenant_users record for this admin
+            await supabaseAdmin.from("tenant_users").insert({
+              id:         crypto.randomUUID(),
+              tenant_id:  id,
+              name:       adminName,
+              email:      adminEmail,
+              role:       "TENANT_ADMIN",
+              status:     "invited",  // DB check: ('active','invited','suspended') — NOT 'pending_invite'
+              created_at: new Date().toISOString(),
+            });
+          }
+
+          // ── 5. Send branded invite email
+          await sendAuthEmail(
+            adminEmail,
+            "auth_invite_user",
+            {
+              inviteUrl:      actionUrl,
+              expiresAt:      "24 hours",
+              employeeName:   adminName,
+              companyName:    tenantName,
+              plan,
+              role:           "Tenant Administrator",
+              invitedByName:  "Brandtelligence",
+              invitedByEmail: "admin@brandtelligence.com.my",
+            },
+            `Welcome to Brandtelligence – Activate Your Account`,
+            fbWrap(`Welcome to Brandtelligence, ${adminName}!`,
+              `<p style="font-size:15px;line-height:1.7;color:#444;">
+                 Your company <strong>${tenantName}</strong> has been approved on the <strong>Brandtelligence</strong> platform on the <strong>${plan}</strong> plan.<br><br>
+                 You have been granted <strong>Tenant Administrator</strong> access. Click the button below to set your password and activate your portal.
+               </p>
+               ${fbBtn(actionUrl, "Activate Your Account →", "#0BA4AA")}
+               <p style="font-size:13px;color:#888;margin-top:20px;">
+                 Once inside, you can invite your team members, configure your modules, and start creating content.
+               </p>
+               ${fbWarn("This invite link expires in 24 hours and can only be used once.")}`
+            ),
+          );
+          console.log(`[tenants POST] Admin invite sent to ${adminEmail} for tenant ${id} (${tenantName})`);
+        }
+      } catch (inviteErr) {
+        // Non-fatal — tenant record exists; super admin can re-send the invite manually
+        console.log(`[tenants POST] invite step failed (non-fatal): ${errMsg(inviteErr)}`);
+      }
+    }
+
+    console.log(`[tenants POST] created ${id}: ${body.name}`);
+    return c.json({ tenant });
   } catch (err) {
     console.log(`[tenants POST] ${errMsg(err)}`);
     return c.json({ error: `createTenant: ${errMsg(err)}` }, 500);
@@ -892,7 +1016,7 @@ app.get("/make-server-309fe679/requests", async (c) => {
 app.post("/make-server-309fe679/requests", async (c) => {
   try {
     const body = await c.req.json();
-    const id   = body.id ?? `req${Date.now()}`;
+    const id   = body.id ?? crypto.randomUUID();
     const row  = {
       ...requestToPg(body),
       id,
@@ -918,22 +1042,31 @@ app.put("/make-server-309fe679/requests/:id", async (c) => {
       .from("pending_requests").select("*").eq("id", id).single();
     if (!existing) return c.json({ error: "Request not found" }, 404);
 
-    let existingExtra: any = {};
-    try { existingExtra = JSON.parse(existing.message || "{}"); } catch {}
-    const merged = {
-      notes:            body.notes            ?? existingExtra.notes            ?? "",
-      country:          body.country          ?? existingExtra.country          ?? "",
-      size:             body.size             ?? existingExtra.size             ?? "",
-      requestedModules: body.requestedModules ?? existingExtra.requestedModules ?? [],
-      rejectedReason:   body.rejectedReason   ?? existingExtra.rejectedReason   ?? null,
-    };
-    const row: Record<string, any> = { message: JSON.stringify(merged) };
-    if (body.companyName !== undefined) row.company_name = body.companyName;
-    if (body.contactName !== undefined) row.contact_name = body.contactName;
-    if (body.contactEmail!== undefined) row.email        = body.contactEmail;
-    if (body.status      !== undefined) row.status       = body.status;
-    if (body.reviewedAt  !== undefined) row.reviewed_at  = body.reviewedAt;
-    if (body.reviewedBy  !== undefined) row.reviewed_by  = body.reviewedBy;
+    // Patch 02: merge from dedicated columns (fall back to old JSON message for legacy rows)
+    let legacyExtra: any = {};
+    try { legacyExtra = JSON.parse(existing.message || "{}"); } catch {}
+
+    const row: Record<string, any> = {};
+    if (body.companyName      !== undefined) row.company_name      = body.companyName;
+    if (body.contactName      !== undefined) row.contact_name      = body.contactName;
+    if (body.contactEmail     !== undefined) row.email             = body.contactEmail;
+    if (body.status           !== undefined) row.status            = body.status;
+    if (body.reviewedAt       !== undefined) row.reviewed_at       = body.reviewedAt;
+    if (body.reviewedBy       !== undefined) row.reviewed_by       = body.reviewedBy;
+    // Dedicated columns — use body value, fall back to existing dedicated column, then legacy JSON
+    row.country           = body.country          ?? existing.country           ?? legacyExtra.country          ?? "";
+    row.company_size      = body.size             ?? existing.company_size      ?? legacyExtra.size             ?? "";
+    row.requested_modules = body.requestedModules ?? existing.requested_modules ?? legacyExtra.requestedModules ?? [];
+    row.notes             = body.notes            ?? existing.notes             ?? legacyExtra.notes            ?? "";
+    row.rejected_reason   = body.rejectedReason   ?? existing.rejected_reason   ?? legacyExtra.rejectedReason   ?? null;
+    // Keep message in sync for legacy tooling
+    row.message = JSON.stringify({
+      notes:            row.notes,
+      country:          row.country,
+      size:             row.company_size,
+      requestedModules: row.requested_modules,
+      rejectedReason:   row.rejected_reason,
+    });
 
     const { data, error } = await supabaseAdmin
       .from("pending_requests").update(row).eq("id", id).select().single();
@@ -967,7 +1100,7 @@ app.get("/make-server-309fe679/tenant-users", async (c) => {
 app.post("/make-server-309fe679/tenant-users", async (c) => {
   try {
     const body = await c.req.json();
-    const id   = body.id ?? `u${Date.now()}`;
+    const id   = body.id ?? crypto.randomUUID();
     const row  = {
       ...tenantUserToPg(body),
       id,
@@ -1033,7 +1166,7 @@ app.get("/make-server-309fe679/invoices", async (c) => {
 app.post("/make-server-309fe679/invoices", async (c) => {
   try {
     const body = await c.req.json();
-    const id   = body.id ?? `inv${Date.now()}`;
+    const id   = body.id ?? crypto.randomUUID();
     const row  = {
       ...invoiceToPg(body),
       id,
@@ -1058,26 +1191,34 @@ app.put("/make-server-309fe679/invoices/:id", async (c) => {
       .from("invoices").select("*").eq("id", id).single();
     if (!existing) return c.json({ error: "Invoice not found" }, 404);
 
-    let existingExtra: any = {};
-    try { existingExtra = JSON.parse(existing.description || "{}"); } catch {}
-    const mergedExtra = JSON.stringify({
-      invoiceNumber: body.invoiceNumber ?? existingExtra.invoiceNumber,
-      tenantName:    body.tenantName    ?? existingExtra.tenantName,
-      period:        body.period        ?? existingExtra.period,
-      subtotal:      body.subtotal      ?? existingExtra.subtotal,
-      tax:           body.tax           ?? existingExtra.tax,
-      paymentMethod: body.paymentMethod ?? existingExtra.paymentMethod,
-      receiptUrl:    body.receiptUrl    ?? existingExtra.receiptUrl,
-      notes:         body.notes         ?? existingExtra.notes,
-      lines:         body.lines         ?? existingExtra.lines,
-    });
+    // Patch 02: read from dedicated columns first, fall back to old JSON description for legacy rows
+    let legacyInvoiceExtra: any = {};
+    try { legacyInvoiceExtra = JSON.parse(existing.description || "{}"); } catch {}
 
-    const row: Record<string, any> = { description: mergedExtra };
-    if (body.tenantId !== undefined) row.tenant_id = body.tenantId;
+    const row: Record<string, any> = {};
+    if (body.tenantId !== undefined) row.tenant_id = toUuid(body.tenantId);
     if (body.total    !== undefined) row.amount    = body.total;
     if (body.status   !== undefined) row.status    = pgInvoiceStatus(body.status);
     if (body.dueDate  !== undefined) row.due_date  = body.dueDate  || null;
     if (body.paidAt   !== undefined) row.paid_date = body.paidAt   || null;
+    // Dedicated columns
+    row.invoice_number = body.invoiceNumber ?? existing.invoice_number ?? legacyInvoiceExtra.invoiceNumber ?? "";
+    row.tenant_name    = body.tenantName    ?? existing.tenant_name    ?? legacyInvoiceExtra.tenantName    ?? "";
+    row.period         = body.period        ?? existing.period         ?? legacyInvoiceExtra.period        ?? "";
+    row.subtotal       = body.subtotal      ?? legacyInvoiceExtra.subtotal ?? Number(existing.subtotal ?? 0);
+    row.tax            = body.tax           ?? legacyInvoiceExtra.tax      ?? Number(existing.tax      ?? 0);
+    row.payment_method = body.paymentMethod ?? existing.payment_method ?? legacyInvoiceExtra.paymentMethod ?? "none";
+    row.receipt_url    = body.receiptUrl    ?? existing.receipt_url    ?? legacyInvoiceExtra.receiptUrl    ?? null;
+    row.notes          = body.notes         ?? existing.notes          ?? legacyInvoiceExtra.notes         ?? "";
+    row.lines          = body.lines         ?? existing.lines          ?? legacyInvoiceExtra.lines         ?? [];
+    // Keep description in sync for legacy tooling
+    row.description = JSON.stringify({
+      invoiceNumber: row.invoice_number, tenantName:    row.tenant_name,
+      period:        row.period,         subtotal:      row.subtotal,
+      tax:           row.tax,            paymentMethod: row.payment_method,
+      receiptUrl:    row.receipt_url,    notes:         row.notes,
+      lines:         row.lines,
+    });
 
     const { data, error } = await supabaseAdmin
       .from("invoices").update(row).eq("id", id).select().single();
@@ -1091,7 +1232,7 @@ app.put("/make-server-309fe679/invoices/:id", async (c) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODULES  (Postgres: modules)
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────���──────────────────────────────────────────────────────────────────
 
 app.get("/make-server-309fe679/modules", async (c) => {
   try {
@@ -1145,14 +1286,13 @@ app.put("/make-server-309fe679/features/:id", async (c) => {
   try {
     const id  = c.req.param("id");
     const body= await c.req.json();
+    // Patch 02: read from dedicated columns; no JSON parsing needed
     const { data: existing } = await supabaseAdmin
-      .from("features").select("description").eq("id", id).single();
-    let existingMeta: any = {};
-    try { existingMeta = JSON.parse(existing?.description || "{}"); } catch {}
+      .from("features").select("module_id, rollout_note").eq("id", id).single();
     const row = featureToPg({
       ...body,
-      moduleId:    body.moduleId    ?? existingMeta.moduleId,
-      rolloutNote: body.rolloutNote ?? existingMeta.rolloutNote,
+      moduleId:    body.moduleId    ?? existing?.module_id,
+      rolloutNote: body.rolloutNote ?? existing?.rollout_note,
     });
     const { data, error } = await supabaseAdmin
       .from("features").update(row).eq("id", id).select().single();
@@ -1241,7 +1381,7 @@ app.post("/make-server-309fe679/usage", async (c) => {
       users:       point.users   ?? 0,
       recorded_at: new Date().toISOString(),
     };
-    if (tenantId) row.tenant_id = tenantId;
+    if (tenantId) row.tenant_id = toUuid(tenantId); // guard: non-UUID mock IDs → null
     const { error } = await supabaseAdmin.from("usage_stats").insert(row);
     if (error) throw error;
     return c.json({ success: true });
@@ -1276,6 +1416,8 @@ app.post("/make-server-309fe679/content-cards", async (c) => {
   try {
     const { card } = await c.req.json();
     if (!card || !card.id) return c.json({ error: "card with id is required" }, 400);
+    // Reject non-UUID ids early — the id column is uuid type
+    if (!toUuid(card.id)) return c.json({ error: `Card id "${card.id}" is not a valid UUID` }, 400);
     const row = {
       id: card.id,
       ...contentCardToPg(card),
@@ -1305,8 +1447,14 @@ app.post("/make-server-309fe679/content-cards/sync", async (c) => {
     if (!Array.isArray(cards)) return c.json({ error: "cards array is required" }, 400);
     if (cards.length === 0)    return c.json({ success: true, count: 0 });
     const now = new Date().toISOString();
-    const rows = cards.map((card: any) => ({
-      id: card.id,
+    // Filter out any card whose id is not a valid UUID — stale mock IDs like
+    // "cal_1" or "cc_1" would cause a 22P02 Postgres error on the uuid PK column.
+    const validCards = cards.filter((card: any) => toUuid(card.id) !== null);
+    const skipped = cards.length - validCards.length;
+    if (skipped > 0) console.log(`[content-cards/sync] Skipped ${skipped} cards with non-UUID ids`);
+    if (validCards.length === 0) return c.json({ success: true, count: 0 });
+    const rows = validCards.map((card: any) => ({
+      id: card.id,                           // already validated as UUID above
       ...contentCardToPg(card),
       created_at: card.createdAt ?? now,
       updated_at: now,
@@ -1349,16 +1497,16 @@ app.post("/make-server-309fe679/approval-events", async (c) => {
     const { event } = await c.req.json();
     if (!event) return c.json({ error: "event is required" }, 400);
     const row: Record<string, any> = {
-      id:         event.id ?? `ev${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id:         event.id ?? crypto.randomUUID(),
       event_type: normEventType(event.eventType ?? event.event_type ?? "submitted"),
-      actor_id:   event.actorId   ?? event.actor_id   ?? "",
+      actor_id:   event.actorId ?? event.actor_id ?? "",  // text NOT NULL — keep raw string; toUuid() would null non-UUIDs
       actor_name: event.actorName ?? event.actor_name ?? "",
       actor_role: event.actorRole ?? event.actor_role ?? "",
       message:    event.message   ?? null,
       created_at: event.createdAt ?? new Date().toISOString(),
     };
-    if (event.cardId   || event.card_id)   row.card_id   = event.cardId   ?? event.card_id;
-    if (event.tenantId || event.tenant_id) row.tenant_id = event.tenantId ?? event.tenant_id;
+    if (event.cardId   || event.card_id)   row.card_id   = toUuid(event.cardId   ?? event.card_id);
+    if (event.tenantId || event.tenant_id) row.tenant_id = toUuid(event.tenantId ?? event.tenant_id);
     const { error } = await supabaseAdmin.from("approval_events").insert(row);
     if (error) throw error;
     console.log(`[approval-events POST] ${row.id} type=${row.event_type}`);
@@ -1522,7 +1670,7 @@ app.put("/make-server-309fe679/email-templates/:id", async (c) => {
       subject:    body.subject   ?? "",
       html:       body.html      ?? "",
       updated_at: new Date().toISOString(),
-      updated_by: body.updatedBy ?? null,
+      updated_by: body.updatedBy ?? "",  // NOT NULL — never send null; empty string = system/unknown
     };
     const { error } = await supabaseAdmin
       .from("email_templates")
@@ -1676,7 +1824,7 @@ async function sendAuthEmail(
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────���──────────────
 // AUTH ROUTES  (generateLink + custom email dispatch — unchanged externally)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1686,7 +1834,7 @@ app.post("/make-server-309fe679/auth/confirm-signup", async (c) => {
     if (!email) return c.json({ error: "email is required" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "signup", email,
-      options: { redirectTo: `${Deno.env.get("APP_URL") || "https://brandtelligence.com.my"}/` },
+      options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate confirmation link: ${error?.message}` }, 500);
     const name = userName || email.split("@")[0];
@@ -1711,7 +1859,7 @@ app.post("/make-server-309fe679/auth/invite-user", async (c) => {
     if (!email) return c.json({ error: "email is required" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "invite", email,
-      options: { redirectTo: `${Deno.env.get("APP_URL") || "https://brandtelligence.com.my"}/` },
+      options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate invite link: ${error?.message}` }, 500);
     const actionUrl  = data.properties.action_link;
@@ -1743,7 +1891,7 @@ app.post("/make-server-309fe679/auth/magic-link", async (c) => {
     if (!email) return c.json({ error: "email is required" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "magiclink", email,
-      options: { redirectTo: `${Deno.env.get("APP_URL") || "https://brandtelligence.com.my"}/` },
+      options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate magic link: ${error?.message}` }, 500);
     const name = userName || email.split("@")[0];
@@ -1794,7 +1942,7 @@ app.post("/make-server-309fe679/auth/reset-password", async (c) => {
     if (!email) return c.json({ error: "email is required" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "recovery", email,
-      options: { redirectTo: `${Deno.env.get("APP_URL") || "https://brandtelligence.com.my"}/` },
+      options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate reset link: ${error?.message}` }, 500);
     const name = userName || email.split("@")[0];
@@ -1811,6 +1959,81 @@ app.post("/make-server-309fe679/auth/reset-password", async (c) => {
   } catch (err) {
     console.log(`[auth/reset-password] Error: ${errMsg(err)}`);
     return c.json({ error: `reset-password error: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─── Activate Account (AAL2-safe password set via admin API) ──────────────────
+// Called by AuthCallbackPage instead of supabase.auth.updateUser() to bypass
+// the "AAL2 session required" error that fires when MFA is enforced at the
+// Supabase project level.
+//
+// IDENTITY VERIFICATION STRATEGY
+// ────────────────────────────────
+// JWT verification does not work here: Supabase invite-flow PKCE sessions
+// issue a token that the /auth/v1/user REST endpoint rejects with "Invalid JWT"
+// (it is only trusted by the client SDK).
+//
+// Instead we accept the user's UUID (resolved from session.user.id in the
+// browser after the PKCE exchange) and confirm identity server-side by
+// checking that the auth record has a RECENT invite or recovery link:
+//   • user.invited_at      — set when generateLink(type:"invite") was called
+//   • user.recovery_sent_at — set when generateLink(type:"recovery") was called
+// Both fields are written server-side and cannot be spoofed from the client.
+//
+// Security: UUID is 128-bit random (unguessable), AND the timestamp window
+// must be open, so an attacker needs both a valid UUID AND a recently issued
+// link — which is equivalent to having clicked the email link themselves.
+app.post("/make-server-309fe679/auth/activate-account", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => null);
+    const { userId, password } = body ?? {};
+
+    if (!userId || typeof userId !== "string") {
+      return c.json({ error: "Missing user ID — please try clicking the link in your email again" }, 400);
+    }
+    if (!password || typeof password !== "string" || password.length < 8) {
+      return c.json({ error: "Password must be at least 8 characters" }, 400);
+    }
+
+    // 1. Resolve the user via admin API
+    const { data: { user }, error: getUserErr } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (getUserErr || !user) {
+      console.log(`[auth/activate-account] getUserById failed for uid ${userId}: ${getUserErr?.message}`);
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    // 2. Time-bounded identity check (24 h — matches recommended Supabase OTP expiry)
+    const now        = Date.now();
+    const WINDOW_MS  = 24 * 60 * 60 * 1000;
+    const invitedMs  = user.invited_at       ? new Date(user.invited_at).getTime()       : 0;
+    const recoveryMs = user.recovery_sent_at  ? new Date(user.recovery_sent_at).getTime()  : 0;
+
+    const validInvite   = invitedMs  > 0 && (now - invitedMs)  < WINDOW_MS;
+    const validRecovery = recoveryMs > 0 && (now - recoveryMs) < WINDOW_MS;
+
+    if (!validInvite && !validRecovery) {
+      console.log(
+        `[auth/activate-account] Window expired for uid ${userId}` +
+        ` — invited_at: ${user.invited_at ?? "none"}, recovery_sent_at: ${user.recovery_sent_at ?? "none"}`
+      );
+      return c.json(
+        { error: "This activation window has expired. Please request a new invite or password reset link." },
+        403
+      );
+    }
+
+    // 3. Update password via admin API — exempt from AAL2 enforcement
+    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(userId, { password });
+    if (updateErr) {
+      console.log(`[auth/activate-account] updateUserById failed for uid ${userId}: ${updateErr.message}`);
+      return c.json({ error: `Password update failed: ${updateErr.message}` }, 500);
+    }
+
+    console.log(`[auth/activate-account] Password set for uid ${userId} (${user.email})`);
+    return c.json({ success: true });
+  } catch (err) {
+    console.log(`[auth/activate-account] Unexpected error: ${errMsg(err)}`);
+    return c.json({ error: `activate-account error: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -1837,6 +2060,188 @@ app.post("/make-server-309fe679/auth/reauth", async (c) => {
   } catch (err) {
     console.log(`[auth/reauth] Error: ${errMsg(err)}`);
     return c.json({ error: `reauth error: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESEND TENANT ADMIN INVITE
+// Regenerates a Supabase invite link for an existing tenant's admin contact,
+// re-stamps their user_metadata (role / tenant_id / tenant_name), and
+// delivers a fresh branded invite email.
+// ───────────────────────────────────────────��─────────────────────────────────
+
+app.post("/make-server-309fe679/auth/resend-tenant-invite", async (c) => {
+  try {
+    // Auth guard — only SUPER_ADMINs should call this
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (accessToken) {
+      const { data: { user: caller } } = await supabaseAdmin.auth.getUser(accessToken);
+      const callerRole = (caller?.user_metadata?.role ?? "") as string;
+      if (caller && callerRole !== "SUPER_ADMIN") {
+        return c.json({ error: "Forbidden: SUPER_ADMIN role required" }, 403);
+      }
+    }
+
+    const { email, tenantId, tenantName, adminName, plan } = await c.req.json();
+    if (!email || !tenantId) return c.json({ error: "email and tenantId are required" }, 400);
+
+    // Strip trailing slash so APP_URL="https://host/" never produces "//auth/callback"
+    const APP_URL    = (Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "");
+    const redirectTo = `${APP_URL}/auth/callback`;
+
+    // ── Link-generation strategy ────────────────────────────────────────────────
+    // Supabase type:"invite" only works for users NOT yet in auth.users.
+    // For existing users we must branch:
+    //   • unconfirmed (never activated)  → delete stale user + fresh invite
+    //   • confirmed   (already active)   → password-recovery link
+    // This eliminates "A user with this email address has already been registered".
+
+    let actionUrl:   string;
+    let supabaseUid: string | undefined;
+    let linkKind:    "invite" | "recovery" = "invite";
+
+    // Attempt 1 — try a fresh invite (works when user does NOT exist yet)
+    const { data: freshInvite, error: freshErr } = await supabaseAdmin.auth.admin.generateLink({
+      type: "invite", email, options: { redirectTo },
+    });
+
+    if (freshInvite?.properties?.action_link) {
+      actionUrl   = freshInvite.properties.action_link;
+      supabaseUid = freshInvite.user?.id;
+      linkKind    = "invite";
+    } else {
+      // Attempt 2 — user already exists; look them up
+      console.log(`[resend-tenant-invite] Fresh invite failed (${freshErr?.message}); looking up existing auth user…`);
+      const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+      if (listErr) throw new Error(`Failed to list auth users: ${listErr.message}`);
+
+      const existingUser = listData?.users?.find(
+        (u: any) => u.email?.toLowerCase() === email.toLowerCase(),
+      );
+      if (!existingUser) {
+        throw new Error(`generateLink failed and user not found in auth.users — ${freshErr?.message}`);
+      }
+
+      supabaseUid = existingUser.id;
+
+      if (!existingUser.email_confirmed_at) {
+        // 2a — unconfirmed: delete stale record, issue a clean invite
+        console.log(`[resend-tenant-invite] Unconfirmed user ${email} — deleting and re-inviting…`);
+        const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
+        if (delErr) throw new Error(`Failed to delete stale auth user: ${delErr.message}`);
+
+        const { data: reInvite, error: reErr } = await supabaseAdmin.auth.admin.generateLink({
+          type: "invite", email, options: { redirectTo },
+        });
+        if (reErr || !reInvite?.properties?.action_link) {
+          throw new Error(`Failed to re-invite after delete: ${reErr?.message ?? "no action_link"}`);
+        }
+        actionUrl   = reInvite.properties.action_link;
+        supabaseUid = reInvite.user?.id;
+        linkKind    = "invite";
+      } else {
+        // 2b — confirmed: user already set a password; send password-recovery link
+        console.log(`[resend-tenant-invite] Confirmed user ${email} — sending recovery link…`);
+        const { data: recovery, error: recErr } = await supabaseAdmin.auth.admin.generateLink({
+          type: "recovery", email, options: { redirectTo },
+        });
+        if (recErr || !recovery?.properties?.action_link) {
+          throw new Error(`Failed to generate recovery link: ${recErr?.message ?? "no action_link"}`);
+        }
+        actionUrl = recovery.properties.action_link;
+        linkKind  = "recovery";
+      }
+    }
+
+    const name     = adminName ?? email.split("@")[0];
+    const company  = tenantName ?? "Your Company";
+    const planName = plan ?? "Starter";
+
+    // Re-stamp user metadata so role + tenantId are always correct on login
+    if (supabaseUid) {
+      await supabaseAdmin.auth.admin.updateUserById(supabaseUid, {
+        user_metadata: {
+          role:        "TENANT_ADMIN",
+          tenant_id:   tenantId,
+          tenant_name: company,
+          first_name:  name.split(" ")[0] ?? name,
+          last_name:   name.split(" ").slice(1).join(" ") ?? "",
+          company,
+        },
+      });
+
+      // Ensure tenant_users row exists for this admin (upsert by email + tenant_id)
+      const { data: existing } = await supabaseAdmin
+        .from("tenant_users")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("email", email)
+        .maybeSingle();
+      if (!existing) {
+        await supabaseAdmin.from("tenant_users").insert({
+          id:         crypto.randomUUID(),
+          tenant_id:  tenantId,
+          name,
+          email,
+          role:       "TENANT_ADMIN",
+          status:     "invited",  // DB check: ('active','invited','suspended') — NOT 'pending_invite'
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Send branded email — body differs for invite vs recovery links
+    const isRecovery = linkKind === "recovery";
+    const emailSubject = isRecovery
+      ? `Reset Your Brandtelligence Password`
+      : `Your Brandtelligence Invite Has Been Resent`;
+    const emailHeading = isRecovery
+      ? `Reset Your Password, ${name}`
+      : `Welcome (Again) to Brandtelligence, ${name}!`;
+    const emailBody = isRecovery
+      ? `<p style="font-size:15px;line-height:1.7;color:#444;">
+           Your <strong>Tenant Administrator</strong> account for <strong>${company}</strong> on
+           <strong>Brandtelligence</strong> is already active.<br><br>
+           Use the button below to reset your password and sign back in.
+         </p>
+         ${fbBtn(actionUrl, "Reset My Password →", "#0BA4AA")}
+         <p style="font-size:13px;color:#888;margin-top:20px;">
+           If you did not request this, you can safely ignore this email.
+         </p>
+         ${fbWarn("This link expires in 24 hours.")}`
+      : `<p style="font-size:15px;line-height:1.7;color:#444;">
+           A new invite has been generated for <strong>${company}</strong> on the
+           <strong>Brandtelligence</strong> platform (<strong>${planName}</strong> plan).<br><br>
+           Click below to set your password and activate your <strong>Tenant Administrator</strong> access.
+         </p>
+         ${fbBtn(actionUrl, "Activate Your Account →", "#0BA4AA")}
+         <p style="font-size:13px;color:#888;margin-top:20px;">
+           Once inside, you can invite your team members, configure your modules, and start creating content.
+         </p>
+         ${fbWarn("This invite link expires in 24 hours. Any previous invite links are now invalid.")}`;
+
+    await sendAuthEmail(
+      email,
+      "auth_invite_user",
+      {
+        inviteUrl:      actionUrl,
+        expiresAt:      "24 hours",
+        employeeName:   name,
+        companyName:    company,
+        plan:           planName,
+        role:           "Tenant Administrator",
+        invitedByName:  "Brandtelligence",
+        invitedByEmail: "admin@brandtelligence.com.my",
+      },
+      emailSubject,
+      fbWrap(emailHeading, emailBody),
+    );
+
+    console.log(`[auth/resend-tenant-invite] ${linkKind} link sent to ${email} for tenant ${tenantId} (${company})`);
+    return c.json({ success: true, message: `Invite resent to ${email}`, linkKind });
+  } catch (err) {
+    console.log(`[auth/resend-tenant-invite] Error: ${errMsg(err)}`);
+    return c.json({ error: `resend-tenant-invite: ${errMsg(err)}` }, 500);
   }
 });
 

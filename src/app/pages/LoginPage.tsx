@@ -24,7 +24,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft, Eye, EyeOff, Upload, Check, X,
   Mail, Lock, User, Building2, Phone,
-  ShieldCheck, Info, Loader2, FlaskConical,
+  ShieldCheck, Info, Loader2, FlaskConical, Clock,
 } from 'lucide-react';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
 import brandtelligenceLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
@@ -69,7 +69,7 @@ type ViewMode = 'login' | 'signup' | 'forgot' | 'mfa-challenge';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, user, sessionLoading } = useAuth();
 
   // ── View state ─────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('login');
@@ -78,10 +78,20 @@ export function LoginPage() {
   const [loginEmail,    setLoginEmail]    = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError,    setLoginError]    = useState('');
+  const [linkExpired,   setLinkExpired]   = useState(false); // true when Supabase returns otp_expired
   const [loginLoading,  setLoginLoading]  = useState(false);
   const [showPassword,  setShowPassword]  = useState(false);
   const [showDemoHint,  setShowDemoHint]  = useState(false);
   const [rememberMe,    setRememberMe]    = useState(false);
+
+  // ── Redirect already-authenticated users straight to their dashboard ───────
+  // Runs after sessionLoading is done so we don't flash a redirect before we
+  // know whether a session actually exists.
+  useEffect(() => {
+    if (!sessionLoading && user) {
+      navigate(roleToRoute(user.role), { replace: true });
+    }
+  }, [user, sessionLoading, navigate]);
 
   // Pre-fill remembered email on mount
   useEffect(() => {
@@ -90,6 +100,40 @@ export function LoginPage() {
       setLoginEmail(saved);
       setRememberMe(true);
     }
+  }, []);
+
+  // ── Handle Supabase auth-callback error fragments ──────────────────────────
+  // When an invite / magic-link / recovery token is expired or invalid, Supabase
+  // redirects back to the app with a URL fragment like:
+  //   #error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired
+  // We parse this on mount, show a clear in-page message, and strip the hash
+  // so a page refresh doesn't re-show it.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash === '#') return;
+
+    const params = new URLSearchParams(hash.replace(/^#/, ''));
+    const error      = params.get('error');
+    const errorCode  = params.get('error_code');
+    const errorDesc  = params.get('error_description');
+
+    if (!error) return;
+
+    // Clean the hash from the address bar immediately
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    if (errorCode === 'otp_expired' || error === 'access_denied') {
+      setLinkExpired(true);
+      setLoginError(
+        'Your activation link has expired or has already been used. ' +
+        'Please ask your administrator to resend the invite.',
+      );
+    } else {
+      const readable = errorDesc ? errorDesc.replace(/\+/g, ' ') : error;
+      setLoginError(`Authentication error: ${readable}. Please try again or contact support.`);
+    }
+
+    console.warn('[LoginPage] Supabase auth error from URL hash:', { error, errorCode, errorDesc });
   }, []);
 
   // ── MFA challenge state (production) ───────────────────────────────────────
@@ -130,6 +174,7 @@ export function LoginPage() {
   const performLoginProduction = async (captchaToken: string) => {
     setLoginLoading(true);
     setLoginError('');
+    setLinkExpired(false);
     try {
       // 1. Sign in with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -211,6 +256,7 @@ export function LoginPage() {
   const performLoginDemo = (_captchaToken: string) => {
     setLoginLoading(true);
     setLoginError('');
+    setLinkExpired(false);
 
     const authUser = MOCK_AUTH_USERS.find(
       u => u.email.toLowerCase() === loginEmail.toLowerCase() && u.password === loginPassword,
@@ -554,10 +600,22 @@ export function LoginPage() {
                     </span>
                   </div>
 
-                  {/* Auth error */}
-                  {loginError && (
-                    <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
-                      <ShieldCheck className="w-4 h-4 shrink-0" />{loginError}
+                  {/* Auth error — two visual variants */}
+                  {loginError && !linkExpired && (
+                    <div className="flex items-start gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
+                      <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{loginError}</span>
+                    </div>
+                  )}
+                  {loginError && linkExpired && (
+                    <div className="bg-amber-500/15 border border-amber-400/40 rounded-xl px-4 py-3 text-sm space-y-1">
+                      <div className="flex items-center gap-2 text-amber-300 font-medium">
+                        <Clock className="w-4 h-4 shrink-0" />
+                        Invite link expired
+                      </div>
+                      <p className="text-amber-200/80 leading-snug pl-6">
+                        {loginError}
+                      </p>
                     </div>
                   )}
                   {loginCaptchaError && (

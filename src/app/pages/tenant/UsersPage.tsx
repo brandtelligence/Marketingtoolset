@@ -65,7 +65,7 @@ export function TenantUsersPage() {
     }
 
     const newUser: TenantUser = {
-      id: `u${Date.now()}`, tenantId: user?.tenantId ?? 't1',
+      id: crypto.randomUUID(), tenantId: user?.tenantId ?? 't1',
       name: inviteEmail.split('@')[0], email: inviteEmail,
       role: inviteRole, status: 'pending_invite', joinedAt: new Date().toISOString().slice(0, 10),
     };

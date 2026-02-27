@@ -1,0 +1,141 @@
+/*
+ * web-light.css — Light-mode overrides for the public marketing website.
+ *
+ * Intentionally NOT placed inside any @layer block.
+ * In Tailwind v4, CSS cascade layers mean that unlayered rules automatically
+ * win over layered ones (@layer utilities, @layer base) at equal specificity,
+ * so these selectors cleanly override Tailwind utilities without !important.
+ *
+ * Scope: all descendants of .web-light (applied by WebLayout in light mode).
+ * Brand accent colours (bt-teal, bt-orange, bt-purple) are intentionally
+ * left untouched — they look great on both light and dark backgrounds.
+ */
+
+/* ── Page wrapper ──────────────────────────────────────────────────────────── */
+.web-light {
+  background-color: #f8f9fc;
+  color: #0e0d1c;
+}
+
+/* ── Text: white → dark-on-light equivalents ──────────────────────────────── */
+.web-light .text-white           { color: #0e0d1c; }
+.web-light .text-white\/80       { color: rgb(14 13 28 / 0.84); }
+.web-light .text-white\/70       { color: rgb(14 13 28 / 0.74); }
+.web-light .text-white\/65       { color: rgb(14 13 28 / 0.68); }
+.web-light .text-white\/60       { color: rgb(14 13 28 / 0.63); }
+.web-light .text-white\/55       { color: rgb(14 13 28 / 0.58); }
+.web-light .text-white\/50       { color: rgb(14 13 28 / 0.53); }
+.web-light .text-white\/45       { color: rgb(14 13 28 / 0.48); }
+.web-light .text-white\/40       { color: rgb(14 13 28 / 0.44); }
+.web-light .text-white\/35       { color: rgb(14 13 28 / 0.40); }
+.web-light .text-white\/30       { color: rgb(14 13 28 / 0.36); }
+.web-light .text-white\/25       { color: rgb(14 13 28 / 0.32); }
+.web-light .text-white\/20       { color: rgb(14 13 28 / 0.28); }
+.web-light .text-white\/15       { color: rgb(14 13 28 / 0.22); }
+.web-light .text-white\/10       { color: rgb(14 13 28 / 0.16); }
+
+/* ── Card / surface backgrounds ───────────────────────────────────────────── */
+.web-light .bg-white\/\[0\.015\] { background-color: #f0f1f8; }
+.web-light .bg-white\/\[0\.03\]  { background-color: rgba(255 255 255 / 0.95); }
+.web-light .bg-white\/\[0\.04\]  { background-color: rgba(255 255 255 / 1); }
+.web-light .bg-white\/\[0\.05\]  { background-color: rgba(255 255 255 / 1); }
+.web-light .bg-white\/\[0\.06\]  { background-color: rgba(0 0 0 / 0.04); }
+.web-light .bg-white\/\[0\.07\]  { background-color: rgba(0 0 0 / 0.04); }
+.web-light .bg-white\/\[0\.08\]  { background-color: rgba(0 0 0 / 0.05); }
+.web-light .bg-white\/5          { background-color: rgba(0 0 0 / 0.03); }
+
+/* Section alternating backgrounds */
+.web-light .bg-bt-purple\/\[0\.04\] { background-color: #eef0f8; }
+
+/* Hover bg utilities */
+.web-light .hover\:bg-white\/8:hover         { background-color: rgba(0 0 0 / 0.06); }
+.web-light .hover\:bg-white\/\[0\.07\]:hover { background-color: rgba(0 0 0 / 0.05); }
+.web-light .hover\:bg-white\/\[0\.08\]:hover { background-color: rgba(0 0 0 / 0.06); }
+.web-light .hover\:bg-white\/10:hover        { background-color: rgba(0 0 0 / 0.07); }
+
+/* Backdrop dark fills */
+.web-light .bg-black\/30 { background-color: rgba(0 0 0 / 0.05); }
+
+/* ── Borders: white → subtle gray ─────────────────────────────────────────── */
+.web-light .border-white\/\[0\.05\] { border-color: rgb(0 0 0 / 0.06); }
+.web-light .border-white\/\[0\.06\] { border-color: rgb(0 0 0 / 0.07); }
+.web-light .border-white\/\[0\.07\] { border-color: rgb(0 0 0 / 0.08); }
+.web-light .border-white\/\[0\.08\] { border-color: rgb(0 0 0 / 0.09); }
+.web-light .border-white\/\[0\.09\] { border-color: rgb(0 0 0 / 0.10); }
+.web-light .border-white\/\[0\.1\]  { border-color: rgb(0 0 0 / 0.10); }
+.web-light .border-white\/\[0\.10\] { border-color: rgb(0 0 0 / 0.10); }
+.web-light .border-white\/\[0\.12\] { border-color: rgb(0 0 0 / 0.12); }
+.web-light .border-white\/\[0\.15\] { border-color: rgb(0 0 0 / 0.15); }
+.web-light .border-white\/5         { border-color: rgb(0 0 0 / 0.06); }
+.web-light .border-white\/10        { border-color: rgb(0 0 0 / 0.09); }
+.web-light .border-white\/15        { border-color: rgb(0 0 0 / 0.12); }
+.web-light .border-white\/20        { border-color: rgb(0 0 0 / 0.15); }
+
+/* Hover borders */
+.web-light .hover\:border-white\/\[0\.15\]:hover { border-color: rgb(0 0 0 / 0.20); }
+.web-light .hover\:border-bt-teal\/20:hover      { border-color: rgba(11 164 170 / 0.35); }
+
+/* ── Gradient text spans: ensure they stay vivid on light bg ─────────────── */
+/* Gradient text uses bg-clip-text; the gradient colours are brand colours    */
+/* so they look great on light backgrounds already. No override needed.       */
+
+/* ── Glow blobs: increase opacity slightly on light bg for visibility ──────── */
+.web-light .bg-bt-teal\/8    { background-color: rgba(11 164 170 / 0.12); }
+.web-light .bg-bt-teal\/\[0\.08\] { background-color: rgba(11 164 170 / 0.12); }
+.web-light .bg-bt-purple\/15 { background-color: rgba(62 60 112 / 0.10); }
+.web-light .bg-bt-purple\/20 { background-color: rgba(62 60 112 / 0.12); }
+.web-light .bg-bt-purple\/\[0\.04\] { background-color: #eef0f8; }
+
+/* ── Grid pattern overlay opacity ─────────────────────────────────────────── */
+.web-light .opacity-\[0\.03\]  { opacity: 0.06; }
+.web-light .opacity-\[0\.025\] { opacity: 0.05; }
+
+/* ── Form inputs / selects ────────────────────────────────────────────────── */
+.web-light input,
+.web-light textarea,
+.web-light select {
+  color-scheme: light;
+  background-color: rgba(255 255 255 / 0.95);
+  border-color: rgb(0 0 0 / 0.12);
+  color: #0e0d1c;
+}
+.web-light input::placeholder,
+.web-light textarea::placeholder {
+  color: rgb(14 13 28 / 0.35);
+}
+/* Tailwind placeholder-white/25 utility override */
+.web-light .placeholder-white\/25::placeholder { color: rgb(14 13 28 / 0.35); }
+
+.web-light select option {
+  background-color: #ffffff;
+  color: #0e0d1c;
+}
+/* focus:bg-white/[0.08] on inputs becomes a light focus bg */
+.web-light .focus\:bg-white\/\[0\.08\]:focus { background-color: rgba(255 255 255 / 1); }
+
+/* ── Focus rings ──────────────────────────────────────────────────────────── */
+.web-light .focus\:border-bt-teal\/50:focus {
+  border-color: rgba(11 164 170 / 0.55);
+}
+
+/* ── Shadow colors ────────────────────────────────────────────────────────── */
+.web-light .shadow-2xl { box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.12); }
+.web-light .shadow-black\/60 { --tw-shadow-color: rgb(0 0 0 / 0.12); }
+.web-light .shadow-black\/40 { --tw-shadow-color: rgb(0 0 0 / 0.08); }
+
+/* ── Backdrop/modal overlays ──────────────────────────────────────────────── */
+.web-light .bg-black\/80 { background-color: rgba(255 255 255 / 0.85); }
+
+/* ── Trust logos ticker ───────────────────────────────────────────────────── */
+.web-light .text-white\/25 { color: rgb(14 13 28 / 0.30); }
+
+/* ── Backdrop blur surfaces (floating badges, modals) ─────────────────────── */
+.web-light .backdrop-blur,
+.web-light .backdrop-blur-xl {
+  backdrop-filter: blur(16px) saturate(160%);
+}
+
+/* ── Hardcoded dark-background hex borders (avatar stacks, timeline dots) ─── */
+/* These use the page background colour to create a "cut-out" border effect.  */
+.web-light .border-\[\#06070f\] { border-color: #f8f9fc; }
+.web-light .border-\[\#06070f\]\/50 { border-color: rgba(248 249 252 / 0.50); }

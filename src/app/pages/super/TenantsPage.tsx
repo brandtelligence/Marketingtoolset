@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Building2, Users, CreditCard, ToggleLeft, ToggleRight, Eye, AlertTriangle } from 'lucide-react';
+import { Building2, Users, CreditCard, ToggleLeft, ToggleRight, Eye, AlertTriangle, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn, StatCard } from '../../components/saas/SaasLayout';
 import { DataTable, Column } from '../../components/saas/DataTable';
 import { StatusBadge } from '../../components/saas/StatusBadge';
-import { DrawerForm, Field, Select, ConfirmDialog } from '../../components/saas/DrawerForm';
+import { DrawerForm, ConfirmDialog } from '../../components/saas/DrawerForm';
 import { RoleBadge } from '../../components/saas/StatusBadge';
 import { useOutletContext } from 'react-router';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { formatRM } from '../../utils/format';
+import { useAuth } from '../../components/AuthContext';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
   fetchTenants, updateTenant, fetchModules, fetchTenantUsers, fetchInvoices,
   type Tenant, type TenantStatus,
@@ -18,15 +20,18 @@ type TabKey = 'overview' | 'modules' | 'users' | 'invoices';
 
 export function TenantsPage() {
   const t = useDashboardTheme();
-  const [tenants,      setTenants]      = useState<Tenant[]>([]);
-  const [allModules,   setAllModules]   = useState<any[]>([]);
-  const [drawerUsers,  setDrawerUsers]  = useState<any[]>([]);
+  const { user } = useAuth();
+  const [tenants,        setTenants]        = useState<Tenant[]>([]);
+  const [allModules,     setAllModules]     = useState<any[]>([]);
+  const [drawerUsers,    setDrawerUsers]    = useState<any[]>([]);
   const [drawerInvoices, setDrawerInvoices] = useState<any[]>([]);
-  const [selected,     setSelected]     = useState<Tenant | null>(null);
-  const [drawerOpen,   setDrawerOpen]   = useState(false);
-  const [activeTab,    setActiveTab]    = useState<TabKey>('overview');
-  const [suspendDialog, setSuspendDialog] = useState(false);
-  const [loading,      setLoading]      = useState(false);
+  const [selected,       setSelected]       = useState<Tenant | null>(null);
+  const [drawerOpen,     setDrawerOpen]     = useState(false);
+  const [activeTab,      setActiveTab]      = useState<TabKey>('overview');
+  const [suspendDialog,  setSuspendDialog]  = useState(false);
+  const [resendDialog,   setResendDialog]   = useState(false);
+  const [loading,        setLoading]        = useState(false);
+  const [resendLoading,  setResendLoading]  = useState(false);
   const { setImpersonating } = useOutletContext<{ impersonating: string | null; setImpersonating: (v: string | null) => void }>();
 
   useEffect(() => {
@@ -71,6 +76,36 @@ export function TenantsPage() {
     finally { setLoading(false); }
   };
 
+  const handleResendInvite = async () => {
+    if (!selected?.adminEmail) return;
+    setResendLoading(true);
+    try {
+      const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
+      const AUTH   = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
+      const res = await fetch(`${SERVER}/auth/resend-tenant-invite`, {
+        method: 'POST',
+        headers: AUTH,
+        body: JSON.stringify({
+          email:      selected.adminEmail,
+          tenantId:   selected.id,
+          tenantName: selected.name,
+          adminName:  selected.adminName,
+          plan:       selected.plan,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Resend failed');
+      toast.success(`Invite resent to ${selected.adminEmail}`, {
+        description: 'A new 24-hour activation link has been delivered.',
+      });
+      setResendDialog(false);
+    } catch (err: any) {
+      toast.error(`Resend failed: ${err.message}`);
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   const columns: Column<Tenant>[] = [
     {
       key: 'name', header: 'Tenant', sortable: true,
@@ -96,6 +131,13 @@ export function TenantsPage() {
       render: ten => (
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <button onClick={() => openTenant(ten)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`} title="View"><Eye className="w-4 h-4" /></button>
+          <button
+            onClick={() => { setSelected(ten); setResendDialog(true); }}
+            className="p-1.5 rounded-lg hover:bg-teal-500/20 text-teal-500 transition-colors"
+            title="Resend invite"
+          >
+            <Send className="w-4 h-4" />
+          </button>
           <button onClick={() => { setSelected(ten); setImpersonating(ten.name); toast.info(`Impersonating ${ten.name} (read-only)`); }}
             className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-500" title="Impersonate">
             <Users className="w-4 h-4" />
@@ -180,6 +222,27 @@ export function TenantsPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Resend invite action */}
+                {selected.adminEmail && (
+                  <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-teal-500/20 bg-teal-500/5">
+                    <div>
+                      <p className={`${t.text} text-sm font-medium`}>Resend Activation Invite</p>
+                      <p className={`${t.textFaint} text-xs`}>
+                        Generates a new 24-hour invite link and emails it to <span className="font-medium">{selected.adminEmail}</span>
+                      </p>
+                    </div>
+                    <PrimaryBtn
+                      variant="teal"
+                      onClick={() => setResendDialog(true)}
+                      loading={resendLoading}
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      Resend
+                    </PrimaryBtn>
+                  </div>
+                )}
+
                 {selected.suspendedReason && (
                   <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
                     <p className="text-orange-500 text-xs mb-1">Suspension Reason</p>
@@ -256,6 +319,7 @@ export function TenantsPage() {
         )}
       </DrawerForm>
 
+      {/* Suspend / Reactivate dialog */}
       <ConfirmDialog
         open={suspendDialog} onClose={() => setSuspendDialog(false)} onConfirm={handleSuspend}
         title={selected?.status === 'suspended' ? `Reactivate ${selected?.name}?` : `Suspend ${selected?.name}?`}
@@ -265,6 +329,16 @@ export function TenantsPage() {
         confirmLabel={selected?.status === 'suspended' ? 'Reactivate' : 'Suspend'}
         confirmVariant={selected?.status === 'suspended' ? 'primary' : 'danger'}
         loading={loading}
+      />
+
+      {/* Resend invite confirmation dialog */}
+      <ConfirmDialog
+        open={resendDialog} onClose={() => setResendDialog(false)} onConfirm={handleResendInvite}
+        title={`Resend invite to ${selected?.adminName ?? selected?.adminEmail}?`}
+        description={`A new 24-hour activation link will be emailed to ${selected?.adminEmail}. Any previously sent invite links will be invalidated.`}
+        confirmLabel="Resend Invite"
+        confirmVariant="primary"
+        loading={resendLoading}
       />
     </div>
   );

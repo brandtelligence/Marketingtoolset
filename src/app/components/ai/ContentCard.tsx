@@ -389,7 +389,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
     // Log submit event for real-time notification
     logApprovalEvent({
-      id: `evt_${Date.now()}_sub`,
+      id: crypto.randomUUID(),
       cardId: card.id,
       cardTitle: card.title,
       platform: platformNames[card.platform] || card.platform,
@@ -451,7 +451,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
     // Log approval event
     logApprovalEvent({
-      id: `evt_${Date.now()}`,
+      id: crypto.randomUUID(),
       cardId: card.id,
       cardTitle: card.title,
       platform: platformNames[card.platform] || card.platform,
@@ -503,7 +503,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
     // Log rejection event for real-time notification
     logApprovalEvent({
-      id: `evt_${Date.now()}_rej`,
+      id: crypto.randomUUID(),
       cardId: card.id,
       cardTitle: card.title,
       platform: platformNames[card.platform] || card.platform,
@@ -553,7 +553,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
     // Log revert event for real-time notification
     logApprovalEvent({
-      id: `evt_${Date.now()}_rev`,
+      id: crypto.randomUUID(),
       cardId: card.id,
       cardTitle: card.title,
       platform: platformNames[card.platform] || card.platform,

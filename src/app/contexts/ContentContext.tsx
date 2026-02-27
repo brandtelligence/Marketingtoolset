@@ -97,9 +97,31 @@ function createAuditId() {
   return `audit_${++auditIdCounter}_${Date.now()}`;
 }
 
-let cardIdCounter = 100;
+/** Always returns a spec-compliant UUID so Postgres uuid columns never reject it. */
 export function createCardId() {
-  return `cc_${++cardIdCounter}_${Date.now()}`;
+  return crypto.randomUUID();
+}
+
+/**
+ * Converts any stable string seed into a deterministic, spec-compliant UUID v4.
+ * Used for mock/calendar cards so their IDs never change across page reloads
+ * (keeping Postgres upsert deduplication intact) yet always satisfy the uuid column type.
+ */
+function deterministicUuid(seed: string): string {
+  // Double djb2 hash → 128 bits
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < seed.length; i++) {
+    const ch = seed.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hex = ((h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0')).padEnd(32, '0');
+  // Set version = 4 and variant = 10xx
+  const v = '4';
+  const vnt = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${v}${hex.slice(13,16)}-${vnt}${hex.slice(17,20)}-${hex.slice(20,32)}`;
 }
 
 // ─── API Helper ───────────────────────────────────────────────────────────────
@@ -122,10 +144,28 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   return res.json();
 }
 
+// UUID guard — Postgres uuid columns reject anything that isn't a well-formed UUID.
+// Applied client-side so the payload is safe even if a cached Edge Function build runs.
+const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function toUuidOrNull(v: unknown): string | null {
+  return typeof v === 'string' && _UUID_RE.test(v) ? v : null;
+}
+
 // Serialize dates in a card for JSON storage
 function serializeCard(card: ContentCard): any {
   return {
     ...card,
+    // --- UUID column guards ---
+    // content_cards.created_by is a uuid column; ContentCard.createdBy stores a
+    // display name ("Sarah Chen") which Postgres rejects. Send null for the uuid
+    // column and pass the name via createdByName so the server writes it to the
+    // text column created_by_name instead.
+    createdByName: card.createdBy,            // → created_by_name (text)
+    createdBy: toUuidOrNull(card.createdBy),  // → created_by      (uuid)
+    // content_cards.approved_by is a uuid column; ContentCard.approvedBy stores
+    // a mock team-member ID ("tm1") which is not a valid UUID.
+    approvedBy: toUuidOrNull(card.approvedBy ?? null), // → approved_by (uuid)
+    // --- Date serialisation ---
     approvedAt: card.approvedAt ? (card.approvedAt instanceof Date ? card.approvedAt.toISOString() : card.approvedAt) : undefined,
     rejectedAt: card.rejectedAt ? (card.rejectedAt instanceof Date ? card.rejectedAt.toISOString() : card.rejectedAt) : undefined,
     createdAt: card.createdAt instanceof Date ? card.createdAt.toISOString() : card.createdAt,
@@ -182,7 +222,7 @@ function calendarPostToCard(post: (typeof socialMediaCalendar)[number]): Content
   const dateLabel = `${monthNames[monthIdx] || dateParts[1]} ${dayNum}`;
 
   return {
-    id: `cal_${post.id}`,
+    id: deterministicUuid(`cal_${post.id}`),
     projectId: '1', // all calendar posts belong to the vCard SaaS project
     platform: platformToLower[post.platform] || post.platform.toLowerCase(),
     channel: 'social-media',
@@ -224,7 +264,7 @@ function buildInitialCards(): ContentCard[] {
 // Manually-authored content cards (these may overlap dates with calendar cards — that's fine)
 const manualMockCards: ContentCard[] = [
   {
-    id: 'cc_1',
+    id: deterministicUuid('cc_1'),
     projectId: '1',
     platform: 'instagram',
     channel: 'social-media',
@@ -254,7 +294,7 @@ const manualMockCards: ContentCard[] = [
     ],
   },
   {
-    id: 'cc_2',
+    id: deterministicUuid('cc_2'),
     projectId: '1',
     platform: 'facebook',
     channel: 'social-media',
@@ -276,7 +316,7 @@ const manualMockCards: ContentCard[] = [
     ],
   },
   {
-    id: 'cc_3',
+    id: deterministicUuid('cc_3'),
     projectId: '1',
     platform: 'linkedin',
     channel: 'social-media',
@@ -293,7 +333,7 @@ const manualMockCards: ContentCard[] = [
     ],
   },
   {
-    id: 'cc_4',
+    id: deterministicUuid('cc_4'),
     projectId: '1',
     platform: 'tiktok',
     channel: 'social-media',
@@ -319,7 +359,7 @@ const manualMockCards: ContentCard[] = [
     ],
   },
   {
-    id: 'cc_5',
+    id: deterministicUuid('cc_5'),
     projectId: '1',
     platform: 'twitter',
     channel: 'social-media',

@@ -49,7 +49,7 @@ export async function fetchTenants(): Promise<Tenant[]> {
 
 export async function createTenant(data: Partial<Tenant>): Promise<Tenant> {
   if (!IS_PRODUCTION) {
-    const t: Tenant = { id: `t${Date.now()}`, ...data } as Tenant;
+    const t: Tenant = { id: crypto.randomUUID(), ...data } as Tenant;
     MOCK_TENANTS.push(t);
     return t;
   }
@@ -87,7 +87,7 @@ export async function fetchRequests(): Promise<PendingRequest[]> {
 
 export async function createRequest(data: Partial<PendingRequest>): Promise<PendingRequest> {
   if (!IS_PRODUCTION) {
-    const r: PendingRequest = { id: `req${Date.now()}`, status: 'pending', ...data } as PendingRequest;
+    const r: PendingRequest = { id: crypto.randomUUID(), status: 'pending', ...data } as PendingRequest;
     MOCK_REQUESTS.push(r);
     return r;
   }
@@ -121,7 +121,7 @@ export async function fetchTenantUsers(tenantId?: string): Promise<TenantUser[]>
 
 export async function createTenantUser(data: Partial<TenantUser>): Promise<TenantUser> {
   if (!IS_PRODUCTION) {
-    const u: TenantUser = { id: `u${Date.now()}`, status: 'pending_invite', ...data } as TenantUser;
+    const u: TenantUser = { id: crypto.randomUUID(), status: 'pending_invite', ...data } as TenantUser;
     MOCK_TENANT_USERS.push(u);
     return u;
   }
@@ -164,7 +164,7 @@ export async function fetchInvoices(tenantId?: string): Promise<Invoice[]> {
 
 export async function createInvoice(data: Partial<Invoice>): Promise<Invoice> {
   if (!IS_PRODUCTION) {
-    const inv: Invoice = { id: `inv${Date.now()}`, ...data } as Invoice;
+    const inv: Invoice = { id: crypto.randomUUID(), ...data } as Invoice;
     MOCK_INVOICES.push(inv);
     return inv;
   }

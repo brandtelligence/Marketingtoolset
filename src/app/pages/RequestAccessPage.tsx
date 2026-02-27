@@ -4,7 +4,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft, Building2, Mail, Globe, Users, FileText,
   CheckCircle, Send, Sparkles, Gift, AlertTriangle, Clock,
-  XCircle, ChevronDown, ChevronUp, Check,
+  XCircle, ChevronDown, Check, Search,
+  // Module icons
+  Share2, Wand2, BarChart3, CreditCard, MailCheck, SearchCheck,
+  Target, PenLine, Layers, Link2, Film, Smartphone, Bot, Star,
+  Mic2, Video, Newspaper, DatabaseZap,
+  // Category icons
+  Cpu, TrendingUp, PieChart, MessageSquare,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BackgroundLayout } from '../components/BackgroundLayout';
@@ -15,40 +21,206 @@ import {
 } from '../utils/apiClient';
 import { formatRM } from '../utils/format';
 
-/**
- * RequestAccessPage — /request-access
- * Public page — no auth required.
- *
- * EMAIL LOGIC (SaaS best practice):
- *   On blur of the email field → GET /check-access-email returns one of:
- *   • "available"  → green ✅  proceed normally
- *   • "tenant"     → red  🔴  already has an account → link to /login
- *   • "pending"    → amber ⏳  request already submitted → show date
- *   • "rejected"   → red  ❌  prior request declined → contact support
- *
- * MODULE SELECTION:
- *   • Required — at least 1 module must be selected
- *   • Grouped by category with select-all per group
- *   • Live RM total ticker (after 14-day free trial)
- *   • Popular badge on flagship modules
- */
-
-const POPULAR_IDS = ['m1', 'm2', 'm3'];
-const CATEGORY_META: Record<string, { label: string; emoji: string; order: number }> = {
-  core:          { label: 'Core',          emoji: '🏗', order: 0 },
-  marketing:     { label: 'Marketing',     emoji: '📢', order: 1 },
-  analytics:     { label: 'Analytics',     emoji: '📊', order: 2 },
-  communication: { label: 'Communication', emoji: '📬', order: 3 },
+// ─── Module key → Lucide icon ──────────────────────────────────────────────
+const MODULE_ICONS: Record<string, React.ElementType> = {
+  social_media:        Share2,
+  content_studio:      Wand2,
+  analytics:           BarChart3,
+  vcard:               CreditCard,
+  email_marketing:     MailCheck,
+  seo_toolkit:         SearchCheck,
+  sem:                 Target,
+  content_marketing:   PenLine,
+  display_advertising: Layers,
+  affiliate_marketing: Link2,
+  video_marketing:     Film,
+  mobile_marketing:    Smartphone,
+  programmatic_ads:    Bot,
+  influencer:          Star,
+  podcast_audio:       Mic2,
+  webinars_events:     Video,
+  pr_media:            Newspaper,
+  content_scrapper:    DatabaseZap,
 };
+
+// ─── Category metadata ──────────────────────────────────────────────────────
+const POPULAR_IDS = ['m1', 'm2', 'm3'];
+const CATEGORY_META: Record<string, { label: string; Icon: React.ElementType; order: number }> = {
+  core:          { label: 'Core',          Icon: Cpu,            order: 0 },
+  marketing:     { label: 'Marketing',     Icon: TrendingUp,     order: 1 },
+  analytics:     { label: 'Analytics',     Icon: PieChart,       order: 2 },
+  communication: { label: 'Communication', Icon: MessageSquare,  order: 3 },
+};
+
+// ─── Team-size options ──────────────────────────────────────────────────────
+const TEAM_SIZES = [
+  { value: '1-10',    label: '1 – 10',    sub: 'Solo / Micro team'   },
+  { value: '11-50',   label: '11 – 50',   sub: 'Growing team'        },
+  { value: '51-200',  label: '51 – 200',  sub: 'Mid-size company'    },
+  { value: '201-500', label: '201 – 500', sub: 'Large enterprise'    },
+  { value: '500+',    label: '500+',      sub: 'Global organisation' },
+];
+
+// ─── All countries (Malaysia pinned first) ──────────────────────────────────
+const COUNTRIES = [
+  'Malaysia',
+  'Afghanistan','Albania','Algeria','Andorra','Angola','Antigua and Barbuda','Argentina',
+  'Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Barbados',
+  'Belarus','Belgium','Belize','Benin','Bhutan','Bolivia','Bosnia and Herzegovina',
+  'Botswana','Brazil','Brunei','Bulgaria','Burkina Faso','Burundi','Cabo Verde','Cambodia',
+  'Cameroon','Canada','Central African Republic','Chad','Chile','China','Colombia',
+  'Comoros','Congo (Republic)','Congo (Democratic Republic)','Costa Rica','Croatia','Cuba',
+  'Cyprus','Czech Republic','Denmark','Djibouti','Dominica','Dominican Republic',
+  'East Timor','Ecuador','Egypt','El Salvador','Equatorial Guinea','Eritrea','Estonia',
+  'Eswatini','Ethiopia','Fiji','Finland','France','Gabon','Gambia','Georgia','Germany',
+  'Ghana','Greece','Grenada','Guatemala','Guinea','Guinea-Bissau','Guyana','Haiti',
+  'Honduras','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Israel',
+  'Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya','Kiribati','Kosovo','Kuwait',
+  'Kyrgyzstan','Laos','Latvia','Lebanon','Lesotho','Liberia','Libya','Liechtenstein',
+  'Lithuania','Luxembourg','Madagascar','Malawi','Maldives','Mali','Malta',
+  'Marshall Islands','Mauritania','Mauritius','Mexico','Micronesia','Moldova','Monaco',
+  'Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nauru','Nepal',
+  'Netherlands','New Zealand','Nicaragua','Niger','Nigeria','North Korea',
+  'North Macedonia','Norway','Oman','Pakistan','Palau','Palestine','Panama',
+  'Papua New Guinea','Paraguay','Peru','Philippines','Poland','Portugal','Qatar',
+  'Romania','Russia','Rwanda','Saint Kitts and Nevis','Saint Lucia',
+  'Saint Vincent and the Grenadines','Samoa','San Marino','Sao Tome and Principe',
+  'Saudi Arabia','Senegal','Serbia','Seychelles','Sierra Leone','Singapore','Slovakia',
+  'Slovenia','Solomon Islands','Somalia','South Africa','South Korea','South Sudan',
+  'Spain','Sri Lanka','Sudan','Suriname','Sweden','Switzerland','Syria','Taiwan',
+  'Tajikistan','Tanzania','Thailand','Togo','Tonga','Trinidad and Tobago','Tunisia',
+  'Turkey','Turkmenistan','Tuvalu','Uganda','Ukraine','United Arab Emirates',
+  'United Kingdom','United States','Uruguay','Uzbekistan','Vanuatu','Vatican City',
+  'Venezuela','Vietnam','Yemen','Zambia','Zimbabwe',
+];
+
+// ─── Reusable custom dropdown ───────────────────────────────────────────────
+interface CustomSelectProps {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string; sub?: string }[];
+  placeholder?: string;
+  searchable?: boolean;
+  icon?: React.ElementType;
+}
+
+function CustomSelect({ value, onChange, options, placeholder = 'Select…', searchable = false, icon: Icon }: CustomSelectProps) {
+  const [open, setOpen]     = useState(false);
+  const [query, setQuery]   = useState('');
+  const ref                 = useRef<HTMLDivElement>(null);
+  const searchRef           = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (open && searchable) setTimeout(() => searchRef.current?.focus(), 50);
+    if (!open) setQuery('');
+  }, [open, searchable]);
+
+  const filtered = searchable && query.trim()
+    ? options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className={`w-full flex items-center gap-2.5 bg-white/10 border rounded-xl px-4 py-3 text-sm text-left transition-all focus:outline-none ${
+          open ? 'border-purple-400/60 ring-2 ring-purple-500/20' : 'border-white/20 hover:border-white/35'
+        }`}
+      >
+        {Icon && <Icon className="w-4 h-4 text-teal-300/80 shrink-0" />}
+        <span className={`flex-1 truncate ${selected ? 'text-white' : 'text-white/40'}`}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronDown className="w-4 h-4 text-white/40 shrink-0" />
+        </motion.div>
+      </button>
+
+      {/* Dropdown */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.15 }}
+            className="absolute z-50 mt-2 w-full bg-gray-900/95 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden"
+          >
+            {/* Search box */}
+            {searchable && (
+              <div className="p-2 border-b border-white/10">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/40" />
+                  <input
+                    ref={searchRef}
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    placeholder="Search country…"
+                    className="w-full bg-white/8 border border-white/15 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-white/35 focus:outline-none focus:border-purple-400/40"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* List */}
+            <div className="max-h-52 overflow-y-auto custom-scroll">
+              {filtered.length === 0 ? (
+                <p className="text-white/40 text-xs text-center py-4">No results</p>
+              ) : (
+                filtered.map(opt => {
+                  const isActive = opt.value === value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => { onChange(opt.value); setOpen(false); }}
+                      className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-sm text-left transition-colors ${
+                        isActive
+                          ? 'bg-purple-500/25 text-white'
+                          : 'text-white/75 hover:bg-white/8 hover:text-white'
+                      }`}
+                    >
+                      <div>
+                        <span className="block text-sm leading-tight">{opt.label}</span>
+                        {opt.sub && <span className="block text-[0.6rem] text-white/40 mt-0.5">{opt.sub}</span>}
+                      </div>
+                      {isActive && <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REQUEST ACCESS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
 
 export function RequestAccessPage() {
   const navigate = useNavigate();
 
-  // ── Data ────────────────────────────────────────────────────────────────────
+  // ── Data ────────────────────────────────────────────────────────────────
   const [modules,         setModules]         = useState<Module[]>([]);
   const [collapsedCats,   setCollapsedCats]   = useState<Record<string, boolean>>({});
 
-  // ── Form fields ─────────────────────────────────────────────────────────────
+  // ── Form fields ─────────────────────────────────────────────────────────
   const [companyName,     setCompanyName]     = useState('');
   const [contactName,     setContactName]     = useState('');
   const [contactEmail,    setContactEmail]    = useState('');
@@ -57,15 +229,15 @@ export function RequestAccessPage() {
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
   const [notes,           setNotes]           = useState('');
 
-  // ── Email check ──────────────────────────────────────────────────────────────
-  const [emailStatus,     setEmailStatus]     = useState<EmailCheckStatus | 'idle' | 'checking'>('idle');
+  // ── Email check ──────────────────────────────────────────────────────────
+  const [emailStatus,      setEmailStatus]      = useState<EmailCheckStatus | 'idle' | 'checking'>('idle');
   const [emailSubmittedAt, setEmailSubmittedAt] = useState<string | undefined>();
   const emailCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── UI state ─────────────────────────────────────────────────────────────────
-  const [loading,         setLoading]         = useState(false);
-  const [submitted,       setSubmitted]       = useState(false);
-  const [moduleError,     setModuleError]     = useState(false);
+  // ── UI state ─────────────────────────────────────────────────────────────
+  const [loading,     setLoading]     = useState(false);
+  const [submitted,   setSubmitted]   = useState(false);
+  const [moduleError, setModuleError] = useState(false);
 
   useEffect(() => {
     fetchModules()
@@ -73,7 +245,7 @@ export function RequestAccessPage() {
       .catch(() => {});
   }, []);
 
-  // ── Derived ──────────────────────────────────────────────────────────────────
+  // ── Derived ──────────────────────────────────────────────────────────────
   const categories = Array.from(
     new Set(modules.map(m => m.category))
   ).sort((a, b) => (CATEGORY_META[a]?.order ?? 99) - (CATEGORY_META[b]?.order ?? 99));
@@ -81,7 +253,7 @@ export function RequestAccessPage() {
   const selectedModuleObjects = modules.filter(m => selectedModules.includes(m.id));
   const totalMonthly = selectedModuleObjects.reduce((s, m) => s + (m.basePrice ?? 0), 0);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
   const toggleModule = (id: string) => {
     setModuleError(false);
     setSelectedModules(prev =>
@@ -103,7 +275,7 @@ export function RequestAccessPage() {
   const toggleCollapse = (cat: string) =>
     setCollapsedCats(prev => ({ ...prev, [cat]: !prev[cat] }));
 
-  // ── Email blur check ─────────────────────────────────────────────────────────
+  // ── Email blur check ─────────────────────────────────────────────────────
   const handleEmailBlur = useCallback(async () => {
     const email = contactEmail.trim();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
@@ -118,17 +290,15 @@ export function RequestAccessPage() {
     }
   }, [contactEmail]);
 
-  // Reset on change
   const handleEmailChange = (val: string) => {
     setContactEmail(val);
     setEmailStatus('idle');
     setEmailSubmittedAt(undefined);
   };
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
+  // ── Submit ───────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!companyName.trim() || !contactName.trim() || !contactEmail.trim()) {
       toast.error('Company name, contact name, and email are required');
       return;
@@ -151,7 +321,6 @@ export function RequestAccessPage() {
       toast.error('A previous request from this email was declined — please contact support');
       return;
     }
-
     setLoading(true);
     try {
       await createRequest({
@@ -170,9 +339,13 @@ export function RequestAccessPage() {
   const inputCls =
     'w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-purple-400/50 transition-all text-sm';
 
-  // ════════════════════════════════════════════════════════════════════════════
+  // ─── Country options ────────────────────────────────────────────────────
+  const countryOptions = COUNTRIES.map(c => ({ value: c, label: c }));
+  const teamSizeOptions = TEAM_SIZES.map(s => ({ value: s.value, label: s.label, sub: s.sub }));
+
+  // ════════════════════════════════════════════════════════════════════════
   // SUCCESS STATE
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════
   if (submitted) {
     return (
       <BackgroundLayout particleCount={15}>
@@ -223,14 +396,16 @@ export function RequestAccessPage() {
               )}
             </div>
 
-            {/* Selected modules preview */}
             {selectedModuleObjects.length > 0 && (
               <div className="flex flex-wrap gap-1.5 justify-center mb-5">
-                {selectedModuleObjects.map(m => (
-                  <span key={m.id} className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/30 rounded-full text-purple-300 text-xs">
-                    {m.icon} {m.name}
-                  </span>
-                ))}
+                {selectedModuleObjects.map(m => {
+                  const ModIcon = MODULE_ICONS[m.key] ?? Sparkles;
+                  return (
+                    <span key={m.id} className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/30 rounded-full text-purple-300 text-xs flex items-center gap-1">
+                      <ModIcon className="w-3 h-3" /> {m.name}
+                    </span>
+                  );
+                })}
               </div>
             )}
 
@@ -247,9 +422,9 @@ export function RequestAccessPage() {
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════
   // EMAIL STATUS INDICATOR
-  // ════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════
   const EmailFeedback = () => {
     if (emailStatus === 'checking') return (
       <p className="mt-1.5 flex items-center gap-1.5 text-xs text-white/50">
@@ -306,9 +481,9 @@ export function RequestAccessPage() {
     return null;
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════
   // MAIN FORM
-  // ════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════
   return (
     <BackgroundLayout particleCount={15}>
       <div className="min-h-screen flex items-center justify-center px-4 py-8 sm:px-6">
@@ -338,7 +513,7 @@ export function RequestAccessPage() {
 
             <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
 
-              {/* ── Company Details ─────────────────────────────────────── */}
+              {/* ── Company Details ──────────────────────────────────────── */}
               <div className="space-y-5">
                 <p className="text-white/50 text-xs font-semibold uppercase tracking-widest">Company Details</p>
 
@@ -348,7 +523,7 @@ export function RequestAccessPage() {
                     Company Name <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-300/70" />
                     <input
                       value={companyName} onChange={e => setCompanyName(e.target.value)}
                       className={`${inputCls} pl-10`} placeholder="Your company name" required
@@ -361,10 +536,13 @@ export function RequestAccessPage() {
                   <label className="block text-white/80 text-sm font-medium mb-2">
                     Contact Name <span className="text-red-400">*</span>
                   </label>
-                  <input
-                    value={contactName} onChange={e => setContactName(e.target.value)}
-                    className={inputCls} placeholder="Your full name" required
-                  />
+                  <div className="relative">
+                    <Users className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-300/70" />
+                    <input
+                      value={contactName} onChange={e => setContactName(e.target.value)}
+                      className={`${inputCls} pl-10`} placeholder="Your full name" required
+                    />
+                  </div>
                 </div>
 
                 {/* Business Email with live check */}
@@ -373,7 +551,7 @@ export function RequestAccessPage() {
                     Business Email <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-300/70" />
                     <input
                       type="email"
                       value={contactEmail}
@@ -407,29 +585,34 @@ export function RequestAccessPage() {
                 {/* Country + Team Size */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-white/80 text-sm font-medium mb-2">
-                      <Globe className="inline w-3.5 h-3.5 mr-1 mb-0.5 opacity-60" />Country
+                    <label className="block text-white/80 text-sm font-medium mb-2 flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-white/50" /> Country
                     </label>
-                    <select value={country} onChange={e => setCountry(e.target.value)} className={inputCls}>
-                      {['Malaysia', 'Singapore', 'Indonesia', 'Thailand', 'Philippines', 'Australia', 'United Kingdom', 'United States', 'Other'].map(c =>
-                        <option key={c} value={c} className="bg-gray-900">{c}</option>
-                      )}
-                    </select>
+                    <CustomSelect
+                      value={country}
+                      onChange={setCountry}
+                      options={countryOptions}
+                      placeholder="Select country…"
+                      searchable
+                      icon={Globe}
+                    />
                   </div>
                   <div>
-                    <label className="block text-white/80 text-sm font-medium mb-2">
-                      <Users className="inline w-3.5 h-3.5 mr-1 mb-0.5 opacity-60" />Team Size
+                    <label className="block text-white/80 text-sm font-medium mb-2 flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-white/50" /> Team Size
                     </label>
-                    <select value={size} onChange={e => setSize(e.target.value)} className={inputCls}>
-                      {['1-10', '11-50', '51-200', '201-500', '500+'].map(s =>
-                        <option key={s} value={s} className="bg-gray-900">{s} people</option>
-                      )}
-                    </select>
+                    <CustomSelect
+                      value={size}
+                      onChange={setSize}
+                      options={teamSizeOptions}
+                      placeholder="Select team size…"
+                      icon={Users}
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* ── Module Selection ────────────────────────────────────── */}
+              {/* ── Module Selection ─────────────────────────────────────── */}
               <div id="modules-section">
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-white/80 text-sm font-medium">
@@ -456,14 +639,12 @@ export function RequestAccessPage() {
                   animate={{ opacity: 1, y: 0 }}
                   className="relative mb-5 overflow-hidden rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-purple-500/20 p-4"
                 >
-                  {/* Shimmer strip */}
                   <motion.div
                     className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent"
                     animate={{ x: ['-100%', '200%'] }}
                     transition={{ repeat: Infinity, duration: 3.5, ease: 'linear' }}
                   />
                   <div className="relative">
-                    {/* Header */}
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-7 h-7 rounded-lg bg-emerald-400/20 border border-emerald-400/40 flex items-center justify-center shrink-0">
                         <Gift className="w-4 h-4 text-emerald-300" />
@@ -473,43 +654,19 @@ export function RequestAccessPage() {
                         No card needed
                       </span>
                     </div>
-
-                    {/* How it works steps */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       {[
-                        {
-                          step: '1',
-                          title: 'Submit & get approved',
-                          desc: 'Our team reviews your request and sends a one-time invite link within 1–2 business days.',
-                          color: 'text-purple-300',
-                          bg: 'bg-purple-500/15 border-purple-500/20',
-                        },
-                        {
-                          step: '2',
-                          title: '14 days, full access',
-                          desc: 'Your trial begins the moment you activate your account. All selected modules, zero restrictions.',
-                          color: 'text-emerald-300',
-                          bg: 'bg-emerald-500/15 border-emerald-500/20',
-                        },
-                        {
-                          step: '3',
-                          title: 'Decide at the end',
-                          desc: 'Trial ends automatically. No charge ever applies — from your dashboard, choose which modules to keep and activate your preferred subscription plan.',
-                          color: 'text-teal-300',
-                          bg: 'bg-teal-500/15 border-teal-500/20',
-                        },
+                        { step: '1', title: 'Submit & get approved', desc: 'Our team reviews your request and sends a one-time invite link within 1–2 business days.', color: 'text-purple-300', bg: 'bg-purple-500/15 border-purple-500/20' },
+                        { step: '2', title: '14 days, full access',   desc: 'Your trial begins the moment you activate your account. All selected modules, zero restrictions.', color: 'text-emerald-300', bg: 'bg-emerald-500/15 border-emerald-500/20' },
+                        { step: '3', title: 'Decide at the end',      desc: 'Trial ends automatically. No charge ever applies — choose which modules to keep from your dashboard.', color: 'text-teal-300',   bg: 'bg-teal-500/15 border-teal-500/20' },
                       ].map(({ step, title, desc, color, bg }) => (
                         <div key={step} className={`rounded-xl border p-3 ${bg}`}>
-                          <div className={`text-[0.6rem] font-bold uppercase tracking-widest mb-1 ${color}`}>
-                            Step {step}
-                          </div>
+                          <div className={`text-[0.6rem] font-bold uppercase tracking-widest mb-1 ${color}`}>Step {step}</div>
                           <p className={`text-xs font-semibold mb-1 ${color}`}>{title}</p>
                           <p className="text-white/55 text-[0.65rem] leading-relaxed">{desc}</p>
                         </div>
                       ))}
                     </div>
-
-                    {/* Footer note */}
                     <p className="mt-3 text-white/40 text-[0.65rem] text-center leading-relaxed">
                       No credit card is collected at any point during sign-up or the trial period.
                       Your trial expires quietly — you will never be charged without explicit agreement.
@@ -540,17 +697,20 @@ export function RequestAccessPage() {
                   <div className={`space-y-3 ${moduleError ? 'ring-1 ring-red-500/30 rounded-2xl p-3' : ''}`}>
                     {categories.map(cat => {
                       const catMods = modules.filter(m => m.category === cat);
-                      const catMeta = CATEGORY_META[cat] ?? { label: cat, emoji: '📦', order: 99 };
-                      const allCatSelected = catMods.every(m => selectedModules.includes(m.id));
+                      const catMeta = CATEGORY_META[cat] ?? { label: cat, Icon: Layers, order: 99 };
+                      const CatIcon = catMeta.Icon;
+                      const allCatSelected  = catMods.every(m => selectedModules.includes(m.id));
                       const someCatSelected = catMods.some(m => selectedModules.includes(m.id));
-                      const isCollapsed = collapsedCats[cat];
+                      const isCollapsed     = collapsedCats[cat];
 
                       return (
                         <div key={cat} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
                           {/* Category header */}
                           <div className="flex items-center justify-between px-3 py-2.5">
                             <div className="flex items-center gap-2">
-                              <span className="text-base leading-none">{catMeta.emoji}</span>
+                              <div className="w-6 h-6 rounded-lg bg-white/8 border border-white/10 flex items-center justify-center shrink-0">
+                                <CatIcon className="w-3.5 h-3.5 text-teal-300/80" />
+                              </div>
                               <span className="text-white/80 text-xs font-semibold uppercase tracking-wider">{catMeta.label}</span>
                               {someCatSelected && (
                                 <span className="px-1.5 py-0.5 bg-purple-500/30 text-purple-300 text-[0.6rem] font-bold rounded-full">
@@ -575,9 +735,9 @@ export function RequestAccessPage() {
                                 onClick={() => toggleCollapse(cat)}
                                 className="p-1 rounded-lg text-white/40 hover:text-white/70 transition-colors"
                               >
-                                {isCollapsed
-                                  ? <ChevronDown className="w-3.5 h-3.5" />
-                                  : <ChevronUp className="w-3.5 h-3.5" />}
+                                <motion.div animate={{ rotate: isCollapsed ? 0 : 180 }} transition={{ duration: 0.2 }}>
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </motion.div>
                               </button>
                             </div>
                           </div>
@@ -596,6 +756,7 @@ export function RequestAccessPage() {
                                   {catMods.map(m => {
                                     const isSelected = selectedModules.includes(m.id);
                                     const isPopular  = POPULAR_IDS.includes(m.id);
+                                    const ModIcon    = MODULE_ICONS[m.key] ?? Sparkles;
                                     return (
                                       <motion.label
                                         key={m.id}
@@ -606,7 +767,6 @@ export function RequestAccessPage() {
                                             : 'bg-white/3 border-white/10 hover:border-white/20 hover:bg-white/7'
                                         }`}
                                       >
-                                        {/* Popular badge */}
                                         {isPopular && (
                                           <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-orange-500/30 border border-orange-500/40 text-orange-300 text-[0.55rem] font-bold rounded-full uppercase tracking-wider">
                                             Popular
@@ -615,9 +775,7 @@ export function RequestAccessPage() {
 
                                         {/* Custom checkbox */}
                                         <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
-                                          isSelected
-                                            ? 'bg-purple-500 border-purple-500'
-                                            : 'border-white/25 bg-white/5'
+                                          isSelected ? 'bg-purple-500 border-purple-500' : 'border-white/25 bg-white/5'
                                         }`}>
                                           {isSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
                                         </div>
@@ -629,13 +787,20 @@ export function RequestAccessPage() {
                                         />
 
                                         <div className="min-w-0 flex-1">
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="text-sm leading-none">{m.icon}</span>
+                                          <div className="flex items-center gap-2">
+                                            {/* Professional Lucide icon with coloured background pill */}
+                                            <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all ${
+                                              isSelected
+                                                ? 'bg-purple-400/25 border border-purple-400/40'
+                                                : 'bg-white/8 border border-white/12'
+                                            }`}>
+                                              <ModIcon className={`w-3.5 h-3.5 ${isSelected ? 'text-purple-300' : 'text-teal-300/70'}`} />
+                                            </div>
                                             <p className={`text-xs font-semibold truncate pr-8 ${isSelected ? 'text-white' : 'text-white/80'}`}>
                                               {m.name}
                                             </p>
                                           </div>
-                                          <p className={`text-[0.65rem] mt-0.5 ${isSelected ? 'text-purple-300' : 'text-white/35'}`}>
+                                          <p className={`text-[0.65rem] mt-0.5 pl-8 ${isSelected ? 'text-purple-300' : 'text-white/35'}`}>
                                             {formatRM(m.basePrice)}/mo after trial
                                           </p>
                                         </div>
@@ -676,11 +841,12 @@ export function RequestAccessPage() {
                 </AnimatePresence>
               </div>
 
-              {/* ── Additional Notes ────────────────────────────────────── */}
+              {/* ── Additional Notes ─────────────────────────────────────── */}
               <div>
-                <label className="block text-white/80 text-sm font-medium mb-2">
-                  <FileText className="inline w-3.5 h-3.5 mr-1 mb-0.5 opacity-60" />Additional Notes
-                  <span className="text-white/40 font-normal ml-1">(optional)</span>
+                <label className="block text-white/80 text-sm font-medium mb-2 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-white/50" />
+                  Additional Notes
+                  <span className="text-white/40 font-normal">(optional)</span>
                 </label>
                 <textarea
                   value={notes} onChange={e => setNotes(e.target.value)}
@@ -689,16 +855,16 @@ export function RequestAccessPage() {
                 />
               </div>
 
-              {/* ── Info box ───────────────────────────────────────────── */}
+              {/* ── Info box ─────────────────────────────────────────────── */}
               <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-3 text-xs text-sky-300 flex items-start gap-2">
-                <Mail className="w-4 h-4 shrink-0 mt-0.5" />
+                <Mail className="w-4 h-4 shrink-0 mt-0.5 text-sky-400" />
                 <span>
                   After approval, you'll receive a <strong>one-time invite link (valid 24 h)</strong> to set
                   your password and start your 14-day free trial — no credit card needed.
                 </span>
               </div>
 
-              {/* ── Submit ─────────────────────────────────────────────── */}
+              {/* ── Submit ───────────────────────────────────────────────── */}
               <motion.button
                 whileHover={{ scale: emailStatus === 'tenant' || emailStatus === 'rejected' ? 1 : 1.02 }}
                 whileTap={{ scale: 0.98 }}

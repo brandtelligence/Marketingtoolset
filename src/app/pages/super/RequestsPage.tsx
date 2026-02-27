@@ -52,7 +52,7 @@ export function RequestsPage() {
     try {
       await updateRequest(selected.id, { status: 'approved' });
       const newTenant: Partial<Tenant> = {
-        id: `t${Date.now()}`, name: selected.companyName, email: selected.contactEmail,
+        name: selected.companyName, email: selected.contactEmail,
         country: selected.country, size: selected.size, status: 'active',
         plan, moduleIds: selectedModules, createdAt: new Date().toISOString().slice(0, 10),
         mrr: selectedModules.reduce((s, id) => {

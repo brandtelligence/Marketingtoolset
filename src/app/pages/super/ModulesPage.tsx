@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ToggleLeft, ToggleRight, Puzzle, Zap, RefreshCw, PackageOpen, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ToggleLeft, ToggleRight, Puzzle, Zap, RefreshCw, PackageOpen, Loader2, AlertTriangle, CheckCircle2, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { StatusBadge } from '../../components/saas/StatusBadge';
@@ -10,6 +10,99 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 const AUTH   = { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' };
+
+// ── Inline price editor ────────────────────────────────────────────────────────
+function PriceEditor({
+  moduleId, currentPrice, onSaved,
+}: { moduleId: string; currentPrice: number; onSaved: (price: number) => void }) {
+  const t = useDashboardTheme();
+  const [editing, setEditing]   = useState(false);
+  const [value,   setValue]     = useState(String(currentPrice));
+  const [saving,  setSaving]    = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const open = () => {
+    setValue(String(currentPrice));
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const cancel = () => { setEditing(false); setValue(String(currentPrice)); };
+
+  const save = async () => {
+    const parsed = parseFloat(value);
+    if (isNaN(parsed) || parsed < 0) {
+      toast.error('Enter a valid price (0 or more).');
+      return;
+    }
+    const rounded = Math.round(parsed * 100) / 100; // 2 d.p.
+    if (rounded === currentPrice) { cancel(); return; }
+    setSaving(true);
+    try {
+      await updateModule(moduleId, { basePrice: rounded });
+      onSaved(rounded);
+      setEditing(false);
+      toast.success(`Price updated to RM ${formatRM(rounded)}/mo`);
+    } catch (err: any) {
+      toast.error(`Failed to update price: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter')  { e.preventDefault(); save(); }
+    if (e.key === 'Escape') cancel();
+  };
+
+  if (!editing) {
+    return (
+      <button
+        onClick={open}
+        className={`group/price inline-flex items-center gap-1.5 ${t.textFaint} text-xs hover:text-[#0BA4AA] transition-colors`}
+        title="Click to edit price"
+      >
+        <span>Base price: <span className="font-semibold">RM {formatRM(currentPrice)}/mo</span></span>
+        <Pencil className="w-3 h-3 opacity-0 group-hover/price:opacity-100 transition-opacity shrink-0" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <span className={`${t.textFaint} text-xs`}>RM</span>
+      <input
+        ref={inputRef}
+        type="number"
+        min="0"
+        step="50"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={onKey}
+        disabled={saving}
+        className={`w-24 text-xs px-2 py-0.5 rounded-lg border ${t.border} ${t.s1} ${t.text}
+          focus:outline-none focus:border-[#0BA4AA] focus:ring-1 focus:ring-[#0BA4AA]/30 transition-all`}
+      />
+      <span className={`${t.textFaint} text-xs`}>/mo</span>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="p-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 transition-colors disabled:opacity-50"
+        title="Save"
+      >
+        {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+      </button>
+      <button
+        onClick={cancel}
+        disabled={saving}
+        className={`p-1 rounded-lg ${t.hover} ${t.textFaint} hover:text-red-400 transition-colors disabled:opacity-50`}
+        title="Cancel"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
 
 export function ModulesPage() {
   const t = useDashboardTheme();
@@ -43,14 +136,12 @@ export function ModulesPage() {
       const res  = await fetch(`${SERVER}/seed-modules`, { method: 'POST', headers: AUTH });
       const json = await res.json();
       if (!res.ok) {
-        // Surface the exact Postgres error the server returned
         setSeedResult({ modulesInDb: 0, featuresInDb: 0, error: json.error ?? `HTTP ${res.status}` });
         toast.error(`Seed failed — see error below`);
         return;
       }
       setSeedResult({ modulesInDb: json.modulesInDb ?? 0, featuresInDb: json.featuresInDb ?? 0 });
       toast.success(`✅ ${json.message}`);
-      // Reload to reflect what was actually written
       load();
     } catch (err: any) {
       const msg = err.message ?? String(err);
@@ -81,6 +172,11 @@ export function ModulesPage() {
       setFeatures(prev => prev.map(f => f.id === id ? { ...f, globalEnabled: next } : f));
       toast.success(`Feature "${f.name}" ${next ? 'enabled' : 'disabled'} globally`);
     } catch (err: any) { toast.error(`Update failed: ${err.message}`); }
+  };
+
+  // Update a single module's price in local state after save
+  const handlePriceSaved = (moduleId: string, newPrice: number) => {
+    setModules(prev => prev.map(m => m.id === moduleId ? { ...m, basePrice: newPrice } : m));
   };
 
   const categoryLabels: Record<string, string> = {
@@ -219,18 +315,24 @@ export function ModulesPage() {
                       ? 'bg-purple-500/10 border-purple-500/20'
                       : `${t.s0} ${t.border} opacity-70`}`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{m.icon}</span>
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-2xl shrink-0">{m.icon}</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className={`${t.text} font-medium`}>{m.name}</p>
                         <StatusBadge status={m.globalEnabled ? 'enabled' : 'disabled'} dot />
                       </div>
                       <p className={`${t.textMd} text-xs mt-0.5`}>{m.description}</p>
-                      <p className={`${t.textFaint} text-xs mt-1`}>
-                        Base price: RM {formatRM(m.basePrice)}/mo · Key:{' '}
-                        <code className="font-mono">{m.key}</code>
-                      </p>
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        <PriceEditor
+                          moduleId={m.id}
+                          currentPrice={m.basePrice}
+                          onSaved={(price) => handlePriceSaved(m.id, price)}
+                        />
+                        <span className={`${t.textFaint} text-xs`}>
+                          · Key: <code className="font-mono">{m.key}</code>
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <button
