@@ -41,6 +41,7 @@ import { TenantSettingsPage } from "./pages/tenant/SettingsPage";
 // ── Employee sub-pages ──────────────────────────────────────────────────────
 import { EmployeeProfilePage }  from "./pages/employee/ProfilePage";
 import { EmployeeModulesPage }  from "./pages/employee/EmployeeModulesPage";
+import { ContentGenPage }       from "./pages/employee/ContentGenPage";
 
 // ── Public marketing website (now at root /*) ───────────────────────────────
 import { WebLayout }           from "./pages/web/WebLayout";
@@ -110,6 +111,7 @@ export const router = createBrowserRouter([
       { path: "projects/:slug",      Component: ProjectDetailPage },
       { path: "profile",             Component: EmployeeProfilePage },
       { path: "modules",             Component: EmployeeModulesPage },
+      { path: "content",             Component: ContentGenPage      },
     ],
   },
 

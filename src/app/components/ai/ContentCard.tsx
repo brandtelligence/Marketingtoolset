@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Edit3, Upload, Trash2, Send, Check, XCircle,
   Clock, CalendarDays, ChevronDown, ChevronUp,
   Image as ImageIcon, Video, Music, FileText, User,
-  CheckCircle, AlertTriangle, Shield, Eye, RotateCcw, Mail,
+  CheckCircle, AlertTriangle, Shield, Eye, RotateCcw, Mail, Loader2,
+  Zap, Sparkles, Heart, MessageCircle, Repeat2, TrendingUp, Timer,
 } from 'lucide-react';
 import {
   SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
@@ -19,8 +20,18 @@ import {
   type ContentCard as ContentCardType,
   type ContentStatus,
   type AuditEntry,
+  type EngagementData,
 } from '../../contexts/ContentContext';
 import { toast } from 'sonner';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { AIMediaGenerator, type GeneratedMedia } from './AIMediaGenerator';
+import {
+  getSlaHoursElapsed,
+  getSlaStartTime, formatSlaAge,
+  getSlaStatusWith, getSlaRemainingHoursWith,
+  SLA_BREACH_HOURS, SLA_WARNING_HOURS,
+} from '../../utils/sla';
+import { useSlaConfig } from '../../hooks/useSlaConfig';
 
 // ─── Mock Email Notification ──────────────────────────────────────────────────
 
@@ -123,18 +134,508 @@ const statusConfig: Record<ContentStatus, { label: string; color: string; bg: st
   rejected:           { label: 'Rejected',          color: 'text-red-300',    bg: 'bg-red-500/20',    border: 'border-red-400/30', icon: XCircle },
 };
 
+// ─── Schedule-status helpers ───────────────────────────────────────────────────
+// Computed once per module load; safe for a single-session SPA.
+const _now = new Date();
+const TODAY_STR = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
+
+type ScheduledStatus = 'due_today' | 'overdue' | 'future' | null;
+
+function getScheduledStatus(card: ContentCardType): ScheduledStatus {
+  if (card.status !== 'scheduled' || !card.scheduledDate) return null;
+  if (card.scheduledDate === TODAY_STR) return 'due_today';
+  if (card.scheduledDate < TODAY_STR)  return 'overdue';
+  return 'future';
+}
+
+// ─── SLA sub-components ───────────────────────────────────────────────────────
+
+/** Compact pill badge — renders null for non-pending and 'ok' status cards. */
+function SlaBadge({
+  card,
+  warningHours = SLA_WARNING_HOURS,
+  breachHours  = SLA_BREACH_HOURS,
+}: {
+  card: ContentCardType;
+  warningHours?: number;
+  breachHours?:  number;
+}) {
+  const status = getSlaStatusWith(card, warningHours, breachHours);
+  if (!status || status === 'ok') return null;
+  const hours = getSlaHoursElapsed(card)!;
+  const cfg = status === 'breached'
+    ? { label: 'SLA Breached', dot: 'bg-red-400 animate-pulse',   color: 'text-red-300',   bg: 'bg-red-500/10 border-red-400/20'    }
+    : { label: 'At Risk',      dot: 'bg-amber-400 animate-pulse', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-400/20' };
+  return (
+    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cfg.bg} ${cfg.color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+      {cfg.label} · {formatSlaAge(hours)}
+    </div>
+  );
+}
+
+/** Full SLA countdown panel for the detail modal — shown only for pending_approval. */
+function SlaDetailPanel({
+  card,
+  warningHours = SLA_WARNING_HOURS,
+  breachHours  = SLA_BREACH_HOURS,
+}: {
+  card:          ContentCardType;
+  warningHours?: number;
+  breachHours?:  number;
+}) {
+  const status = getSlaStatusWith(card, warningHours, breachHours);
+  if (!status) return null;
+
+  const hours     = getSlaHoursElapsed(card)!;
+  const remaining = getSlaRemainingHoursWith(card, breachHours);
+  const startTime = getSlaStartTime(card);
+  const breachAt  = new Date(startTime.getTime() + breachHours * 60 * 60 * 1000);
+  const pct       = Math.min((hours / breachHours) * 100, 100);
+  const overBy    = Math.max(0, hours - breachHours);
+
+  const panelCls = status === 'breached'
+    ? 'bg-red-500/8 border-red-400/20'
+    : status === 'warning'
+      ? 'bg-amber-500/8 border-amber-400/20'
+      : 'bg-white/5 border-white/10';
+
+  const barCls = status === 'breached' ? 'bg-red-400'   : status === 'warning' ? 'bg-amber-400' : 'bg-green-400';
+
+  const badge = status === 'breached'
+    ? { label: 'SLA Breached', dot: 'bg-red-400 animate-pulse',   color: 'text-red-300',   bg: 'bg-red-500/10 border-red-400/20'    }
+    : status === 'warning'
+      ? { label: 'At Risk',    dot: 'bg-amber-400 animate-pulse', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-400/20' }
+      : { label: 'On Time',   dot: 'bg-green-400',               color: 'text-green-300', bg: 'bg-green-500/8 border-green-400/15' };
+
+  return (
+    <div className={`rounded-xl border p-4 space-y-3 ${panelCls}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Timer className="w-3.5 h-3.5 text-white/50" />
+          <span className="text-white/60 text-xs font-semibold uppercase tracking-wider">Approval SLA</span>
+        </div>
+        <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-semibold ${badge.bg} ${badge.color}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+          {badge.label}
+        </div>
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-white/30 text-[10px] mb-0.5">Time elapsed</p>
+          <p className={`font-bold text-sm ${status === 'breached' ? 'text-red-300' : status === 'warning' ? 'text-amber-300' : 'text-white/80'}`}>
+            {formatSlaAge(hours)}
+          </p>
+        </div>
+        <div>
+          <p className="text-white/30 text-[10px] mb-0.5">
+            {remaining > 0 ? 'Time remaining' : 'Exceeded by'}
+          </p>
+          <p className={`font-bold text-sm ${remaining > 0 ? 'text-white/80' : 'text-red-300'}`}>
+            {remaining > 0 ? formatSlaAge(remaining) : formatSlaAge(overBy)}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress bar with threshold markers */}
+      <div>
+        <div className="flex justify-between text-[9px] text-white/25 mb-1.5">
+          <span>Submitted</span>
+          <span>{warningHours}h ⚠ warn</span>
+          <span>{breachHours}h 🔴 breach</span>
+        </div>
+        <div className="relative h-2 bg-white/8 rounded-full overflow-hidden">
+          <div
+            className="absolute top-0 bottom-0 w-px bg-amber-400/50 z-10"
+            style={{ left: `${(warningHours / breachHours) * 100}%` }}
+          />
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.7, ease: 'easeOut' }}
+            className={`h-full rounded-full ${barCls}`}
+          />
+        </div>
+      </div>
+
+      {/* Breach deadline */}
+      <p className="text-white/25 text-[10px] flex items-center gap-1.5">
+        <Timer className="w-3 h-3 shrink-0" />
+        Breach threshold:&nbsp;
+        {breachAt.toLocaleString('en-MY', {
+          weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        })}
+      </p>
+    </div>
+  );
+}
+
+// ─── Inline Approval Strip ────────────────────────────────────────────────────
+// Rendered inside ContentCardCompact when the current user is a designated
+// approver and the card is in pending_approval status.
+// Decisions (approve / reject) are made without opening the detail modal.
+
+interface InlineApprovalStripProps {
+  card: ContentCardType;
+}
+
+function InlineApprovalStrip({ card }: InlineApprovalStripProps) {
+  const { user } = useAuth();
+  const { updateCard, logApprovalEvent } = useContent();
+
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [busy,            setBusy]            = useState(false);
+
+  const userName  = user ? `${user.firstName} ${user.lastName}` : 'Unknown';
+  const userEmail = user?.email ?? '';
+
+  // ── Approve ──
+  const handleApprove = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+
+    const approverMember = availableTeamMembers.find(m =>
+      user &&
+      m.firstName.toLowerCase() === user.firstName.toLowerCase() &&
+      m.lastName.toLowerCase() === user.lastName.toLowerCase()
+    );
+
+    const now       = new Date();
+    const newStatus: ContentStatus = card.scheduledDate ? 'scheduled' : 'approved';
+
+    const entries: Omit<AuditEntry, 'id'>[] = [
+      {
+        action: 'approved',
+        performedBy: userName,
+        performedByEmail: userEmail,
+        timestamp: now,
+        details: 'Content approved via inline action strip',
+      },
+    ];
+
+    if (card.scheduledDate) {
+      entries.push({
+        action: 'scheduled',
+        performedBy: 'System',
+        performedByEmail: 'system',
+        timestamp: now,
+        details: `Auto-scheduled for ${card.scheduledDate}${card.scheduledTime ? ` at ${card.scheduledTime}` : ''} on ${platformNames[card.platform]}`,
+      });
+    }
+
+    const updated: ContentCardType = {
+      ...card,
+      status: newStatus,
+      approvedBy: approverMember?.id,
+      approvedByName: userName,
+      approvedAt: now,
+      auditLog: [
+        ...card.auditLog,
+        ...entries.map((e, i) => ({ ...e, id: `audit_${Date.now()}_${i}` })),
+      ],
+    };
+
+    updateCard(updated);
+
+    // Notify creator and append email-notification audit entry
+    const { entry: notifEntry } = notifyCreator(card, 'approved', userName);
+    updateCard({
+      ...updated,
+      auditLog: [...updated.auditLog, { ...notifEntry, id: `audit_${Date.now()}_notify` }],
+    });
+
+    logApprovalEvent({
+      id: crypto.randomUUID(),
+      cardId: card.id,
+      cardTitle: card.title,
+      platform: platformNames[card.platform] || card.platform,
+      action: 'approved',
+      performedBy: userName,
+      performedByEmail: userEmail,
+      timestamp: now.toISOString(),
+    });
+
+    setBusy(false);
+  };
+
+  // ── Confirm reject ──
+  const handleConfirmReject = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!rejectionReason.trim() || busy) return;
+    setBusy(true);
+
+    const rejecterMember = availableTeamMembers.find(m =>
+      user &&
+      m.firstName.toLowerCase() === user.firstName.toLowerCase() &&
+      m.lastName.toLowerCase() === user.lastName.toLowerCase()
+    );
+
+    const now = new Date();
+    const entry: Omit<AuditEntry, 'id'> = {
+      action: 'rejected',
+      performedBy: userName,
+      performedByEmail: userEmail,
+      timestamp: now,
+      details: rejectionReason.trim(),
+    };
+
+    const updated: ContentCardType = {
+      ...card,
+      status: 'rejected',
+      rejectedBy: rejecterMember?.id,
+      rejectedByName: userName,
+      rejectedAt: now,
+      rejectionReason: rejectionReason.trim(),
+      auditLog: [...card.auditLog, { ...entry, id: `audit_${Date.now()}` }],
+    };
+
+    updateCard(updated);
+
+    const { entry: notifEntry } = notifyCreator(card, 'rejected', userName, rejectionReason.trim());
+    updateCard({
+      ...updated,
+      auditLog: [...updated.auditLog, { ...notifEntry, id: `audit_${Date.now()}_notify` }],
+    });
+
+    logApprovalEvent({
+      id: crypto.randomUUID(),
+      cardId: card.id,
+      cardTitle: card.title,
+      platform: platformNames[card.platform] || card.platform,
+      action: 'rejected',
+      performedBy: userName,
+      performedByEmail: userEmail,
+      reason: rejectionReason.trim(),
+      timestamp: now.toISOString(),
+    });
+
+    setShowRejectInput(false);
+    setRejectionReason('');
+    setBusy(false);
+  };
+
+  // ── Render: rejection reason textarea ──
+  if (showRejectInput) {
+    return (
+      <div
+        className="mt-3 pt-3 border-t border-red-400/20 space-y-2"
+        onClick={e => e.stopPropagation()}
+      >
+        <p className="text-red-300/80 text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1">
+          <XCircle className="w-3 h-3" /> Rejection reason required
+        </p>
+        <textarea
+          autoFocus
+          value={rejectionReason}
+          onChange={e => setRejectionReason(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Escape') { e.stopPropagation(); setShowRejectInput(false); setRejectionReason(''); }
+          }}
+          placeholder="Why is this content being rejected?"
+          rows={2}
+          className="w-full bg-white/8 border border-red-400/30 rounded-xl px-3 py-2 text-white text-xs placeholder-white/30 focus:outline-none focus:border-red-400/50 resize-none transition-all"
+          onClick={e => e.stopPropagation()}
+        />
+        <div className="flex gap-2">
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={handleConfirmReject}
+            disabled={!rejectionReason.trim() || busy}
+            className="flex items-center gap-1.5 flex-1 justify-center bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 text-red-300 text-xs font-semibold px-3 py-2 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {busy
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <XCircle className="w-3.5 h-3.5" />}
+            Confirm Reject
+          </motion.button>
+          <button
+            onClick={e => { e.stopPropagation(); setShowRejectInput(false); setRejectionReason(''); }}
+            className="text-white/40 hover:text-white/60 text-xs px-3 py-2 rounded-lg hover:bg-white/8 transition-all shrink-0"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render: approve / reject button row ──
+  return (
+    <div
+      className="mt-3 pt-3 border-t border-amber-400/20 flex gap-2"
+      onClick={e => e.stopPropagation()}
+    >
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.96 }}
+        onClick={handleApprove}
+        disabled={busy}
+        className="flex items-center gap-1.5 flex-1 justify-center bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/30 text-teal-300 text-xs font-semibold px-3 py-2 rounded-lg transition-all disabled:opacity-40"
+      >
+        {busy
+          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          : <Check className="w-3.5 h-3.5" />}
+        Approve
+      </motion.button>
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.96 }}
+        onClick={e => { e.stopPropagation(); setShowRejectInput(true); }}
+        disabled={busy}
+        className="flex items-center gap-1.5 flex-1 justify-center bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-300/80 hover:text-red-300 text-xs font-semibold px-3 py-2 rounded-lg transition-all disabled:opacity-40"
+      >
+        <XCircle className="w-3.5 h-3.5" />
+        Reject
+      </motion.button>
+    </div>
+  );
+}
+
+// ─── Inline Publish Strip ─────────────────────────────────────────────────────
+// Rendered inside ContentCardCompact for any `scheduled` card whose
+// scheduledDate is today or in the past.  One-click → confirm → published.
+
+function InlinePublishStrip({ card }: { card: ContentCardType }) {
+  const { user } = useAuth();
+  const { updateCard } = useContent();
+  const [confirming, setConfirming] = useState(false);
+  const [busy,       setBusy]       = useState(false);
+
+  const handlePublish = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+
+    const now       = new Date();
+    const userName  = user ? `${user.firstName} ${user.lastName}` : 'Unknown';
+    const userEmail = user?.email ?? '';
+
+    const entry = {
+      id: `audit_${now.getTime()}`,
+      action: 'published' as const,
+      performedBy: userName,
+      performedByEmail: userEmail,
+      timestamp: now,
+      details: `Marked as published on ${platformNames[card.platform] || card.platform}`,
+    };
+
+    updateCard({ ...card, status: 'published', auditLog: [...card.auditLog, entry] });
+
+    toast.success('🚀 Published!', {
+      description: `"${card.title}" is now live on ${platformNames[card.platform] || card.platform}`,
+      duration: 5000,
+    });
+
+    setBusy(false);
+  };
+
+  // ── Confirm step ──
+  if (confirming) {
+    return (
+      <div
+        className="mt-3 pt-3 border-t border-green-400/20 space-y-2"
+        onClick={e => e.stopPropagation()}
+      >
+        <p className="text-green-300/80 text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1">
+          <Zap className="w-3 h-3" /> Confirm publish
+        </p>
+        <div className="flex gap-2">
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={handlePublish}
+            disabled={busy}
+            className="flex items-center gap-1.5 flex-1 justify-center bg-green-500/20 hover:bg-green-500/30 border border-green-400/35 text-green-300 text-xs font-semibold px-3 py-2 rounded-lg transition-all disabled:opacity-40"
+          >
+            {busy
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Check className="w-3.5 h-3.5" />}
+            Yes, publish now
+          </motion.button>
+          <button
+            onClick={e => { e.stopPropagation(); setConfirming(false); }}
+            className="text-white/40 hover:text-white/60 text-xs px-3 py-2 rounded-lg hover:bg-white/8 transition-all shrink-0"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Default: single publish button ──
+  return (
+    <div
+      className="mt-3 pt-3 border-t border-green-400/20"
+      onClick={e => e.stopPropagation()}
+    >
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.96 }}
+        onClick={e => { e.stopPropagation(); setConfirming(true); }}
+        className="flex items-center gap-1.5 w-full justify-center bg-green-500/12 hover:bg-green-500/22 border border-green-400/25 hover:border-green-400/45 text-green-300 text-xs font-semibold px-3 py-2 rounded-lg transition-all"
+      >
+        <Zap className="w-3.5 h-3.5" /> Mark as Published
+      </motion.button>
+    </div>
+  );
+}
+
 // ─── Compact Card ─────────────────────────────────────────────────────────────
 
 interface ContentCardProps {
   card: ContentCardType;
   projectTeamMembers: string[];
   onOpenDetail: (card: ContentCardType) => void;
+  /** Bulk approval mode props — all optional; defaults keep existing behaviour */
+  bulkMode?:       boolean;
+  isSelectable?:   boolean;  // current user can approve this specific card
+  isSelected?:     boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-export function ContentCardCompact({ card, projectTeamMembers, onOpenDetail }: ContentCardProps) {
+export function ContentCardCompact({
+  card, projectTeamMembers, onOpenDetail,
+  bulkMode = false, isSelectable = false, isSelected = false, onToggleSelect,
+}: ContentCardProps) {
+  const { user } = useAuth();
+  const { warningHours, breachHours } = useSlaConfig(user?.tenantId ?? undefined);
   const PlatformIcon = platformIcons[card.platform];
   const sc = statusConfig[card.status];
   const StatusIcon = sc.icon;
+
+  // Is the current user a designated approver who can action this card?
+  const canApprove = card.status === 'pending_approval' && card.approvers.some(appId => {
+    const member = availableTeamMembers.find(m => m.id === appId);
+    return member && user &&
+      member.firstName.toLowerCase() === user.firstName.toLowerCase() &&
+      member.lastName.toLowerCase() === user.lastName.toLowerCase();
+  });
+
+  const scheduledStatus = getScheduledStatus(card);
+
+  // ── Bulk-mode derived classes ─────────────────────────────────────────────
+  const borderCls = bulkMode
+    ? isSelected
+      ? 'border-teal-400/75 shadow-teal-500/15 ring-1 ring-teal-400/25'
+      : isSelectable
+        ? 'border-white/20 hover:border-white/40'
+        : 'border-white/5 opacity-40'
+    : canApprove
+      ? 'border-amber-400/50 shadow-amber-500/10 hover:border-amber-400/70'
+      : scheduledStatus === 'due_today'
+        ? 'border-green-400/40 shadow-green-500/8 hover:border-green-400/60'
+        : scheduledStatus === 'overdue'
+          ? 'border-orange-400/35 shadow-orange-500/8 hover:border-orange-400/55'
+          : 'border-white/15 hover:border-white/30';
+
+  const cursorCls = bulkMode
+    ? isSelectable ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'
+    : 'cursor-pointer';
 
   return (
     <motion.div
@@ -142,11 +643,79 @@ export function ContentCardCompact({ card, projectTeamMembers, onOpenDetail }: C
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      whileHover={{ y: -2 }}
-      onClick={() => onOpenDetail(card)}
-      className="bg-white/8 backdrop-blur-md border border-white/15 rounded-2xl overflow-hidden cursor-pointer hover:border-white/30 transition-all group shadow-lg hover:shadow-xl"
+      whileHover={!bulkMode || isSelectable ? { y: -2 } : undefined}
+      onClick={() => {
+        if (bulkMode) { if (isSelectable) onToggleSelect?.(card.id); return; }
+        onOpenDetail(card);
+      }}
+      className={`relative bg-white/8 backdrop-blur-md rounded-2xl overflow-hidden transition-all group shadow-lg hover:shadow-xl border ${borderCls} ${cursorCls}`}
     >
-      {/* Media preview */}
+      {/* ── Bulk checkbox overlay — top-left corner ── */}
+      {bulkMode && isSelectable && (
+        <div
+          className={`absolute top-3 left-3 z-10 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shadow-md ${
+            isSelected
+              ? 'bg-teal-500 border-teal-400'
+              : 'bg-black/50 border-white/50 group-hover:border-white/80'
+          }`}
+          onClick={e => { e.stopPropagation(); onToggleSelect?.(card.id); }}
+        >
+          {isSelected && <Check className="w-3 h-3 text-white" />}
+        </div>
+      )}
+
+      {/* ── Card status header strip ── */}
+      {bulkMode && isSelectable ? (
+        /* In bulk mode: compact amber/teal header */
+        <div className={`flex items-center gap-1.5 border-b px-4 py-1.5 ${
+          isSelected
+            ? 'bg-teal-500/10 border-teal-400/20'
+            : 'bg-amber-500/8 border-amber-400/15'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+            isSelected ? 'bg-teal-400' : 'bg-amber-400 animate-pulse'
+          }`} />
+          <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+            isSelected ? 'text-teal-300/80' : 'text-amber-300/70'
+          }`}>
+            {isSelected ? 'Selected for bulk action' : 'Tap to select'}
+          </span>
+        </div>
+      ) : !bulkMode && canApprove ? (
+        /* Normal mode: "Awaiting your approval" banner */
+        <div className="flex items-center gap-1.5 bg-amber-500/12 border-b border-amber-400/20 px-4 py-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <span className="text-amber-300/90 text-[10px] font-semibold uppercase tracking-wider">
+            Awaiting your approval
+          </span>
+        </div>
+      ) : !bulkMode && scheduledStatus === 'due_today' ? (
+        /* Due today: pulsing green banner */
+        <div className="flex items-center justify-between gap-2 bg-green-500/10 border-b border-green-400/20 px-4 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+            <span className="text-green-300/90 text-[10px] font-semibold uppercase tracking-wider">
+              Due today — ready to publish
+            </span>
+          </div>
+          <Zap className="w-3 h-3 text-green-400/70 shrink-0" />
+        </div>
+      ) : !bulkMode && scheduledStatus === 'overdue' ? (
+        /* Overdue: orange warning banner */
+        <div className="flex items-center justify-between gap-2 bg-orange-500/10 border-b border-orange-400/20 px-4 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="w-3 h-3 text-orange-400 shrink-0" />
+            <span className="text-orange-300/90 text-[10px] font-semibold uppercase tracking-wider">
+              Overdue — publish now
+            </span>
+          </div>
+          <span className="text-orange-300/50 text-[9px] shrink-0">
+            {card.scheduledDate}
+          </span>
+        </div>
+      ) : null}
+
+      {/* ── Media preview ── */}
       {card.mediaUrl && (
         <div className="h-36 relative overflow-hidden">
           {card.mediaType === 'image' ? (
@@ -170,7 +739,7 @@ export function ContentCardCompact({ card, projectTeamMembers, onOpenDetail }: C
         </div>
       )}
 
-      {/* Card body */}
+      {/* ── Card body ── */}
       <div className="p-4">
         {/* Platform + Status (if no media) */}
         <div className="flex items-center justify-between mb-2">
@@ -220,6 +789,21 @@ export function ContentCardCompact({ card, projectTeamMembers, onOpenDetail }: C
             <span className="text-red-300/70">Rejected by {card.rejectedByName}</span>
           </div>
         )}
+
+        {/* ── SLA warning badge — shows for warning/breached pending cards ── */}
+        {card.status === 'pending_approval' && (
+          <div className="mt-2">
+            <SlaBadge card={card} warningHours={warningHours} breachHours={breachHours} />
+          </div>
+        )}
+
+        {/* ── Inline approval strip — suppressed in bulk mode (floating bar handles it) ── */}
+        {canApprove && !bulkMode && <InlineApprovalStrip card={card} />}
+
+        {/* ── Inline publish strip — due today or overdue scheduled cards ── */}
+        {(scheduledStatus === 'due_today' || scheduledStatus === 'overdue') && !bulkMode && (
+          <InlinePublishStrip card={card} />
+        )}
       </div>
     </motion.div>
   );
@@ -236,6 +820,7 @@ interface ContentCardDetailProps {
 export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClose }: ContentCardDetailProps) {
   const { user } = useAuth();
   const { updateCard, addAuditEntry, deleteCard, logApprovalEvent } = useContent();
+  const { warningHours, breachHours } = useSlaConfig(user?.tenantId ?? undefined);
 
   const [card, setCard] = useState<ContentCardType>(initialCard);
   const [isEditing, setIsEditing] = useState(false);
@@ -252,6 +837,127 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
   const [showRevertInput, setShowRevertInput] = useState(false);
   const [revertReason, setRevertReason] = useState('');
 
+  // ── AI Media Generator ────────────────────────────────────────────────────
+  const [showAIGenerator, setShowAIGenerator] = useState(false);
+
+  const handleAIMediaAttach = (media: GeneratedMedia) => {
+    const updated: ContentCardType = {
+      ...card,
+      mediaUrl:       media.url,
+      mediaType:      media.type as 'image' | 'video',
+      mediaFileName:  media.filename,
+      lastEditedBy:   userName,
+      lastEditedAt:   new Date(),
+    };
+    const entry: Omit<AuditEntry, 'id'> = {
+      action:           'media_uploaded',
+      performedBy:      userName,
+      performedByEmail: userEmail,
+      timestamp:        new Date(),
+      details:          `AI-generated ${media.type} attached via AI Media Generator`,
+    };
+    updated.auditLog = [...card.auditLog, { ...entry, id: `audit_${Date.now()}` }];
+    setCard(updated);
+    updateCard(updated);
+    setShowAIGenerator(false);
+  };
+
+  // ── AI caption refiner ────────────────────────────────────────────────────
+  const [aiGenerating,    setAiGenerating]    = useState(false);
+  const [aiResult,        setAiResult]        = useState<{ caption: string; hashtags: string[] } | null>(null);
+  const [displayedCaption, setDisplayedCaption] = useState('');
+
+  // Typewriter animation when a new AI result arrives
+  useEffect(() => {
+    if (!aiResult) { setDisplayedCaption(''); return; }
+    let i = 0;
+    const text = aiResult.caption;
+    setDisplayedCaption('');
+    const iv = setInterval(() => {
+      i++;
+      setDisplayedCaption(text.slice(0, i));
+      if (i >= text.length) clearInterval(iv);
+    }, 6);
+    return () => clearInterval(iv);
+  }, [aiResult]);
+
+  const handleAiRefine = async () => {
+    setAiGenerating(true);
+    setAiResult(null);
+    try {
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-309fe679/ai/refine-caption`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({
+            platform:         card.platform,
+            title:            editTitle || card.title,
+            caption:          editCaption,
+            postType:         card.postType,
+            visualDescription: card.visualDescription,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        toast.error('AI generation failed', { description: data.error ?? `HTTP ${res.status}` });
+        return;
+      }
+      setAiResult({ caption: data.caption ?? '', hashtags: data.hashtags ?? [] });
+    } catch (err) {
+      toast.error('AI generation failed', { description: String(err) });
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  // ── Engagement metrics ────────────────────────────────────────────────────
+  const [showEngageForm,   setShowEngageForm]   = useState(false);
+  const [engageLikes,      setEngageLikes]      = useState<string>(String(card.engagementData?.likes    ?? ''));
+  const [engageComments,   setEngageComments]   = useState<string>(String(card.engagementData?.comments ?? ''));
+  const [engageShares,     setEngageShares]     = useState<string>(String(card.engagementData?.shares   ?? ''));
+  const [engageReach,      setEngageReach]      = useState<string>(String(card.engagementData?.reach    ?? ''));
+
+  const handleSaveEngagement = () => {
+    const data: EngagementData = {
+      likes:     engageLikes     !== '' ? Number(engageLikes)    : undefined,
+      comments:  engageComments  !== '' ? Number(engageComments) : undefined,
+      shares:    engageShares    !== '' ? Number(engageShares)   : undefined,
+      reach:     engageReach     !== '' ? Number(engageReach)    : undefined,
+      updatedAt: new Date().toISOString(),
+    };
+    const updated: ContentCardType = { ...card, engagementData: data };
+    const entry: Omit<AuditEntry, 'id'> = {
+      action: 'edited',
+      performedBy: userName,
+      performedByEmail: userEmail,
+      timestamp: new Date(),
+      details: `Engagement metrics updated — ${[
+        data.likes    !== undefined ? `${data.likes.toLocaleString()} likes`    : '',
+        data.comments !== undefined ? `${data.comments.toLocaleString()} comments` : '',
+        data.shares   !== undefined ? `${data.shares.toLocaleString()} shares`  : '',
+        data.reach    !== undefined ? `${data.reach.toLocaleString()} reach`    : '',
+      ].filter(Boolean).join(', ')}`,
+    };
+    updated.auditLog = [...card.auditLog, { ...entry, id: `audit_${Date.now()}` }];
+    setCard(updated);
+    updateCard(updated);
+    setShowEngageForm(false);
+    toast.success('Engagement metrics saved', { description: 'Data will appear in the Analytics dashboard.', duration: 3000 });
+  };
+
+  const applyAiResult = () => {
+    if (!aiResult) return;
+    setEditCaption(aiResult.caption);
+    setEditHashtags(aiResult.hashtags.join(', '));
+    setAiResult(null);
+    toast.success('AI caption applied', { description: 'Caption and hashtags updated — review and save.' });
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const userName = user ? `${user.firstName} ${user.lastName}` : 'Unknown';
@@ -260,6 +966,8 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
   const sc = statusConfig[card.status];
   const StatusIcon = sc.icon;
   const PlatformIcon = platformIcons[card.platform];
+
+  const scheduledStatus = getScheduledStatus(card);
 
   // Is user an approver for this card?
   const isApprover = card.approvers.some(appId => {
@@ -565,6 +1273,29 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
     });
   };
 
+  // ── Mark as Published ──
+  const handleMarkAsPublished = () => {
+    const now = new Date();
+    const entry: Omit<AuditEntry, 'id'> = {
+      action: 'published',
+      performedBy: userName,
+      performedByEmail: userEmail,
+      timestamp: now,
+      details: `Marked as published on ${platformNames[card.platform] || card.platform}`,
+    };
+    const updated: ContentCardType = {
+      ...card,
+      status: 'published',
+      auditLog: [...card.auditLog, { ...entry, id: `audit_${now.getTime()}` }],
+    };
+    setCard(updated);
+    updateCard(updated);
+    toast.success('🚀 Published!', {
+      description: `"${card.title}" is now live on ${platformNames[card.platform] || card.platform}`,
+      duration: 5000,
+    });
+  };
+
   const toggleApprover = (memberId: string) => {
     setSelectedApprovers(prev =>
       prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
@@ -593,6 +1324,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
   };
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -644,6 +1376,11 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
+          {/* ── SLA Status Panel (pending_approval only) ── */}
+          {card.status === 'pending_approval' && (
+            <SlaDetailPanel card={card} warningHours={warningHours} breachHours={breachHours} />
+          )}
+
           {/* ── Media Section ── */}
           <div>
             <label className="text-white/50 text-xs uppercase tracking-wider mb-2 block">Media Asset</label>
@@ -665,12 +1402,18 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
                 {/* Overlay actions */}
                 {(card.status === 'draft' || card.status === 'rejected') && (
-                  <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                  <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => setShowAIGenerator(true)}
+                      className="flex items-center gap-1.5 bg-teal-500/30 backdrop-blur-sm border border-teal-400/40 text-teal-200 px-3 py-2 rounded-lg text-xs hover:bg-teal-500/50 transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> AI Replace
+                    </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm border border-white/30 text-white px-3 py-2 rounded-lg text-xs hover:bg-white/30 transition-all"
                     >
-                      <Upload className="w-3.5 h-3.5" /> Replace
+                      <Upload className="w-3.5 h-3.5" /> Upload
                     </button>
                     <button
                       onClick={handleRemoveMedia}
@@ -682,14 +1425,32 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                 )}
               </div>
             ) : (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full h-32 border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center gap-2 text-white/40 hover:text-white/60 hover:border-white/30 transition-all"
-              >
-                <Upload className="w-6 h-6" />
-                <span className="text-xs">Upload image, video, or audio</span>
-                <span className="text-[10px] text-white/30">Click to browse files</span>
-              </button>
+              <div className="flex flex-col gap-2">
+                {/* AI generate button */}
+                {(card.status === 'draft' || card.status === 'rejected') && (
+                  <button
+                    onClick={() => setShowAIGenerator(true)}
+                    className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl font-bold text-sm transition-all
+                      bg-gradient-to-r from-teal-500/20 to-purple-500/20 hover:from-teal-500/30 hover:to-purple-500/30
+                      border border-teal-400/25 hover:border-teal-400/45 text-teal-300 hover:text-teal-200
+                      shadow-inner"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Generate with AI
+                    <span className="text-[10px] text-teal-400/50 font-normal">· Image or Video</span>
+                  </button>
+                )}
+
+                {/* Manual upload */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-24 border-2 border-dashed border-white/15 rounded-xl flex flex-col items-center justify-center gap-1.5 text-white/30 hover:text-white/50 hover:border-white/25 transition-all"
+                >
+                  <Upload className="w-5 h-5" />
+                  <span className="text-xs">Upload image, video, or audio</span>
+                  <span className="text-[10px] text-white/20">Click to browse files</span>
+                </button>
+              </div>
             )}
             <input
               ref={fileInputRef}
@@ -711,14 +1472,100 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all"
                 />
               </div>
-              <div>
-                <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Caption</label>
+              <div className="space-y-2">
+                {/* Caption label + AI Refine button */}
+                <div className="flex items-center justify-between">
+                  <label className="text-white/50 text-xs uppercase tracking-wider">Caption</label>
+                  <button
+                    type="button"
+                    onClick={handleAiRefine}
+                    disabled={aiGenerating}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-300 hover:text-purple-200 px-2.5 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-400/20 hover:border-purple-400/35 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {aiGenerating
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+                      : <><Sparkles className="w-3 h-3" /> AI Refine</>
+                    }
+                  </button>
+                </div>
+
                 <textarea
                   value={editCaption}
                   onChange={e => setEditCaption(e.target.value)}
                   rows={5}
                   className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all resize-none"
                 />
+
+                {/* AI result panel */}
+                <AnimatePresence>
+                  {aiResult && (
+                    <motion.div
+                      key="ai-result"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="bg-purple-500/8 border border-purple-400/25 rounded-xl p-4 space-y-3">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                            <span className="text-purple-300 text-xs font-semibold">AI-Generated Caption</span>
+                            <span className="text-white/20 text-[10px]">— {platformNames[card.platform]}-optimised</span>
+                          </div>
+                          <button
+                            onClick={() => setAiResult(null)}
+                            className="text-white/20 hover:text-white/50 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Typewriter caption */}
+                        <p className="text-white/85 text-sm leading-relaxed whitespace-pre-line min-h-[2.5rem]">
+                          {displayedCaption}
+                          {displayedCaption.length < aiResult.caption.length && (
+                            <span className="inline-block w-0.5 h-3.5 bg-purple-400 ml-0.5 animate-pulse align-middle" />
+                          )}
+                        </p>
+
+                        {/* Hashtag pills */}
+                        {aiResult.hashtags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {aiResult.hashtags.map((tag, i) => (
+                              <span
+                                key={i}
+                                className="text-[10px] font-medium bg-purple-500/15 text-purple-300 border border-purple-400/20 px-2 py-0.5 rounded-full"
+                              >
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex gap-2 pt-1">
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={applyAiResult}
+                            className="flex items-center gap-1.5 flex-1 justify-center bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/35 text-purple-200 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Apply Caption &amp; Hashtags
+                          </motion.button>
+                          <button
+                            onClick={() => setAiResult(null)}
+                            className="text-white/40 hover:text-white/70 text-xs px-3 py-2 rounded-xl hover:bg-white/8 transition-all"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
               <div>
                 <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Hashtags (comma separated)</label>
@@ -783,15 +1630,36 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
           {/* ── Schedule Info (view mode) ── */}
           {!isEditing && (card.scheduledDate || card.scheduledTime) && (
-            <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex items-center gap-3">
-              <CalendarDays className="w-5 h-5 text-blue-400 shrink-0" />
-              <div>
+            <div className={`border rounded-xl p-3 flex items-center gap-3 ${
+              scheduledStatus === 'due_today'
+                ? 'bg-green-500/8 border-green-400/25'
+                : scheduledStatus === 'overdue'
+                  ? 'bg-orange-500/8 border-orange-400/25'
+                  : 'bg-white/5 border-white/10'
+            }`}>
+              <CalendarDays className={`w-5 h-5 shrink-0 ${
+                scheduledStatus === 'due_today' ? 'text-green-400'
+                  : scheduledStatus === 'overdue' ? 'text-orange-400'
+                  : 'text-blue-400'
+              }`} />
+              <div className="flex-1 min-w-0">
                 <div className="text-white/80 text-sm font-medium">
                   {card.scheduledDate && new Date(card.scheduledDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                   {card.scheduledTime && ` at ${card.scheduledTime}`}
                 </div>
                 <div className="text-white/40 text-xs">Scheduled publish time on {platformNames[card.platform]}</div>
               </div>
+              {/* Due today / overdue badge */}
+              {scheduledStatus === 'due_today' && (
+                <span className="flex items-center gap-1 bg-green-500/15 border border-green-400/35 text-green-300 text-[10px] font-bold px-2.5 py-1 rounded-full animate-pulse shrink-0">
+                  <Zap className="w-3 h-3" /> DUE TODAY
+                </span>
+              )}
+              {scheduledStatus === 'overdue' && (
+                <span className="flex items-center gap-1 bg-orange-500/15 border border-orange-400/35 text-orange-300 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0">
+                  <AlertTriangle className="w-3 h-3" /> OVERDUE
+                </span>
+              )}
             </div>
           )}
 
@@ -925,6 +1793,25 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
               </>
             )}
 
+            {/* ── Mark as Published — for scheduled cards ── */}
+            {card.status === 'scheduled' && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={handleMarkAsPublished}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm shadow-lg transition-all border ${
+                  scheduledStatus === 'due_today'
+                    ? 'bg-green-500/80 hover:bg-green-500 border-green-400/50 text-white shadow-green-500/20'
+                    : scheduledStatus === 'overdue'
+                      ? 'bg-orange-500/80 hover:bg-orange-500 border-orange-400/50 text-white shadow-orange-500/20'
+                      : 'bg-green-500/20 hover:bg-green-500/35 border-green-400/30 text-green-300'
+                }`}
+              >
+                <Zap className="w-4 h-4" />
+                {scheduledStatus === 'overdue' ? 'Publish Now (Overdue)' : 'Mark as Published'}
+              </motion.button>
+            )}
+
             {/* Revert to draft */}
             {(card.status === 'rejected' || card.status === 'pending_approval') && (
               <button
@@ -1011,6 +1898,128 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* ── Engagement Metrics (published cards only) ── */}
+          {card.status === 'published' && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-white/50 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5" /> Engagement Metrics
+                </label>
+                {!showEngageForm && (
+                  <button
+                    onClick={() => setShowEngageForm(true)}
+                    className="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors"
+                  >
+                    {card.engagementData ? 'Edit' : '+ Log Metrics'}
+                  </button>
+                )}
+              </div>
+
+              <AnimatePresence mode="wait">
+                {showEngageForm ? (
+                  /* ── Edit form ── */
+                  <motion.div
+                    key="engage-form"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="bg-green-500/6 border border-green-400/20 rounded-xl p-4 space-y-3">
+                      <p className="text-white/40 text-[11px]">Enter the latest metrics from your social platform dashboard.</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {([
+                          { label: 'Likes',     icon: Heart,          state: engageLikes,    set: setEngageLikes    },
+                          { label: 'Comments',  icon: MessageCircle,  state: engageComments, set: setEngageComments },
+                          { label: 'Shares',    icon: Repeat2,        state: engageShares,   set: setEngageShares   },
+                          { label: 'Reach',     icon: Eye,            state: engageReach,    set: setEngageReach    },
+                        ] as const).map(({ label, icon: Icon, state, set }) => (
+                          <div key={label}>
+                            <label className="text-white/40 text-[10px] uppercase tracking-wide flex items-center gap-1 mb-1">
+                              <Icon className="w-3 h-3" /> {label}
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={state}
+                              onChange={e => set(e.target.value)}
+                              placeholder="0"
+                              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={handleSaveEngagement}
+                          className="flex items-center gap-1.5 flex-1 justify-center bg-teal-500/20 hover:bg-teal-500/30 border border-teal-400/35 text-teal-200 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Save Metrics
+                        </motion.button>
+                        <button
+                          onClick={() => setShowEngageForm(false)}
+                          className="text-white/40 hover:text-white/70 text-xs px-3 py-2 rounded-xl hover:bg-white/8 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : card.engagementData ? (
+                  /* ── Metrics display ── */
+                  <motion.div
+                    key="engage-display"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="grid grid-cols-4 gap-2"
+                  >
+                    {([
+                      { label: 'Likes',    icon: Heart,         value: card.engagementData.likes,    color: 'text-pink-400',  bg: 'bg-pink-500/10 border-pink-400/15'  },
+                      { label: 'Comments', icon: MessageCircle, value: card.engagementData.comments, color: 'text-blue-400',  bg: 'bg-blue-500/10 border-blue-400/15'  },
+                      { label: 'Shares',   icon: Repeat2,       value: card.engagementData.shares,   color: 'text-green-400', bg: 'bg-green-500/10 border-green-400/15' },
+                      { label: 'Reach',    icon: Eye,           value: card.engagementData.reach,    color: 'text-purple-400',bg: 'bg-purple-500/10 border-purple-400/15'},
+                    ] as const).map(({ label, icon: Icon, value, color, bg }) => (
+                      <div key={label} className={`flex flex-col items-center justify-center gap-1 rounded-xl border p-2.5 ${bg}`}>
+                        <Icon className={`w-3.5 h-3.5 ${color}`} />
+                        <p className={`text-sm font-bold ${value !== undefined ? 'text-white' : 'text-white/20'}`}>
+                          {value !== undefined ? value.toLocaleString() : '—'}
+                        </p>
+                        <p className="text-white/35 text-[9px] uppercase tracking-wide">{label}</p>
+                      </div>
+                    ))}
+                  </motion.div>
+                ) : (
+                  /* ── Empty prompt ── */
+                  <motion.div
+                    key="engage-empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center justify-between gap-3 border-2 border-dashed border-green-400/12 rounded-xl px-4 py-3"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <TrendingUp className="w-4 h-4 text-white/15 shrink-0" />
+                      <div>
+                        <p className="text-white/40 text-xs font-medium">No engagement data logged yet</p>
+                        <p className="text-white/20 text-[10px]">Track likes, comments, shares &amp; reach</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowEngageForm(true)}
+                      className="shrink-0 text-[11px] font-semibold text-teal-400 hover:text-teal-300 px-3 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-400/20 transition-all"
+                    >
+                      + Log Metrics
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* ── Creator & Meta Info ── */}
           <div className="bg-white/5 border border-white/10 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -1102,5 +2111,15 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
         </div>
       </motion.div>
     </motion.div>
+
+    {/* ── AI Media Generator modal ──────────────────────────────────────── */}
+    {showAIGenerator && (
+      <AIMediaGenerator
+        card={card}
+        onAttach={handleAIMediaAttach}
+        onClose={() => setShowAIGenerator(false)}
+      />
+    )}
+  </>
   );
 }

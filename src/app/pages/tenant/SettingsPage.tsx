@@ -1,14 +1,45 @@
 import { useState } from 'react';
-import { Save, Lock, Bell, Shield, Eye, EyeOff } from 'lucide-react';
+import { Save, Lock, Bell, Shield, Eye, EyeOff, Timer } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { Field, Input } from '../../components/saas/DrawerForm';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSlaConfig } from '../../hooks/useSlaConfig';
 
 export function TenantSettingsPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+  const { warningHours, breachHours, isLoading: slaLoading, isSaving: slaSaving, saveConfig } = useSlaConfig(user?.tenantId ?? undefined);
+
+  // ── SLA local edit state (initialised lazily from hook) ──────────────────
+  const [slaWarn,   setSlaWarn]   = useState<string>('');
+  const [slaBreach, setSlaBreach] = useState<string>('');
+  // Sync once hook resolves
+  const [slaSynced, setSlaSynced] = useState(false);
+  if (!slaLoading && !slaSynced) {
+    setSlaWarn(String(warningHours));
+    setSlaBreach(String(breachHours));
+    setSlaSynced(true);
+  }
+
+  const handleSaveSla = async () => {
+    const w = parseInt(slaWarn,   10);
+    const b = parseInt(slaBreach, 10);
+    if (!Number.isFinite(w) || w < 1)   { toast.error('Warning threshold must be ≥ 1 hour'); return; }
+    if (!Number.isFinite(b) || b <= w)  { toast.error('Breach threshold must be greater than the warning threshold'); return; }
+    if (b > 720)                         { toast.error('Thresholds cannot exceed 720 hours (30 days)'); return; }
+    if (!user?.tenantId) { toast.error('Tenant ID not found — cannot save'); return; }
+
+    const ok = await saveConfig({ warningHours: w, breachHours: b }, user.tenantId);
+    if (ok) {
+      toast.success('SLA thresholds saved', {
+        description: `Warning at ${w}h · Breach at ${b}h — effective immediately across all projects.`,
+      });
+    } else {
+      toast.error('Failed to save SLA thresholds — please try again');
+    }
+  };
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -171,6 +202,90 @@ export function TenantSettingsPage() {
             <div className="flex justify-end pt-2">
               <PrimaryBtn size="sm" variant="teal" onClick={() => toast.success('Notification preferences saved')}>
                 <Bell className="w-3.5 h-3.5" /> Save
+              </PrimaryBtn>
+            </div>
+          </div>
+        </Card>
+
+        {/* Content Approval SLA */}
+        <Card title="⏱ Content Approval SLA">
+          <div className="space-y-4">
+            <p className={`${t.textFaint} text-xs leading-relaxed`}>
+              Configure how long pending content cards can wait for approval before
+              the platform raises an in-app warning or sends an escalation email.
+              Thresholds apply to all projects under this tenant.
+            </p>
+
+            {slaLoading ? (
+              <div className="flex items-center gap-2 py-4">
+                <span className="w-4 h-4 rounded-full border-2 border-teal-400/40 border-t-teal-400 animate-spin" />
+                <span className={`${t.textFaint} text-xs`}>Loading current thresholds…</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Warning threshold (hours)"
+                  hint="An amber ⏱ badge appears on the card when this many hours have elapsed">
+                  <div className="relative">
+                    <Timer className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${t.textFaint}`} />
+                    <Input
+                      type="number"
+                      min="1"
+                      max="719"
+                      value={slaWarn}
+                      onChange={e => setSlaWarn(e.target.value)}
+                      className="pl-10"
+                      placeholder="24"
+                    />
+                  </div>
+                </Field>
+
+                <Field label="Breach threshold (hours)"
+                  hint="A red 🔴 badge appears and an escalation email is sent after this many hours">
+                  <div className="relative">
+                    <Timer className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-red-400/60`} />
+                    <Input
+                      type="number"
+                      min="2"
+                      max="720"
+                      value={slaBreach}
+                      onChange={e => setSlaBreach(e.target.value)}
+                      className={`pl-10 ${
+                        parseInt(slaBreach) <= parseInt(slaWarn)
+                          ? 'border-red-500/50'
+                          : ''
+                      }`}
+                      placeholder="48"
+                    />
+                  </div>
+                  {parseInt(slaBreach) > 0 && parseInt(slaBreach) <= parseInt(slaWarn) && (
+                    <p className="text-red-500 text-xs mt-0.5">Must be greater than warning threshold</p>
+                  )}
+                </Field>
+              </div>
+            )}
+
+            {/* Live preview */}
+            {!slaLoading && (
+              <div className={`flex items-center gap-3 p-3 ${t.s1} rounded-xl border ${t.border} text-xs`}>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <span className={t.textFaint}>
+                  Warning at <strong className={t.textMd}>{slaWarn || '—'}h</strong>
+                  &nbsp;·&nbsp;
+                  Breach at <strong className={t.textMd}>{slaBreach || '—'}h</strong>
+                  &nbsp;·&nbsp;Escalation email triggered automatically at breach threshold
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <PrimaryBtn
+                size="sm"
+                variant="teal"
+                loading={slaSaving}
+                onClick={handleSaveSla}
+                disabled={slaLoading}
+              >
+                <Timer className="w-3.5 h-3.5" /> Save SLA Thresholds
               </PrimaryBtn>
             </div>
           </div>

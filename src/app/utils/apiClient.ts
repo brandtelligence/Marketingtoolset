@@ -18,6 +18,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import type {
   Tenant, PendingRequest, TenantUser, Invoice,
   AuditLog, Module, Feature, UsageDataPoint, ModuleRequest,
+  RoleType,
 } from '../data/mockSaasData';
 
 // ── Demo-only mock imports (never rendered when IS_PRODUCTION is true) ─────────
@@ -288,10 +289,260 @@ export async function updateModuleRequest(id: string, patch: { status: ModuleReq
   await api(`/module-requests/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
 }
 
+// ─── AI Content Generation ────────────────────────────────────────────────────
+//
+// These functions require the caller to pass the user's Supabase access_token
+// so the server can verify identity and resolve the tenantId server-side.
+// Always obtain it via: supabase.auth.getSession() → session.access_token
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface GenerationRecord {
+  id:         string;
+  tenantId:   string;
+  userId:     string;
+  userName:   string;
+  template:   string;
+  platform:   string;
+  tone:       string;
+  prompt:     string;
+  output:     string;
+  tokensUsed: number;
+  model:      string;
+  createdAt:  string;
+}
+
+export interface ContentGenUsageSummary {
+  tokens:   number;
+  requests: number;
+  limit:    number;
+  period:   string;
+}
+
+export interface GenerateContentParams {
+  template?:           string; // 'social_caption' | 'ad_copy' | 'blog_intro' | 'hashtag_set' | 'campaign_brief' | 'custom'
+  platform?:           string; // 'instagram' | 'facebook' | 'twitter' | 'linkedin' | etc.
+  tone?:               string; // 'professional' | 'conversational' | 'creative' | 'authoritative' | 'humorous' | 'inspirational'
+  prompt:              string; // the user's request / instruction
+  projectName?:        string;
+  projectDescription?: string;
+  targetAudience?:     string;
+  charLimit?:          number;
+}
+
+export interface GenerateContentResult {
+  id:         string;
+  output:     string;
+  tokensUsed: number;
+  model:      string;
+  usage:      ContentGenUsageSummary;
+}
+
+// Helper: build auth header using the user's access token
+function authHeader(accessToken: string): HeadersInit {
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` };
+}
+
+export async function generateContent(
+  params: GenerateContentParams,
+  accessToken: string,
+): Promise<GenerateContentResult> {
+  const res  = await fetch(`${SERVER}/ai/generate-content`, {
+    method:  'POST',
+    headers: authHeader(accessToken),
+    body:    JSON.stringify(params),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/generate-content`);
+  return json as GenerateContentResult;
+}
+
+export async function fetchContentHistory(
+  tenantId: string,
+  accessToken: string,
+  limit = 20,
+): Promise<GenerationRecord[]> {
+  const res  = await fetch(`${SERVER}/ai/content-history?tenantId=${encodeURIComponent(tenantId)}&limit=${limit}`, {
+    headers: authHeader(accessToken),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/content-history`);
+  return (json.history ?? []) as GenerationRecord[];
+}
+
+export async function deleteContentHistory(
+  id: string,
+  tenantId: string,
+  accessToken: string,
+): Promise<void> {
+  const res  = await fetch(`${SERVER}/ai/content-history/${id}`, {
+    method:  'DELETE',
+    headers: authHeader(accessToken),
+    body:    JSON.stringify({ tenantId }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: delete /ai/content-history`);
+}
+
+export async function fetchContentGenUsage(
+  tenantId: string,
+  accessToken: string,
+  period?: string,
+): Promise<ContentGenUsageSummary> {
+  const qs   = `tenantId=${encodeURIComponent(tenantId)}${period ? `&period=${period}` : ''}`;
+  const res  = await fetch(`${SERVER}/ai/content-usage?${qs}`, {
+    headers: authHeader(accessToken),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/content-usage`);
+  return json.usage as ContentGenUsageSummary;
+}
+
+// ─── Platform-wide AI Usage (Super Admin) ────────────────────────────────────
+
+export interface TenantAIUsageSummary {
+  id:          string;
+  name:        string;
+  plan:        string;
+  status:      string;
+  usage:       Record<string, { tokens: number; requests: number }>;
+  /** null = using platform default (AI_TOKEN_MONTHLY_LIMIT) */
+  tokenLimit?: number | null;
+}
+
+export interface TenantAIBudget {
+  limit:        number;   // effective limit (custom or default)
+  isCustom:     boolean;  // true if a custom override is stored in KV
+  defaultLimit: number;   // platform default (100,000)
+  period:       string;   // YYYY-MM
+  tokensUsed:   number;   // current month usage
+  requests:     number;   // current month requests
+}
+
+export interface PlatformAIUsageResult {
+  tenants:       TenantAIUsageSummary[];
+  periods:       string[];
+  platformTotal: Record<string, { tokens: number; requests: number }>;
+  limit:         number;
+}
+
+function buildMockPlatformAI(): PlatformAIUsageResult {
+  const periods: string[] = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    periods.push(d.toISOString().slice(0, 7));
+  }
+
+  // Deterministic per-tenant token trajectories
+  const seeds: Record<string, [number[], number[]]> = {
+    't1': [[12400,28900,35200,41800,58400,67200], [23,51,67,78,94,112]],  // Acme Corp — rising hero
+    't2': [[4200,8900,12300,15800,21400,24600],   [8,17,23,29,39,45]],   // TechStart — steady
+    't3': [[18600,31200,38400,29100,12800,5400],  [34,57,70,53,23,10]],  // GlobalRetail — declining (suspended)
+    't4': [[800,1900,3100,4200,5800,7100],         [2,4,6,8,11,13]],     // SmallBiz HQ — nascent
+  };
+
+  const platformTotal: Record<string, { tokens: number; requests: number }> = {};
+  for (const p of periods) platformTotal[p] = { tokens: 0, requests: 0 };
+
+  // Per-tenant custom limits for rich demo data (null = use platform default 100k)
+  const mockLimits: Record<string, number | null> = {
+    't1': 80_000,   // Acme Corp — tighter budget, nearly at limit
+    't2': 200_000,  // TechStart — generous budget, lots of headroom
+    't3': 50_000,   // GlobalRetail — small limit (suspended anyway)
+    't4': null,     // SmallBiz HQ — default
+  };
+
+  const tenants: TenantAIUsageSummary[] = MOCK_TENANTS.map(t => {
+    const [tokSeeds, reqSeeds] = seeds[t.id] ?? [[0,0,0,0,0,0],[0,0,0,0,0,0]];
+    const usage: Record<string, { tokens: number; requests: number }> = {};
+    periods.forEach((p, i) => {
+      const u = { tokens: tokSeeds[i] ?? 0, requests: reqSeeds[i] ?? 0 };
+      usage[p] = u;
+      platformTotal[p].tokens   += u.tokens;
+      platformTotal[p].requests += u.requests;
+    });
+    return { id: t.id, name: t.name, plan: t.plan, status: t.status, usage, tokenLimit: mockLimits[t.id] ?? null };
+  });
+
+  return { tenants, periods, platformTotal, limit: 100_000 };
+}
+
+export async function fetchPlatformAIUsage(accessToken: string): Promise<PlatformAIUsageResult> {
+  if (!IS_PRODUCTION) return buildMockPlatformAI();
+  const res  = await fetch(`${SERVER}/ai/platform-ai-usage`, {
+    headers: authHeader(accessToken),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/platform-ai-usage`);
+  return json as PlatformAIUsageResult;
+}
+
+// ─── Per-tenant AI token budget (Super Admin) ─────────────────────────────────
+
+/** Default limit shown in demo mode (mirrors the server constant) */
+const DEMO_DEFAULT_LIMIT = 100_000;
+
+const DEMO_BUDGETS: Record<string, Partial<TenantAIBudget>> = {
+  't1': { limit: 80_000,  isCustom: true,  tokensUsed: 67_200, requests: 112 },
+  't2': { limit: 200_000, isCustom: true,  tokensUsed: 24_600, requests: 45 },
+  't3': { limit: 50_000,  isCustom: true,  tokensUsed: 5_400,  requests: 10 },
+  't4': { limit: DEMO_DEFAULT_LIMIT, isCustom: false, tokensUsed: 7_100, requests: 13 },
+};
+
+export async function fetchTenantAIBudget(
+  tenantId: string,
+  accessToken: string,
+): Promise<TenantAIBudget> {
+  if (!IS_PRODUCTION) {
+    const d = DEMO_BUDGETS[tenantId];
+    return {
+      limit:        d?.limit        ?? DEMO_DEFAULT_LIMIT,
+      isCustom:     d?.isCustom     ?? false,
+      defaultLimit: DEMO_DEFAULT_LIMIT,
+      period:       new Date().toISOString().slice(0, 7),
+      tokensUsed:   d?.tokensUsed   ?? 0,
+      requests:     d?.requests     ?? 0,
+    };
+  }
+  const res  = await fetch(`${SERVER}/ai/token-limit/${encodeURIComponent(tenantId)}`, {
+    headers: authHeader(accessToken),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/token-limit`);
+  return json as TenantAIBudget;
+}
+
+export async function updateTenantAILimit(
+  tenantId: string,
+  limit: number | null,
+  accessToken: string,
+): Promise<void> {
+  if (!IS_PRODUCTION) {
+    const d = DEMO_BUDGETS[tenantId] ?? {};
+    if (limit === null) {
+      d.limit    = DEMO_DEFAULT_LIMIT;
+      d.isCustom = false;
+    } else {
+      d.limit    = limit;
+      d.isCustom = true;
+    }
+    DEMO_BUDGETS[tenantId] = d;
+    return;
+  }
+  const res  = await fetch(`${SERVER}/ai/token-limit/${encodeURIComponent(tenantId)}`, {
+    method:  'PUT',
+    headers: authHeader(accessToken),
+    body:    JSON.stringify({ limit }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: PUT /ai/token-limit`);
+}
+
 // ─── Re-export types so pages import from here, not from mockSaasData ─────────
 export type {
   Tenant, PendingRequest, TenantUser, Invoice,
   AuditLog, Module, Feature, UsageDataPoint, ModuleRequest,
+  RoleType,
 };
 
 // ─── Email availability check (public, no auth required) ──────────────────────

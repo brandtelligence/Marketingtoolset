@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, X, CheckCheck, FileText, Users, CreditCard, AlertTriangle, Shield, ExternalLink } from 'lucide-react';
+import { Bell, X, CheckCheck, FileText, Users, CreditCard, AlertTriangle, Shield, ExternalLink, Send } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useDashboardTheme } from './DashboardThemeContext';
 import { useAuth } from '../AuthContext';
 import { fetchRequests, fetchInvoices, fetchAuditLogs, fetchTenantUsers } from '../../utils/apiClient';
 import { formatRM } from '../../utils/format';
+import { useContent } from '../../contexts/ContentContext';
+import { useProjects } from '../../contexts/ProjectsContext';
 
 interface Notification {
   id: string;
@@ -38,6 +40,23 @@ export function NotificationsPanel() {
   const ref = useRef<HTMLDivElement>(null);
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+
+  // ── Content context (approval notifications) ───────────────────────────────
+  const { cards, recentEvents } = useContent();
+  const { projects }            = useProjects();
+
+  // Stable refs so the async effect closure always reads fresh values
+  const cardsRef    = useRef(cards);    cardsRef.current    = cards;
+  const eventsRef   = useRef(recentEvents); eventsRef.current = recentEvents;
+  const projectsRef = useRef(projects); projectsRef.current = projects;
+
+  // Persisted read / dismiss state that survives effect re-runs
+  const readIds      = useRef(new Set<string>());
+  const dismissedIds = useRef(new Set<string>());
+
+  // Stable primitive deps for the effect so it re-fires on meaningful changes
+  const pendingCount   = cards.filter(c => c.status === 'pending_approval').length;
+  const recentEvtCount = recentEvents.length;
 
   // ── Build live notifications on mount ──────────────────────────────────────
   useEffect(() => {
@@ -116,6 +135,81 @@ export function NotificationsPanel() {
           });
 
         } else if (user?.tenantId) {
+          // ── Content approval notifications (highest priority — injected first) ──
+          const currentCards    = cardsRef.current;
+          const currentEvents   = eventsRef.current;
+          const currentProjects = projectsRef.current;
+
+          // 1. Recent submitted_for_approval events (last 48 hours)
+          const cutoff48h  = Date.now() - 48 * 60 * 60 * 1000;
+          const recentSubs = currentEvents
+            .filter(e => e.action === 'submitted_for_approval' && new Date(e.timestamp).getTime() > cutoff48h)
+            .slice(0, 3);
+
+          for (const ev of recentSubs) {
+            const noteId  = `appr-evt-${ev.id}`;
+            if (dismissedIds.current.has(noteId)) continue;
+            const card    = currentCards.find(c => c.id === ev.cardId);
+            const project = card ? currentProjects.find(p => p.id === card.projectId) : null;
+            const slug    = project?.route.split('/').pop() ?? '';
+            notes.push({
+              id:          noteId,
+              icon:        <Send className="w-4 h-4" />,
+              iconBg:      'bg-[#F47A20]/20 text-[#F47A20]',
+              title:       `Approval Request · ${ev.cardTitle}`,
+              description: `${ev.performedBy} submitted "${ev.cardTitle}" (${ev.platform}) for review`,
+              time:        relTime(ev.timestamp),
+              path:        slug ? `/app/projects/${slug}` : '/app/projects',
+              severity:    'warning',
+              read:        readIds.current.has(noteId),
+            });
+          }
+
+          // 2. Pending approval queue — one notification per project (up to 2)
+          const pendingCards = currentCards.filter(c => c.status === 'pending_approval');
+          if (pendingCards.length > 0) {
+            const projectIds = [...new Set(pendingCards.map(c => c.projectId))];
+            for (const pid of projectIds.slice(0, 2)) {
+              const noteId  = `appr-queue-${pid}`;
+              if (dismissedIds.current.has(noteId)) continue;
+              const pCards  = pendingCards.filter(c => c.projectId === pid);
+              const project = currentProjects.find(p => p.id === pid);
+              const slug    = project?.route.split('/').pop() ?? '';
+              const hasNew  = recentSubs.some(e => pCards.some(c => c.id === e.cardId));
+              const nameList = pCards.map(c => c.title).slice(0, 2).join(', ');
+              notes.push({
+                id:          noteId,
+                icon:        <CheckCheck className="w-4 h-4" />,
+                iconBg:      'bg-[#0BA4AA]/20 text-[#0BA4AA]',
+                title:       `${pCards.length} Card${pCards.length !== 1 ? 's' : ''} Awaiting Approval`,
+                description: `${project?.name ?? 'Project'}: ${nameList}${pCards.length > 2 ? ` +${pCards.length - 2} more` : ''}`,
+                time:        'Now',
+                path:        slug ? `/app/projects/${slug}` : '/app/projects',
+                severity:    'warning',
+                read:        readIds.current.has(noteId) || !hasNew,
+              });
+            }
+            // Overflow pill if >2 projects
+            if (projectIds.length > 2) {
+              const overflowNote = 'appr-overflow';
+              if (!dismissedIds.current.has(overflowNote)) {
+                const overflowCount = pendingCards.filter(c => !projectIds.slice(0, 2).includes(c.projectId)).length;
+                notes.push({
+                  id:          overflowNote,
+                  icon:        <CheckCheck className="w-4 h-4" />,
+                  iconBg:      'bg-[#0BA4AA]/20 text-[#0BA4AA]',
+                  title:       `+${overflowCount} More Cards in ${projectIds.length - 2} Project${projectIds.length - 2 !== 1 ? 's' : ''}`,
+                  description: 'Additional content pieces are waiting for your review',
+                  time:        'Now',
+                  path:        '/app/projects',
+                  severity:    'info',
+                  read:        readIds.current.has(overflowNote),
+                });
+              }
+            }
+          }
+
+          // ── Existing billing / team notifications ──────────────────────────
           const [invoices, users] = await Promise.all([
             fetchInvoices(user.tenantId),
             fetchTenantUsers(user.tenantId),
@@ -173,11 +267,16 @@ export function NotificationsPanel() {
       } catch (err) {
         console.error('[NotificationsPanel] load error:', err);
       }
-      setNotifications(notes);
+      // Apply persisted dismissed/read state before setting
+      setNotifications(
+        notes
+          .filter(n => !dismissedIds.current.has(n.id))
+          .map(n => ({ ...n, read: readIds.current.has(n.id) || n.read }))
+      );
     }
 
     load();
-  }, [user?.role, user?.tenantId]);
+  }, [user?.role, user?.tenantId, isSuperAdmin, pendingCount, recentEvtCount]);
 
   // ── Close on outside click ─────────────────────────────────────────────────
   useEffect(() => {
@@ -190,20 +289,30 @@ export function NotificationsPanel() {
 
   // ── Close on Escape ────────────────────────────────────────────────────────
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); }
     if (open) document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [open]);
 
   const unread = notifications.filter(n => !n.read).length;
-  const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+
+  const markAllRead = () => {
+    setNotifications(prev => {
+      prev.forEach(n => readIds.current.add(n.id));
+      return prev.map(n => ({ ...n, read: true }));
+    });
+  };
+
   const handleClick = (n: Notification) => {
+    readIds.current.add(n.id);
     setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x));
     setOpen(false);
     navigate(n.path);
   };
+
   const dismiss = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    dismissedIds.current.add(id);
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 

@@ -7,6 +7,16 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export type ContentStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'rejected';
 
+/** Optional engagement metrics logged against a published card. */
+export interface EngagementData {
+  likes?:     number;
+  comments?:  number;
+  shares?:    number;
+  reach?:     number;
+  /** ISO timestamp of the last manual update. */
+  updatedAt?: string;
+}
+
 export interface AuditEntry {
   id: string;
   action:
@@ -74,6 +84,9 @@ export interface ContentCard {
   postType?: string;
   visualDescription?: string;
   callToAction?: string;
+
+  // Engagement metrics (published cards only — manually logged by staff)
+  engagementData?: EngagementData;
 }
 
 // ─── Approval Event (for real-time notifications) ─────────────────────────────
@@ -381,6 +394,65 @@ const manualMockCards: ContentCard[] = [
       { id: 'a13', action: 'submitted_for_approval', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-23T09:00:00') },
       { id: 'a14', action: 'approved', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-24T10:00:00'), details: 'Auto-approved by project lead' },
       { id: 'a15', action: 'scheduled', performedBy: 'System', performedByEmail: 'system', timestamp: new Date('2026-02-24T10:00:01'), details: 'Auto-scheduled for Mar 1, 2026 at 09:00 on X (Twitter)' },
+    ],
+  },
+  // ── Due TODAY (Feb 27 2026) — demonstrates the "Due Today" publish badge ──
+  {
+    id: deterministicUuid('cc_6'),
+    projectId: '1',
+    platform: 'instagram',
+    channel: 'social-media',
+    title: 'Community Spotlight: Your vCard Stories',
+    caption: "We love hearing how you're using vCard SaaS to grow your network! 🌟\n\nThis week's spotlight: connect, share, and grow — all from one tap.\n\nShare your vCard story in the comments below! 👇\n\n#CommunitySpotlight #vCard #Networking #DigitalCard",
+    hashtags: ['CommunitySpotlight', 'vCard', 'Networking', 'DigitalCard'],
+    mediaUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&h=450&fit=crop',
+    mediaType: 'image',
+    scheduledDate: '2026-02-27',
+    scheduledTime: '10:00',
+    status: 'scheduled',
+    approvers: ['tm1', 'tm5'],
+    approvedBy: 'tm5',
+    approvedByName: 'Lisa Anderson',
+    approvedAt: new Date('2026-02-26T09:00:00'),
+    createdBy: 'Sarah Chen',
+    createdByEmail: 'sarah.chen@brandtelligence.my',
+    createdAt: new Date('2026-02-24T14:00:00'),
+    lastEditedBy: 'Sarah Chen',
+    lastEditedAt: new Date('2026-02-25T10:30:00'),
+    auditLog: [
+      { id: 'a16', action: 'created', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-24T14:00:00'), details: 'Content card created via AI Content Studio' },
+      { id: 'a17', action: 'edited', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-25T10:30:00'), details: 'Caption polished and hashtags refined' },
+      { id: 'a18', action: 'submitted_for_approval', performedBy: 'Sarah Chen', performedByEmail: 'sarah.chen@brandtelligence.my', timestamp: new Date('2026-02-25T11:00:00'), details: 'Submitted to Lisa Anderson, Sarah Chen for approval' },
+      { id: 'a19', action: 'approved', performedBy: 'Lisa Anderson', performedByEmail: 'lisa.anderson@brandtelligence.my', timestamp: new Date('2026-02-26T09:00:00'), details: 'Great community content — approved!' },
+      { id: 'a20', action: 'scheduled', performedBy: 'System', performedByEmail: 'system', timestamp: new Date('2026-02-26T09:00:01'), details: 'Auto-scheduled for Feb 27, 2026 at 10:00 on Instagram' },
+    ],
+  },
+  // ── OVERDUE (Feb 25 2026) — demonstrates the "Overdue" publish badge ──
+  {
+    id: deterministicUuid('cc_7'),
+    projectId: '1',
+    platform: 'facebook',
+    channel: 'social-media',
+    title: 'vCard Analytics Dashboard — Live Preview',
+    caption: "Data-driven networking is here. 📊\n\nWith vCard SaaS's new analytics dashboard, you can see:\n• Who viewed your digital card\n• When they viewed it\n• What links they clicked\n• Where they're located\n\nKnowledge is power. Turn every connection into an insight.",
+    hashtags: ['Analytics', 'vCard', 'DataDriven', 'BusinessGrowth', 'SmartNetworking'],
+    mediaUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&h=450&fit=crop',
+    mediaType: 'image',
+    scheduledDate: '2026-02-25',
+    scheduledTime: '14:00',
+    status: 'scheduled',
+    approvers: ['tm1', 'tm6'],
+    approvedBy: 'tm6',
+    approvedByName: 'James Wright',
+    approvedAt: new Date('2026-02-24T16:00:00'),
+    createdBy: 'Marcus Johnson',
+    createdByEmail: 'marcus.johnson@brandtelligence.my',
+    createdAt: new Date('2026-02-22T09:00:00'),
+    auditLog: [
+      { id: 'a21', action: 'created', performedBy: 'Marcus Johnson', performedByEmail: 'marcus.johnson@brandtelligence.my', timestamp: new Date('2026-02-22T09:00:00'), details: 'Content card created manually' },
+      { id: 'a22', action: 'submitted_for_approval', performedBy: 'Marcus Johnson', performedByEmail: 'marcus.johnson@brandtelligence.my', timestamp: new Date('2026-02-23T10:00:00'), details: 'Submitted to Sarah Chen, James Wright for approval' },
+      { id: 'a23', action: 'approved', performedBy: 'James Wright', performedByEmail: 'james.wright@brandtelligence.my', timestamp: new Date('2026-02-24T16:00:00'), details: 'Dashboard content looks professional and accurate.' },
+      { id: 'a24', action: 'scheduled', performedBy: 'System', performedByEmail: 'system', timestamp: new Date('2026-02-24T16:00:01'), details: 'Auto-scheduled for Feb 25, 2026 at 14:00 on Facebook' },
     ],
   },
 ];

@@ -61,6 +61,31 @@ async function seedSuperAdmin() {
 }
 seedSuperAdmin();
 
+// ─── Bootstrap: AI Media Storage bucket ───────────────────────────────────────
+
+const AI_MEDIA_BUCKET = 'make-309fe679-ai-media';
+
+async function ensureAiMediaBucket() {
+  try {
+    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+    const exists = buckets?.some(b => b.name === AI_MEDIA_BUCKET);
+    if (!exists) {
+      const { error } = await supabaseAdmin.storage.createBucket(AI_MEDIA_BUCKET, {
+        public: false,
+        fileSizeLimit: 52428800, // 50 MB
+        allowedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/webm'],
+      });
+      if (error) console.log(`[ai-media bucket] create error: ${error.message}`);
+      else       console.log(`[ai-media bucket] created: ${AI_MEDIA_BUCKET}`);
+    } else {
+      console.log(`[ai-media bucket] already exists — skipping`);
+    }
+  } catch (err) {
+    console.log(`[ai-media bucket] unexpected: ${errMsg(err)}`);
+  }
+}
+ensureAiMediaBucket();
+
 // ─── Default modules + features (seeded idempotently on cold start) ───────────
 
 const DEFAULT_MODULES = [
@@ -1540,7 +1565,7 @@ app.get("/make-server-309fe679/approval-events", async (c) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SMTP CONFIG  (Postgres: smtp_config, id = 'global')
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────��───────
 
 app.get("/make-server-309fe679/smtp/config", async (c) => {
   try {
@@ -2607,6 +2632,974 @@ app.put("/make-server-309fe679/module-requests/:id", async (c) => {
   } catch (err) {
     console.log(`[module-requests PUT] ${errMsg(err)}`);
     return c.json({ error: `updateModuleRequest: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI CONTENT GENERATION  (GPT-4o via OpenAI API)
+//
+// Routes
+//   POST   /ai/generate-content          — generate content (auth required)
+//   GET    /ai/content-history           — fetch generation history (?tenantId)
+//   DELETE /ai/content-history/:id       — delete one history record (body: {tenantId})
+//   GET    /ai/content-usage             — token usage for current month (?tenantId)
+//
+// KV keys
+//   content_gen:history:{tenantId}       → JSON array of GenerationRecord (newest first, max 100)
+//   content_gen:usage:{tenantId}:{YYYY-MM} → JSON ContentGenUsage
+//
+// Token budget
+//   Default: 100,000 tokens / tenant / month
+// ─────────────────────────────────────────────────────────────────────────────
+
+const AI_TOKEN_MONTHLY_LIMIT = 100_000;
+
+// ── Per-tenant AI token limit helper ─────────────────────────────────────────
+// KV key: ai_token_limit:{tenantId} → JSON-encoded number
+// Falls back to AI_TOKEN_MONTHLY_LIMIT when no override is stored.
+async function aiTenantLimit(tenantId: string): Promise<number> {
+  if (!tenantId) return AI_TOKEN_MONTHLY_LIMIT;
+  try {
+    const raw = await kv.get(`ai_token_limit:${tenantId}`);
+    if (raw) {
+      const n = Number(JSON.parse(raw as string));
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  } catch { /* ignore — fall through to default */ }
+  return AI_TOKEN_MONTHLY_LIMIT;
+}
+
+interface GenerationRecord {
+  id:         string;
+  tenantId:   string;
+  userId:     string;
+  userName:   string;
+  template:   string;
+  platform:   string;
+  tone:       string;
+  prompt:     string;
+  output:     string;
+  tokensUsed: number;
+  model:      string;
+  createdAt:  string;
+}
+
+interface ContentGenUsage {
+  tokens:      number;
+  requests:    number;
+  lastUpdated: string;
+}
+
+// ── Build system prompt from template + context ────────────────────────────────
+
+function buildAISystemPrompt(template: string, platform: string, tone: string): string {
+  const toneMap: Record<string, string> = {
+    professional:   "professional, authoritative, and data-driven",
+    conversational: "friendly, approachable, and conversational",
+    creative:       "creative, playful, and trend-forward",
+    authoritative:  "expert-level, thought leadership, commanding",
+    humorous:       "witty, humorous, and entertaining",
+    inspirational:  "uplifting, motivating, and emotionally resonant",
+  };
+  const toneDesc = toneMap[tone] ?? "professional and engaging";
+
+  const base =
+    `You are an expert social media marketing copywriter at Brandtelligence, ` +
+    `a leading Malaysian digital marketing agency. ` +
+    `Write content that is ${toneDesc}. ` +
+    `Use Malaysian English where culturally appropriate. ` +
+    `Currency is Malaysian Ringgit (RM with comma as thousand separator). ` +
+    `Be specific, compelling, and immediately usable.`;
+
+  switch (template) {
+    case "social_caption":
+      return (
+        `${base}\n\n` +
+        `Write a compelling, platform-optimised social media caption for ${platform || "social media"}. ` +
+        `Include 5–10 relevant hashtags at the end. ` +
+        `Keep captions concise for Twitter/X (<280 chars), medium for Instagram (≤2,200 chars), ` +
+        `and professional for LinkedIn. Always include a clear call-to-action.`
+      );
+    case "ad_copy":
+      return (
+        `${base}\n\n` +
+        `Write high-converting ad copy structured as:\n` +
+        `1. HOOK — One punchy sentence that grabs attention instantly\n` +
+        `2. BODY — 2–3 sentences on the core value proposition and key benefits\n` +
+        `3. CTA — A single, action-oriented call-to-action with urgency\n\n` +
+        `Label each section clearly. Make every word earn its place.`
+      );
+    case "blog_intro":
+      return (
+        `${base}\n\n` +
+        `Write an SEO-optimised blog post introduction (150–200 words) that:\n` +
+        `- Opens with a bold hook or surprising statistic\n` +
+        `- Establishes why this topic matters right now\n` +
+        `- Previews the value the reader will get\n` +
+        `- Ends with a smooth transition into the article body\n\n` +
+        `Do NOT write the full article — only the introduction.`
+      );
+    case "hashtag_set":
+      return (
+        `${base}\n\n` +
+        `Generate a strategic hashtag set organised into three tiers:\n` +
+        `🔵 HIGH VOLUME (5 hashtags) — broad reach, millions of posts\n` +
+        `🟠 NICHE (5 hashtags) — targeted community, thousands of posts\n` +
+        `🟢 BRANDED/TRENDING (5 hashtags) — brand-specific or currently trending\n\n` +
+        `Format each tier as a labelled section. Explain the strategy in one sentence per tier.`
+      );
+    case "campaign_brief":
+      return (
+        `${base}\n\n` +
+        `Write a concise campaign brief with these sections:\n` +
+        `📌 OBJECTIVE — What this campaign will achieve (one sentence)\n` +
+        `🎯 TARGET AUDIENCE — Demographics, psychographics, pain points\n` +
+        `💬 KEY MESSAGES — 3 core messages (bullet points)\n` +
+        `📋 CONTENT PILLARS — 4 content themes to rotate\n` +
+        `📊 KPIs — 3–5 measurable success metrics\n` +
+        `📅 SUGGESTED TIMELINE — Phase breakdown\n\n` +
+        `Be specific and actionable. No fluff.`
+      );
+    default:
+      return (
+        `${base}\n\n` +
+        `You are a versatile AI content assistant for Brandtelligence's internal marketing portal. ` +
+        `Help the user with any content, copy, strategy, or marketing question they have.`
+      );
+  }
+}
+
+// ── Helpers: period / KV history / KV usage ───────────────────────────────────
+
+function aiCurrentPeriod(): string {
+  return new Date().toISOString().slice(0, 7); // "2026-02"
+}
+
+async function aiLoadHistory(tenantId: string): Promise<GenerationRecord[]> {
+  const raw = await kv.get(`content_gen:history:${tenantId}`);
+  if (!raw) return [];
+  try { return JSON.parse(raw as string) as GenerationRecord[]; } catch { return []; }
+}
+
+async function aiSaveHistory(tenantId: string, records: GenerationRecord[]): Promise<void> {
+  await kv.set(`content_gen:history:${tenantId}`, JSON.stringify(records.slice(0, 100)));
+}
+
+async function aiLoadUsage(tenantId: string, period: string): Promise<ContentGenUsage> {
+  const raw = await kv.get(`content_gen:usage:${tenantId}:${period}`);
+  if (!raw) return { tokens: 0, requests: 0, lastUpdated: new Date().toISOString() };
+  try { return JSON.parse(raw as string) as ContentGenUsage; } catch { return { tokens: 0, requests: 0, lastUpdated: new Date().toISOString() }; }
+}
+
+async function aiSaveUsage(tenantId: string, period: string, usage: ContentGenUsage): Promise<void> {
+  await kv.set(`content_gen:usage:${tenantId}:${period}`, JSON.stringify(usage));
+}
+
+// ── POST /ai/generate-content ─────────────────────────────────────────────────
+
+app.post("/make-server-309fe679/ai/generate-content", async (c) => {
+  try {
+    // 1. Auth — resolve caller from access token
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (!accessToken) return c.json({ error: "Unauthorized — missing access token" }, 401);
+
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authErr || !user) return c.json({ error: "Unauthorized — invalid token" }, 401);
+
+    const tenantId = user.user_metadata?.tenant_id as string | undefined;
+    const userName = (user.user_metadata?.name ?? user.user_metadata?.display_name ?? user.email ?? "Unknown") as string;
+    const userId   = user.id;
+    const kvKey    = tenantId ?? userId; // SUPER_ADMIN has no tenantId — fall back to userId
+
+    // 2. Tenant module gate — must have content_studio (m2) enabled
+    if (tenantId) {
+      const { data: tenantRow } = await supabaseAdmin
+        .from("tenants").select("modules_enabled").eq("id", tenantId).maybeSingle();
+      const enabledModules: string[] = tenantRow?.modules_enabled ?? [];
+      if (enabledModules.length > 0 && !enabledModules.includes("m2")) {
+        return c.json({
+          error: "AI Content Studio module is not enabled for your organisation. Please contact your Tenant Administrator.",
+        }, 403);
+      }
+    }
+
+    // 3. Monthly token budget check (per-tenant limit, falls back to platform default)
+    const period      = aiCurrentPeriod();
+    const usage       = await aiLoadUsage(kvKey, period);
+    const tenantLimit = await aiTenantLimit(tenantId ?? kvKey);
+    if (usage.tokens >= tenantLimit) {
+      return c.json({
+        error: `Monthly AI token limit of ${tenantLimit.toLocaleString()} tokens reached. Resets on the 1st of next month.`,
+        tokensUsed: usage.tokens,
+        tokenLimit: tenantLimit,
+        period,
+      }, 429);
+    }
+
+    // 4. Parse request body
+    const body = await c.req.json();
+    const {
+      template           = "custom",
+      platform           = "general",
+      tone               = "professional",
+      prompt             = "",
+      projectName        = "",
+      projectDescription = "",
+      targetAudience     = "",
+      charLimit          = 0,
+    } = body;
+
+    if (!String(prompt).trim()) return c.json({ error: "prompt is required" }, 400);
+
+    // 5. Build prompts
+    const systemPrompt  = buildAISystemPrompt(template, platform, tone);
+    const contextLines: string[] = [];
+    if (projectName)        contextLines.push(`Project/Brand: ${projectName}`);
+    if (projectDescription) contextLines.push(`Description: ${projectDescription}`);
+    if (targetAudience)     contextLines.push(`Target Audience: ${targetAudience}`);
+    if (platform)           contextLines.push(`Target Platform: ${platform}`);
+    if (charLimit > 0)      contextLines.push(`Character Limit: ${charLimit}`);
+    const userPrompt = contextLines.length
+      ? `CONTEXT\n${contextLines.join("\n")}\n\nREQUEST\n${prompt}`
+      : String(prompt);
+
+    // 6. Call OpenAI
+    const openAIKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAIKey) return c.json({ error: "OPENAI_API_KEY not configured on this server." }, 500);
+
+    const model = "gpt-4o";
+    const openAIRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openAIKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userPrompt },
+        ],
+        max_tokens:  1_500,
+        temperature: 0.75,
+      }),
+    });
+
+    if (!openAIRes.ok) {
+      const errBody = await openAIRes.json().catch(() => ({}));
+      const errText = (errBody as any)?.error?.message ?? `OpenAI returned HTTP ${openAIRes.status}`;
+      console.log(`[ai/generate-content] OpenAI API error: ${errText}`);
+      return c.json({ error: `OpenAI error: ${errText}` }, 502);
+    }
+
+    const openAIData = await openAIRes.json() as {
+      choices: Array<{ message: { content: string } }>;
+      usage:   { total_tokens: number };
+    };
+
+    const output     = openAIData.choices?.[0]?.message?.content ?? "";
+    const tokensUsed = openAIData.usage?.total_tokens ?? 0;
+
+    // 7. Persist history
+    const record: GenerationRecord = {
+      id:         crypto.randomUUID(),
+      tenantId:   kvKey,
+      userId,
+      userName,
+      template,
+      platform,
+      tone,
+      prompt:     String(prompt).slice(0, 500),
+      output,
+      tokensUsed,
+      model,
+      createdAt:  new Date().toISOString(),
+    };
+    const history = await aiLoadHistory(kvKey);
+    history.unshift(record);
+    await aiSaveHistory(kvKey, history);
+
+    // 8. Update usage counters
+    const updatedUsage: ContentGenUsage = {
+      tokens:      usage.tokens   + tokensUsed,
+      requests:    usage.requests + 1,
+      lastUpdated: new Date().toISOString(),
+    };
+    await aiSaveUsage(kvKey, period, updatedUsage);
+
+    console.log(
+      `[ai/generate-content] tenant=${kvKey} user=${userId} ` +
+      `template=${template} tokens=${tokensUsed} monthTotal=${updatedUsage.tokens}`
+    );
+
+    return c.json({
+      success:    true,
+      id:         record.id,
+      output,
+      tokensUsed,
+      model,
+      usage: {
+        tokens:   updatedUsage.tokens,
+        requests: updatedUsage.requests,
+        limit:    AI_TOKEN_MONTHLY_LIMIT,
+        period,
+      },
+    });
+
+  } catch (err) {
+    console.log(`[ai/generate-content] ${errMsg(err)}`);
+    return c.json({ error: `generate-content error: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ── GET /ai/content-history ───────────────────────────────────────────────────
+
+app.get("/make-server-309fe679/ai/content-history", async (c) => {
+  try {
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
+
+    const tenantId  = c.req.query("tenantId") ?? user.user_metadata?.tenant_id ?? user.id;
+    const limitParam = Math.min(parseInt(c.req.query("limit") ?? "20"), 100);
+    const history   = await aiLoadHistory(tenantId as string);
+
+    return c.json({ history: history.slice(0, limitParam) });
+  } catch (err) {
+    console.log(`[ai/content-history GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchContentHistory: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ── DELETE /ai/content-history/:id ───────────────────────────────────────────
+
+app.delete("/make-server-309fe679/ai/content-history/:id", async (c) => {
+  try {
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
+
+    const id        = c.req.param("id");
+    const body      = await c.req.json();
+    const tenantId  = body.tenantId ?? user.user_metadata?.tenant_id ?? user.id;
+
+    const history = await aiLoadHistory(tenantId);
+    const updated = history.filter((r: GenerationRecord) => r.id !== id);
+    await aiSaveHistory(tenantId, updated);
+
+    console.log(`[ai/content-history DELETE] ${id} for tenant ${tenantId}`);
+    return c.json({ success: true, deletedId: id });
+  } catch (err) {
+    console.log(`[ai/content-history DELETE] ${errMsg(err)}`);
+    return c.json({ error: `deleteContentHistory: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ── GET /ai/content-usage ─────────────────────────────────────────────────────
+
+app.get("/make-server-309fe679/ai/content-usage", async (c) => {
+  try {
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
+
+    const tenantId = c.req.query("tenantId") ?? user.user_metadata?.tenant_id ?? user.id;
+    const period   = c.req.query("period") ?? aiCurrentPeriod();
+
+    const usage       = await aiLoadUsage(tenantId as string, period);
+    const tenantLimit = await aiTenantLimit(tenantId as string);
+    return c.json({
+      usage: {
+        tokens:   usage.tokens,
+        requests: usage.requests,
+        limit:    tenantLimit,
+        period,
+      },
+    });
+  } catch (err) {
+    console.log(`[ai/content-usage GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchContentUsage: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ── GET /ai/platform-ai-usage ─────────────────────────────────────────────────
+// Super Admin only. Cross-tenant AI token + request usage for the last 6 months.
+// All KV records are fetched in a single mget for efficiency.
+// Response: { tenants, periods, platformTotal, limit }
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get("/make-server-309fe679/ai/platform-ai-usage", async (c) => {
+  try {
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
+
+    if (user.user_metadata?.role !== "SUPER_ADMIN") {
+      return c.json({ error: "Forbidden — Super Admin only" }, 403);
+    }
+
+    const { data: tenantRows, error: tenantErr } = await supabaseAdmin
+      .from("tenants")
+      .select("id, name, plan, status")
+      .order("name");
+    if (tenantErr) throw new Error(`DB fetch tenants: ${tenantErr.message}`);
+    const allTenants = (tenantRows ?? []) as Array<{ id: string; name: string; plan: string; status: string }>;
+
+    // Last 6 calendar months
+    const periods: string[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      periods.push(d.toISOString().slice(0, 7));
+    }
+
+    // Build all KV keys and fetch usage + per-tenant limits in one batch
+    const usageKeys: string[] = [];
+    for (const t of allTenants) {
+      for (const p of periods) usageKeys.push(`content_gen:usage:${t.id}:${p}`);
+    }
+    const limitKeys: string[] = allTenants.map(t => `ai_token_limit:${t.id}`);
+    const allKeys = [...usageKeys, ...limitKeys];
+    const allValues: (string | null)[] = allKeys.length > 0 ? await kv.mget(allKeys) : [];
+
+    const values      = allValues.slice(0, usageKeys.length);
+    const limitValues = allValues.slice(usageKeys.length);
+
+    const platformTotal: Record<string, { tokens: number; requests: number }> = {};
+    for (const p of periods) platformTotal[p] = { tokens: 0, requests: 0 };
+
+    const tenants = allTenants.map((tenant, ti) => {
+      // Usage per period
+      const usage: Record<string, { tokens: number; requests: number }> = {};
+      periods.forEach((p, pi) => {
+        const raw = values[ti * periods.length + pi];
+        let u = { tokens: 0, requests: 0 };
+        if (raw) {
+          try { const x = JSON.parse(raw as string); u = { tokens: x.tokens ?? 0, requests: x.requests ?? 0 }; } catch { /* ignore */ }
+        }
+        usage[p] = u;
+        platformTotal[p].tokens   += u.tokens;
+        platformTotal[p].requests += u.requests;
+      });
+      // Per-tenant limit override (null = use platform default)
+      let tokenLimit: number | null = null;
+      const limitRaw = limitValues[ti];
+      if (limitRaw) {
+        try { const n = Number(JSON.parse(limitRaw as string)); if (Number.isFinite(n) && n > 0) tokenLimit = n; } catch { /* ignore */ }
+      }
+      return { id: tenant.id, name: tenant.name, plan: tenant.plan, status: tenant.status, usage, tokenLimit };
+    });
+
+    console.log(`[ai/platform-ai-usage] ${allTenants.length} tenants × ${periods.length} periods`);
+    return c.json({ tenants, periods, platformTotal, limit: AI_TOKEN_MONTHLY_LIMIT });
+  } catch (err) {
+    console.log(`[ai/platform-ai-usage GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchPlatformAIUsage: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ── GET /ai/token-limit/:tenantId — SUPER_ADMIN only ─────────────────────────
+// Returns the current monthly token limit for a specific tenant.
+// { limit, isCustom, defaultLimit, period, tokensUsed }
+
+app.get("/make-server-309fe679/ai/token-limit/:tenantId", async (c) => {
+  try {
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
+    if (user.user_metadata?.role !== "SUPER_ADMIN") return c.json({ error: "Forbidden — Super Admin only" }, 403);
+
+    const tenantId = c.req.param("tenantId");
+    const period   = aiCurrentPeriod();
+
+    // Fetch both limit override and current usage in parallel
+    const [limitRaw, usage] = await Promise.all([
+      kv.get(`ai_token_limit:${tenantId}`),
+      aiLoadUsage(tenantId, period),
+    ]);
+
+    let customLimit: number | null = null;
+    if (limitRaw) {
+      try { const n = Number(JSON.parse(limitRaw as string)); if (Number.isFinite(n) && n > 0) customLimit = n; } catch { /* ignore */ }
+    }
+
+    return c.json({
+      limit:        customLimit ?? AI_TOKEN_MONTHLY_LIMIT,
+      isCustom:     customLimit !== null,
+      defaultLimit: AI_TOKEN_MONTHLY_LIMIT,
+      period,
+      tokensUsed:   usage.tokens,
+      requests:     usage.requests,
+    });
+  } catch (err) {
+    console.log(`[ai/token-limit GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchTokenLimit: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ── PUT /ai/token-limit/:tenantId — SUPER_ADMIN only ─────────────────────────
+// Body: { limit: number | null }
+//   number → sets a custom per-tenant limit (minimum 1,000)
+//   null   → resets to platform default (AI_TOKEN_MONTHLY_LIMIT)
+
+app.put("/make-server-309fe679/ai/token-limit/:tenantId", async (c) => {
+  try {
+    const accessToken = c.req.header("Authorization")?.split(" ")[1];
+    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
+    if (user.user_metadata?.role !== "SUPER_ADMIN") return c.json({ error: "Forbidden — Super Admin only" }, 403);
+
+    const tenantId = c.req.param("tenantId");
+    const body     = await c.req.json();
+    const rawLimit = body.limit;
+
+    if (rawLimit === null || rawLimit === undefined) {
+      // Reset to platform default
+      await kv.del(`ai_token_limit:${tenantId}`);
+      console.log(`[ai/token-limit PUT] Reset ${tenantId} to platform default (${AI_TOKEN_MONTHLY_LIMIT})`);
+      return c.json({ success: true, limit: AI_TOKEN_MONTHLY_LIMIT, isCustom: false });
+    }
+
+    const n = Number(rawLimit);
+    if (!Number.isFinite(n) || n < 1_000) {
+      return c.json({ error: "Invalid limit — minimum 1,000 tokens" }, 400);
+    }
+
+    await kv.set(`ai_token_limit:${tenantId}`, JSON.stringify(n));
+    console.log(`[ai/token-limit PUT] Set ${tenantId} limit to ${n}`);
+    return c.json({ success: true, limit: n, isCustom: true });
+  } catch (err) {
+    console.log(`[ai/token-limit PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateTokenLimit: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI CAPTION REFINER  (lightweight — no auth, no token tracking)
+// POST /ai/refine-caption
+// Body: { platform, title, caption?, postType?, visualDescription? }
+// Returns: { caption: string, hashtags: string[] }
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post("/make-server-309fe679/ai/refine-caption", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const {
+      platform          = "general",
+      title             = "",
+      caption           = "",
+      postType          = "",
+      visualDescription = "",
+    } = body;
+
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openaiKey) {
+      return c.json({ error: "OpenAI API key not configured on server" }, 500);
+    }
+
+    const platformTones: Record<string, string> = {
+      instagram: "casual, visual-first, emoji-rich, aspirational — punchy sentences and strategic line breaks",
+      facebook:  "conversational, community-oriented — moderate emoji, encourages shares and comments",
+      twitter:   "concise and punchy (under 280 chars total), trending, strong hook in first line, minimal hashtags",
+      linkedin:  "professional, thought-leadership, data-driven — minimal emoji, industry authority tone",
+      tiktok:    "Gen-Z casual, energetic opening hook, trend-aware, strong CTA",
+      youtube:   "descriptive, keyword-rich, informative — optimised for SEO and watch-time retention",
+      pinterest: "aspirational, discovery-focused, keyword-rich in first sentence, inspirational",
+      threads:   "conversational opinion-style, authentic, community discussion starters, 1–3 hashtags max",
+      reddit:    "authentic, no hard sell, value-first, community-native language",
+      whatsapp:  "personal, direct, concise — no hashtags, conversational plain language",
+      telegram:  "informative channel-announcement style, clear CTA, medium length",
+      snapchat:  "ultra-brief, fun, high energy, FOMO-inducing",
+    };
+    const tone = platformTones[platform] ?? "professional and engaging";
+
+    const systemPrompt =
+      `You are a senior social media copywriter at Brandtelligence, a Malaysian digital marketing agency. ` +
+      `You craft platform-native captions that drive authentic engagement. ` +
+      `For ${platform}: ${tone}. ` +
+      `Use Malaysian English where culturally appropriate. Currency is Malaysian Ringgit (RM). ` +
+      `Return ONLY valid JSON with no markdown or backticks, exactly this shape: ` +
+      `{"caption":"full caption text","hashtags":["word1","word2","word3","word4","word5","word6","word7","word8","word9","word10"]} ` +
+      `Rules: caption must be immediately copy-pasteable; hashtags are plain words without #; provide exactly 10 hashtags.`;
+
+    const userLines: string[] = [`Platform: ${platform}`, `Post title: ${title}`];
+    if (caption.trim())         userLines.push(`Existing caption to improve:\n${caption.trim()}`);
+    else                        userLines.push(`No existing caption — write fresh content based on the title.`);
+    if (postType)               userLines.push(`Content type: ${postType}`);
+    if (visualDescription)      userLines.push(`Visual description: ${visualDescription}`);
+    userLines.push(`\nRefine or write the caption and provide exactly 10 relevant hashtags.`);
+
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${openaiKey}`,
+      },
+      body: JSON.stringify({
+        model:           "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userLines.join("\n") },
+        ],
+        temperature:     0.75,
+        max_tokens:      800,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!openaiRes.ok) {
+      const txt = await openaiRes.text();
+      console.log(`[ai/refine-caption] OpenAI error ${openaiRes.status}: ${txt}`);
+      return c.json({ error: `OpenAI API returned ${openaiRes.status}` }, 502);
+    }
+
+    const data = await openaiRes.json();
+    const raw  = data.choices?.[0]?.message?.content;
+    if (!raw) return c.json({ error: "Empty response from OpenAI" }, 500);
+
+    const parsed   = JSON.parse(raw);
+    const refined  = (parsed.caption ?? "").trim();
+    const hashtags = Array.isArray(parsed.hashtags)
+      ? (parsed.hashtags as string[]).map(h => String(h).replace(/^#+/, "").trim()).filter(Boolean)
+      : [];
+
+    console.log(`[ai/refine-caption] platform=${platform} captionLen=${refined.length} tags=${hashtags.length}`);
+    return c.json({ caption: refined, hashtags });
+
+  } catch (err) {
+    console.log(`[ai/refine-caption] ${errMsg(err)}`);
+    return c.json({ error: `refine-caption error: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SLA CONFIG  (KV: sla_config:{tenantId})
+// GET  /sla/config?tenantId=xxx  →  { warningHours, breachHours }
+// PUT  /sla/config               ←  { tenantId, warningHours, breachHours }
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SLA_CONFIG_DEFAULTS = { warningHours: 24, breachHours: 48 };
+
+app.get("/make-server-309fe679/sla/config", async (c) => {
+  try {
+    const tenantId = c.req.query("tenantId");
+    if (!tenantId) return c.json({ config: SLA_CONFIG_DEFAULTS });
+    const raw    = await kv.get(`sla_config:${tenantId}`);
+    const config = raw
+      ? { ...SLA_CONFIG_DEFAULTS, ...(JSON.parse(raw as string)) }
+      : SLA_CONFIG_DEFAULTS;
+    return c.json({ config });
+  } catch (err) {
+    console.log(`[sla/config GET] ${errMsg(err)}`);
+    return c.json({ config: SLA_CONFIG_DEFAULTS });
+  }
+});
+
+app.put("/make-server-309fe679/sla/config", async (c) => {
+  try {
+    const { tenantId, warningHours, breachHours } = await c.req.json();
+    if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+    const warn   = Math.max(1,        Math.min(Number(warningHours) || 24, 720));
+    const breach = Math.max(warn + 1, Math.min(Number(breachHours)  || 48, 720));
+    await kv.set(`sla_config:${tenantId}`, JSON.stringify({ warningHours: warn, breachHours: breach }));
+    console.log(`[sla/config PUT] tenant=${tenantId} warn=${warn}h breach=${breach}h`);
+    return c.json({ success: true, config: { warningHours: warn, breachHours: breach } });
+  } catch (err) {
+    console.log(`[sla/config PUT] ${errMsg(err)}`);
+    return c.json({ error: `saveSlaConfig: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SLA ESCALATION EMAIL
+// POST /sla/escalate
+// Body: { tenantId, breachHours, cards[], escalateTo[] }
+// Dedup key: sla_esc:{YYYY-MM-DD}:{tenantId}:{cardId}  — resets each UTC day
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post("/make-server-309fe679/sla/escalate", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { tenantId, breachHours = 48, cards = [], escalateTo = [] } = body;
+
+    if (!tenantId)          return c.json({ error: "tenantId is required" }, 400);
+    if (!cards.length)      return c.json({ success: true, sent: 0, skipped: 0, reason: "no cards" });
+    if (!escalateTo.length) return c.json({ success: true, sent: 0, skipped: 0, reason: "no recipients" });
+
+    const today      = new Date().toISOString().slice(0, 10);
+    const dedupKeys: string[] = cards.map((card: any) => `sla_esc:${today}:${tenantId}:${card.id}`);
+    const existing   = await kv.mget(dedupKeys);
+    const freshCards = cards.filter((_: any, i: number) => !existing[i]);
+
+    if (!freshCards.length) {
+      console.log(`[sla/escalate] All ${cards.length} card(s) already escalated today for tenant ${tenantId}`);
+      return c.json({ success: true, sent: 0, skipped: cards.length });
+    }
+
+    const cardRows = freshCards.map((card: any) => {
+      const hrs  = typeof card.hoursElapsed === "number" ? card.hoursElapsed.toFixed(1) : "—";
+      const over = Math.max(0, (card.hoursElapsed || 0) - breachHours).toFixed(1);
+      return `<tr>
+        <td style="padding:10px 14px;font-size:13px;color:#1a1a2e;font-weight:600;border-bottom:1px solid #f0f0f0;">${card.title || "(untitled)"}</td>
+        <td style="padding:10px 14px;font-size:13px;color:#444;text-transform:capitalize;border-bottom:1px solid #f0f0f0;">${card.platform || "—"}</td>
+        <td style="padding:10px 14px;font-size:13px;color:#444;border-bottom:1px solid #f0f0f0;">${card.createdBy || "—"}</td>
+        <td style="padding:10px 14px;font-size:13px;color:#dc2626;font-weight:700;border-bottom:1px solid #f0f0f0;">${hrs}h <span style="font-size:11px;color:#ef4444;">(+${over}h over)</span></td>
+      </tr>`;
+    }).join("");
+
+    const portalUrl = (Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "") + "/tenant/projects";
+    const emailHtml = fbWrap(
+      `⏰ SLA Breach Alert — ${freshCards.length} Card${freshCards.length !== 1 ? "s" : ""} Awaiting Approval`,
+      `<p style="font-size:15px;line-height:1.7;color:#444;">
+         The following content card${freshCards.length !== 1 ? "s have" : " has"} been waiting for approval
+         for more than <strong>${breachHours} hours</strong> and ${freshCards.length !== 1 ? "require" : "requires"} your immediate attention.
+       </p>
+       <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;margin:20px 0;">
+         <thead>
+           <tr style="background:#f8f8fb;">
+             <th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb;">Card Title</th>
+             <th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb;">Platform</th>
+             <th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb;">Creator</th>
+             <th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb;">Waiting</th>
+           </tr>
+         </thead>
+         <tbody>${cardRows}</tbody>
+       </table>
+       ${fbWarn(`SLA threshold of ${breachHours}h exceeded. Please log in and approve these cards immediately.`)}
+       ${fbBtn(portalUrl, "Review in Portal →", "#dc2626")}`,
+    );
+
+    const { data: smtpRow } = await supabaseAdmin
+      .from("smtp_config").select("*").eq("id", "global").maybeSingle();
+
+    if (!smtpRow?.host) {
+      console.log(`[sla/escalate] SMTP not configured — writing dedup keys to suppress retries`);
+      const noSmtp = JSON.stringify({ skippedNoSmtp: true, ts: new Date().toISOString() });
+      await kv.mset(Object.fromEntries(dedupKeys.map(k => [k, noSmtp])));
+      return c.json({ success: false, sent: 0, skipped: cards.length, reason: "smtp_not_configured" });
+    }
+
+    const smtpCfg    = rowToSmtpConfig(smtpRow);
+    const transporter = nodemailer.createTransport({
+      host:   smtpCfg.host,
+      port:   parseInt(smtpCfg.port, 10),
+      secure: parseInt(smtpCfg.port, 10) === 465,
+      auth:   smtpCfg.user && smtpCfg.pass ? { user: smtpCfg.user, pass: smtpCfg.pass } : undefined,
+    });
+
+    let sent = 0;
+    for (const recipient of escalateTo) {
+      if (!recipient?.email) continue;
+      try {
+        await transporter.sendMail({
+          from:    `"Brandtelligence Platform" <${smtpCfg.fromEmail || "noreply@brandtelligence.com.my"}>`,
+          to:      recipient.email,
+          subject: `⏰ SLA Alert: ${freshCards.length} pending card${freshCards.length !== 1 ? "s" : ""} need your approval`,
+          html:    emailHtml,
+        });
+        console.log(`[sla/escalate] Sent to ${recipient.email} — ${freshCards.length} card(s) for tenant ${tenantId}`);
+        sent++;
+      } catch (mailErr) {
+        console.log(`[sla/escalate] Failed to send to ${recipient.email}: ${errMsg(mailErr)}`);
+      }
+    }
+
+    const freshDedupKeys: string[] = freshCards.map((card: any) => `sla_esc:${today}:${tenantId}:${card.id}`);
+    const sentAt = new Date().toISOString();
+    await kv.mset(Object.fromEntries(
+      freshDedupKeys.map(k => [k, JSON.stringify({ sentAt, recipients: escalateTo.length })]),
+    ));
+
+    return c.json({ success: true, sent, skipped: cards.length - freshCards.length });
+  } catch (err) {
+    console.log(`[sla/escalate] ${errMsg(err)}`);
+    return c.json({ error: `slaEscalate: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Media Generation  ·  POST /ai/generate-image
+// Generates a DALL-E 3 image, uploads to Supabase Storage, returns signed URL.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post("/make-server-309fe679/ai/generate-image", async (c) => {
+  try {
+    const {
+      prompt, style = 'photorealistic', aspectRatio = '1:1',
+      cardId, tenantId,
+    } = await c.req.json();
+
+    if (!prompt?.trim()) return c.json({ error: 'prompt is required' }, 400);
+
+    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiKey) return c.json({ error: 'OpenAI API key not configured' }, 500);
+
+    // ── Style enhancement suffix ──
+    const styleMap: Record<string, string> = {
+      photorealistic: 'photorealistic DSLR photography, professional lighting, sharp focus, high resolution, award-winning',
+      cinematic:      'cinematic photography, dramatic Rembrandt lighting, shallow depth of field, film grain, anamorphic lens flare',
+      digital_art:    'digital illustration, vibrant saturated colors, highly detailed concept art, trending on ArtStation',
+      '3d_render':    '3D render, physically based rendering, ray-traced soft shadows, ultra-detailed CGI, cinematic grade',
+      minimalist:     'minimalist design, clean white negative space, flat lay product photography, brand-safe composition',
+      anime:          'anime art style, Studio Ghibli inspired, detailed hand-drawn illustration, vibrant cel-shaded palette',
+    };
+    const sizeMap: Record<string, string> = {
+      '1:1':  '1024x1024',
+      '16:9': '1792x1024',
+      '9:16': '1024x1792',
+    };
+
+    const enhanced = `${prompt.trim()}. ${styleMap[style] ?? 'high quality professional'}, social media marketing visual, no text, no watermarks, no logos.`;
+    const size = sizeMap[aspectRatio] ?? '1024x1024';
+
+    // ── Call DALL-E 3 ──
+    const aiRes = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({ model: 'dall-e-3', prompt: enhanced, n: 1, size, quality: 'hd', style: 'vivid', response_format: 'url' }),
+    });
+    if (!aiRes.ok) {
+      const e = await aiRes.json();
+      throw new Error(`DALL-E 3: ${e.error?.message ?? aiRes.statusText}`);
+    }
+    const aiData  = await aiRes.json();
+    const imgUrl  = aiData.data?.[0]?.url;
+    const revised = aiData.data?.[0]?.revised_prompt ?? '';
+    if (!imgUrl) throw new Error('No image URL returned from DALL-E 3');
+
+    // ── Download & upload to Supabase Storage ──
+    const imgBuf   = await (await fetch(imgUrl)).arrayBuffer();
+    const filename = `${tenantId ?? 'global'}/${cardId ?? crypto.randomUUID()}-${Date.now()}.png`;
+    const { error: upErr } = await supabaseAdmin.storage
+      .from(AI_MEDIA_BUCKET)
+      .upload(filename, imgBuf, { contentType: 'image/png', upsert: true });
+    if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
+
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from(AI_MEDIA_BUCKET)
+      .createSignedUrl(filename, 7200); // 2-hour signed URL
+    if (signErr) throw new Error(`Signed URL: ${signErr.message}`);
+
+    console.log(`[ai/generate-image] done size=${size} style=${style} card=${cardId}`);
+    return c.json({ success: true, mediaUrl: signed.signedUrl, filename, type: 'image', revisedPrompt: revised });
+  } catch (err) {
+    console.log(`[ai/generate-image] ${errMsg(err)}`);
+    return c.json({ error: `generateImage: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Media Generation  ·  POST /ai/generate-video
+// Starts a Replicate video prediction (minimax/video-01 ≈ 6-10 s).
+// Returns { predictionId, status } so the client can poll.
+// ─────────────────────────────────────────────────────────────────────────────
+app.post("/make-server-309fe679/ai/generate-video", async (c) => {
+  try {
+    const { prompt, style = 'cinematic', cardId, tenantId } = await c.req.json();
+    if (!prompt?.trim()) return c.json({ error: 'prompt is required' }, 400);
+
+    const repKey = Deno.env.get('REPLICATE_API_TOKEN');
+    if (!repKey) return c.json({ error: 'Replicate API key not configured — add REPLICATE_API_TOKEN to Supabase secrets' }, 500);
+
+    const styleMap: Record<string, string> = {
+      cinematic: 'cinematic camera movement, professional lighting, film look, shallow depth of field',
+      dynamic:   'fast-paced dynamic motion, energetic transitions, high-impact visual energy',
+      ambient:   'slow gentle ambient motion, serene atmosphere, peaceful flowing movement',
+      product:   'clean product showcase, studio hero shot, slow elegant 360 reveal, white background',
+    };
+    const enhanced = `${prompt.trim()}. ${styleMap[style] ?? 'high quality motion'}, approximately 10 seconds, social media marketing, no text or watermarks, no logos.`;
+
+    // ── Create Replicate prediction (minimax/video-01) ──
+    const repRes = await fetch('https://api.replicate.com/v1/models/minimax/video-01/predictions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Token ${repKey}`, Prefer: 'respond-async' },
+      body: JSON.stringify({ input: { prompt: enhanced, prompt_optimizer: true } }),
+    });
+    if (!repRes.ok) {
+      const e = await repRes.json();
+      throw new Error(`Replicate: ${JSON.stringify(e)}`);
+    }
+    const repData = await repRes.json();
+    if (!repData.id) throw new Error('No prediction ID from Replicate');
+
+    console.log(`[ai/generate-video] started predictionId=${repData.id} style=${style} card=${cardId}`);
+    return c.json({ success: true, predictionId: repData.id, status: repData.status ?? 'starting', cardId, tenantId });
+  } catch (err) {
+    console.log(`[ai/generate-video] ${errMsg(err)}`);
+    return c.json({ error: `generateVideo: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Media Generation  ·  GET /ai/media-status/:predictionId
+// Polls Replicate for video completion. When done, downloads the MP4 and
+// uploads to Supabase Storage, returning a 2-hour signed URL.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get("/make-server-309fe679/ai/media-status/:predictionId", async (c) => {
+  try {
+    const predId   = c.req.param('predictionId');
+    const tenantId = c.req.query('tenantId') ?? 'global';
+    const cardId   = c.req.query('cardId')   ?? crypto.randomUUID();
+
+    const repKey = Deno.env.get('REPLICATE_API_TOKEN');
+    if (!repKey) return c.json({ error: 'Replicate API key not configured' }, 500);
+
+    const repRes = await fetch(`https://api.replicate.com/v1/predictions/${predId}`, {
+      headers: { Authorization: `Token ${repKey}` },
+    });
+    if (!repRes.ok) throw new Error(`Replicate status ${repRes.status}`);
+    const repData = await repRes.json();
+
+    const status = repData.status as string; // starting | processing | succeeded | failed | canceled
+
+    if (status === 'succeeded') {
+      const videoUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
+      if (!videoUrl) throw new Error('Replicate succeeded but output is empty');
+
+      // ── Download video from Replicate delivery CDN ──
+      const vidRes = await fetch(videoUrl);
+      if (!vidRes.ok) throw new Error(`Failed to fetch video from Replicate CDN: ${vidRes.status}`);
+      const vidBuf  = await vidRes.arrayBuffer();
+      const filename = `${tenantId}/${cardId}-${predId.slice(0, 8)}-${Date.now()}.mp4`;
+
+      // ── Upload to Supabase Storage ──
+      const { error: upErr } = await supabaseAdmin.storage
+        .from(AI_MEDIA_BUCKET)
+        .upload(filename, vidBuf, { contentType: 'video/mp4', upsert: true });
+      if (upErr) throw new Error(`Storage upload: ${upErr.message}`);
+
+      const { data: signed, error: signErr } = await supabaseAdmin.storage
+        .from(AI_MEDIA_BUCKET)
+        .createSignedUrl(filename, 7200);
+      if (signErr) throw new Error(`Signed URL: ${signErr.message}`);
+
+      console.log(`[ai/media-status] video ready predId=${predId} size=${vidBuf.byteLength} bytes`);
+      return c.json({ status: 'succeeded', mediaUrl: signed.signedUrl, filename, type: 'video' });
+    }
+
+    if (status === 'failed' || status === 'canceled') {
+      console.log(`[ai/media-status] ${status} predId=${predId} error=${repData.error}`);
+      return c.json({ status: 'failed', error: repData.error ?? `Prediction ${status}` });
+    }
+
+    // ── Still in progress — estimate progress from elapsed time ──
+    const startedAt = repData.created_at ? new Date(repData.created_at).getTime() : Date.now();
+    const elapsed   = (Date.now() - startedAt) / 1000; // seconds
+    const estimated = 120; // minimax/video-01 typically takes 60-120 s
+    const progress  = Math.min(Math.round((elapsed / estimated) * 100), 94);
+
+    return c.json({ status, progress });
+  } catch (err) {
+    console.log(`[ai/media-status] ${errMsg(err)}`);
+    return c.json({ error: `mediaStatus: ${errMsg(err)}` }, 500);
   }
 });
 

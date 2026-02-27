@@ -91,6 +91,26 @@ export const contentActions: ContentAction[] = [
   { id: 'research', name: 'Internet Research & Trends', icon: '🌐', description: 'Web scraping, trend analysis, competitor insights, and audience research', category: 'planning' },
 ];
 
+// ─── Real API Bridge ───────────────────────────────────────────────────────────
+//
+// Use generateContent() from apiClient.ts for real GPT-4o calls.
+// This wrapper is imported by CreateContentWizard and any future UI that
+// needs to call the server — keeping OpenAI calls server-side (key is safe).
+
+export {
+  generateContent,
+  fetchContentHistory,
+  deleteContentHistory,
+  fetchContentGenUsage,
+} from '../../utils/apiClient';
+
+export type {
+  GenerateContentParams,
+  GenerateContentResult,
+  GenerationRecord,
+  ContentGenUsageSummary,
+} from '../../utils/apiClient';
+
 // ─── AI Response Generator (Mock) ──────────────────────────────────────────────
 
 let messageIdCounter = 0;

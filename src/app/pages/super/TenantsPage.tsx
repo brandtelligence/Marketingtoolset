@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Building2, Users, CreditCard, ToggleLeft, ToggleRight, Eye, AlertTriangle, Send } from 'lucide-react';
+import { Building2, Users, CreditCard, ToggleLeft, ToggleRight, Eye, AlertTriangle, Send, Sparkles, Zap, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn, StatCard } from '../../components/saas/SaasLayout';
 import { DataTable, Column } from '../../components/saas/DataTable';
@@ -11,12 +11,281 @@ import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { formatRM } from '../../utils/format';
 import { useAuth } from '../../components/AuthContext';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { IS_PRODUCTION } from '../../config/appConfig';
+import { supabase } from '../../utils/supabaseClient';
 import {
   fetchTenants, updateTenant, fetchModules, fetchTenantUsers, fetchInvoices,
-  type Tenant, type TenantStatus,
+  fetchTenantAIBudget, updateTenantAILimit,
+  type Tenant, type TenantStatus, type TenantAIBudget,
 } from '../../utils/apiClient';
 
-type TabKey = 'overview' | 'modules' | 'users' | 'invoices';
+type TabKey = 'overview' | 'modules' | 'users' | 'invoices' | 'ai_budget';
+
+// ─── Preset token limit options ────────────────────────────────────────────────
+
+const LIMIT_PRESETS = [
+  { label: '25k',  value: 25_000  },
+  { label: '50k',  value: 50_000  },
+  { label: '100k', value: 100_000 },
+  { label: '200k', value: 200_000 },
+  { label: '500k', value: 500_000 },
+];
+const DEFAULT_LIMIT = 100_000;
+
+// ─── AI Budget tab ─────────────────────────────────────────────────────────────
+
+function AIBudgetTab({
+  tenant, t,
+}: {
+  tenant: Tenant;
+  t: ReturnType<typeof useDashboardTheme>;
+}) {
+  const [budget,       setBudget]       = useState<TenantAIBudget | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [saving,       setSaving]       = useState(false);
+  const [resetting,    setResetting]    = useState(false);
+  const [inputValue,   setInputValue]   = useState('');
+  const [customMode,   setCustomMode]   = useState(false);
+
+  // Load current budget on mount
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        let token = '';
+        if (IS_PRODUCTION) {
+          const { data: { session } } = await supabase.auth.getSession();
+          token = session?.access_token ?? '';
+        }
+        const b = await fetchTenantAIBudget(tenant.id, token);
+        if (!cancelled) {
+          setBudget(b);
+          setInputValue(String(b.limit));
+          setCustomMode(b.isCustom);
+        }
+      } catch (err: any) {
+        if (!cancelled) toast.error(`Failed to load AI budget: ${err.message}`);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [tenant.id]);
+
+  const handleSave = async () => {
+    const n = Number(inputValue.replace(/,/g, ''));
+    if (!Number.isFinite(n) || n < 1_000) {
+      toast.error('Minimum token limit is 1,000');
+      return;
+    }
+    setSaving(true);
+    try {
+      let token = '';
+      if (IS_PRODUCTION) {
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token ?? '';
+      }
+      await updateTenantAILimit(tenant.id, n, token);
+      setBudget(prev => prev ? { ...prev, limit: n, isCustom: true } : null);
+      toast.success(`AI token budget updated to ${n.toLocaleString()} tokens/mo for ${tenant.name}`);
+    } catch (err: any) {
+      toast.error(`Save failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      let token = '';
+      if (IS_PRODUCTION) {
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token ?? '';
+      }
+      await updateTenantAILimit(tenant.id, null, token);
+      setBudget(prev => prev ? { ...prev, limit: DEFAULT_LIMIT, isCustom: false } : null);
+      setInputValue(String(DEFAULT_LIMIT));
+      setCustomMode(false);
+      toast.success(`${tenant.name} AI budget reset to platform default (${DEFAULT_LIMIT.toLocaleString()} tokens/mo)`);
+    } catch (err: any) {
+      toast.error(`Reset failed: ${err.message}`);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center gap-3">
+          <span className="w-8 h-8 rounded-full border-2 border-[#0BA4AA] border-t-transparent animate-spin" />
+          <p className={`${t.textFaint} text-sm`}>Loading AI budget…</p>
+        </div>
+      </div>
+    );
+  }
+
+  const used    = budget?.tokensUsed ?? 0;
+  const limit   = budget?.limit      ?? DEFAULT_LIMIT;
+  const pct     = Math.min((used / limit) * 100, 100);
+  const barColor = pct > 85 ? '#ef4444' : pct > 65 ? '#F47A20' : '#0BA4AA';
+  const period  = budget?.period ?? new Date().toISOString().slice(0, 7);
+  const monthLabel = new Date(period + '-15').toLocaleString('en-MY', { month: 'long', year: 'numeric' });
+
+  const fmtK = (n: number) =>
+    n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
+    : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
+    : n.toString();
+
+  return (
+    <div className="space-y-5">
+
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+          style={{ background: 'rgba(11,164,170,0.12)', border: '1px solid rgba(11,164,170,0.25)' }}>
+          <Sparkles className="w-4 h-4" style={{ color: '#0BA4AA' }} />
+        </div>
+        <div>
+          <p className={`${t.text} text-sm font-semibold`}>Monthly AI Token Budget</p>
+          <p className={`${t.textFaint} text-xs`}>
+            Controls how many AI tokens this tenant can consume per calendar month
+          </p>
+        </div>
+      </div>
+
+      {/* Usage gauge */}
+      <div className={`${t.s1} rounded-2xl p-4 border ${t.border} space-y-3`}>
+        <div className="flex items-start justify-between">
+          <div>
+            <p className={`${t.textFaint} text-xs mb-0.5`}>Current period — {monthLabel}</p>
+            <p className={`${t.text} text-lg font-bold tabular-nums`}>
+              {used.toLocaleString()}
+              <span className={`${t.textFaint} text-xs font-normal ml-1`}>/ {limit.toLocaleString()} tokens</span>
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold tabular-nums" style={{ color: barColor }}>{pct.toFixed(0)}%</p>
+            <p className={`${t.textFaint} text-xs`}>{budget?.requests ?? 0} requests</p>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className={`h-3 ${t.s0} rounded-full overflow-hidden`}>
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${barColor}99, ${barColor})` }}
+          />
+        </div>
+
+        {/* Remaining */}
+        <p className={`${t.textFaint} text-xs`}>
+          {Math.max(0, limit - used).toLocaleString()} tokens remaining this month
+          {pct > 85 && (
+            <span className="ml-2 text-red-400 font-medium">⚠ Near limit — consider increasing budget</span>
+          )}
+        </p>
+      </div>
+
+      {/* Custom limit badge */}
+      {budget?.isCustom ? (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+          style={{ background: 'rgba(62,60,112,0.08)', borderColor: 'rgba(62,60,112,0.3)' }}>
+          <Zap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+          <p className="text-purple-300 text-xs font-medium">
+            Custom limit active — platform default is {DEFAULT_LIMIT.toLocaleString()} tokens/mo
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/8"
+          style={{ background: 'rgba(255,255,255,0.03)' }}>
+          <Zap className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+          <p className={`${t.textFaint} text-xs`}>
+            Using platform default — {DEFAULT_LIMIT.toLocaleString()} tokens/mo
+          </p>
+        </div>
+      )}
+
+      {/* Preset buttons */}
+      <div>
+        <p className={`${t.textFaint} text-xs mb-2 font-medium uppercase tracking-wider`}>Monthly limit</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {LIMIT_PRESETS.map(p => (
+            <button
+              key={p.value}
+              onClick={() => { setInputValue(String(p.value)); setCustomMode(false); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                Number(inputValue) === p.value
+                  ? 'border-[#0BA4AA] text-[#0BA4AA] bg-[#0BA4AA]/10'
+                  : `${t.border} ${t.textSm} ${t.hover}`
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setCustomMode(true)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              customMode
+                ? 'border-[#F47A20] text-[#F47A20] bg-[#F47A20]/10'
+                : `${t.border} ${t.textSm} ${t.hover}`
+            }`}
+          >
+            Custom
+          </button>
+        </div>
+
+        {/* Token input */}
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1000}
+            step={1000}
+            value={inputValue}
+            onChange={e => { setInputValue(e.target.value); setCustomMode(true); }}
+            className={`flex-1 px-3 py-2 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#0BA4AA]/30 transition-all ${t.inputCls ?? `${t.s1} ${t.border} ${t.text}`}`}
+            placeholder="e.g. 150000"
+          />
+          <span className={`${t.textFaint} text-xs shrink-0`}>tokens/mo</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-1">
+        <PrimaryBtn
+          variant="teal"
+          onClick={handleSave}
+          loading={saving}
+          className="flex-1"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          Save Budget
+        </PrimaryBtn>
+        <PrimaryBtn
+          variant="ghost"
+          onClick={handleReset}
+          loading={resetting}
+          title={`Reset to platform default (${DEFAULT_LIMIT.toLocaleString()} tokens/mo)`}
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Reset Default
+        </PrimaryBtn>
+      </div>
+
+      {/* Info note */}
+      <div className={`${t.s0} rounded-xl p-3 border ${t.border}`}>
+        <p className={`${t.textFaint} text-xs leading-relaxed`}>
+          <span className="font-semibold">How it works:</span> This limit applies to all users within <span className="font-medium">{tenant.name}</span> combined.
+          When reached, AI content generation is blocked until the next calendar month.
+          Usage resets on the 1st of each month at midnight UTC.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function TenantsPage() {
   const t = useDashboardTheme();
@@ -152,10 +421,11 @@ export function TenantsPage() {
   const totalMRR = tenants.filter(ten => ten.status === 'active').reduce((s, ten) => s + ten.mrr, 0);
 
   const tabs: { key: TabKey; label: string }[] = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'modules', label: 'Modules' },
-    { key: 'users', label: `Users (${tenantUsers.length})` },
-    { key: 'invoices', label: `Invoices (${tenantInvoices.length})` },
+    { key: 'overview',   label: 'Overview' },
+    { key: 'modules',    label: 'Modules' },
+    { key: 'users',      label: `Users (${tenantUsers.length})` },
+    { key: 'invoices',   label: `Invoices (${tenantInvoices.length})` },
+    { key: 'ai_budget',  label: '🤖 AI Budget' },
   ];
 
   return (
@@ -314,6 +584,11 @@ export function TenantsPage() {
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* AI Budget */}
+            {activeTab === 'ai_budget' && selected && (
+              <AIBudgetTab tenant={selected} t={t} />
             )}
           </div>
         )}
