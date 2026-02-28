@@ -6,6 +6,7 @@
 import { Link } from 'react-router';
 import { Zap, Twitter, Linkedin, Youtube, Globe, ArrowRight } from 'lucide-react';
 import { useWebTheme } from '../../contexts/WebThemeContext';
+import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 
 const FOOTER_COLS = {
   Product: [
@@ -102,10 +103,7 @@ export function WebFooter() {
           {/* Brand column */}
           <div className="col-span-2">
             <Link to="/" className="flex items-center gap-2.5 mb-4 group">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-bt-teal to-bt-teal-dark flex items-center justify-center shadow-lg shadow-bt-teal/30 group-hover:shadow-bt-teal/50 transition-shadow">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <span className={`font-bold text-lg tracking-tight ${logoText}`}>Brandtelligence</span>
+              <img src={brandLogo} alt="Brandtelligence" className="h-8 w-auto object-contain" />
             </Link>
             <p className={`text-sm leading-relaxed mb-5 max-w-[240px] ${brandDesc}`}>
               The AI-powered marketing intelligence platform for ambitious brands and agencies managing clients at scale.

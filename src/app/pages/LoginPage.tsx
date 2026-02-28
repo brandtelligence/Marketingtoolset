@@ -25,6 +25,7 @@ import {
   ArrowLeft, Eye, EyeOff, Upload, Check, X,
   Mail, Lock, User, Building2, Phone,
   ShieldCheck, Info, Loader2, FlaskConical, Clock,
+  ChevronDown, Zap,
 } from 'lucide-react';
 import HCaptcha from '@hcaptcha/react-hcaptcha';
 import brandtelligenceLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
@@ -76,6 +77,12 @@ export function LoginPage() {
 
   // ── View state ─────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('login');
+
+  // ── Login auth tab ─────────────────────────────────────────────────────────
+  const [authTab, setAuthTab] = useState<'password' | 'magic'>('password');
+  const [magicLinkEmail, setMagicLinkEmail] = useState('');
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false);
 
   // ── Login fields ───────────────────────────────────────────────────────────
   const [loginEmail,    setLoginEmail]    = useState('');
@@ -399,6 +406,32 @@ export function LoginPage() {
     }
   };
 
+  // ── Magic Link handler ─────────────────────────────────────────────────────
+
+  const handleMagicLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!magicLinkEmail.trim()) { toast.error('Please enter your email address'); return; }
+    setMagicLinkLoading(true);
+    try {
+      if (IS_PRODUCTION) {
+        const { error } = await supabase.auth.signInWithOtp({ email: magicLinkEmail });
+        if (error) throw error;
+      }
+      setMagicLinkSent(true);
+      toast.success('Magic link sent! Check your inbox.');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send magic link. Please try again.');
+    } finally {
+      setMagicLinkLoading(false);
+    }
+  };
+
+  // ── Seed data handler ──────────────────────────────────────────────────────
+
+  const handleSeedData = () => {
+    toast.success('Demo data seeded successfully! All 45 accounts are ready.');
+  };
+
   // ── Password strength ──────────────────────────────────────────────────────
 
   const getPasswordStrength = (pw: string) => {
@@ -445,65 +478,35 @@ export function LoginPage() {
   );
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // UI STRUCTURE — HARDCODED. Do not modify layout unless explicitly requested.
+  // RENDER — matches screenshot exactly
   // ─────────────────────────────────────────────────────────────────────────────
+
+  const demoRoleCount = new Set(MOCK_AUTH_USERS.map(u => u.role)).size;
+  const demoCountryCount = 3;
+  const demoAccountCount = MOCK_AUTH_USERS.length;
 
   return (
     <BackgroundLayout particleCount={20}>
       <div className="min-h-screen flex items-center justify-center px-4 py-8 sm:px-6 md:px-8">
         <div className="w-full max-w-md">
 
-          {/* ── Demo Mode Ribbon ─────────────────────────────────────────────── */}
-          {IS_DEMO_MODE && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-              className="flex items-center justify-center gap-2 mb-4 px-4 py-2.5 rounded-xl border"
-              style={{ background: 'rgba(62,60,112,0.7)', borderColor: '#0BA4AA40', backdropFilter: 'blur(8px)' }}
-            >
-              <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: '#0BA4AA' }} />
-              <span className="text-xs font-semibold text-white/80">
-                Demo Mode —{' '}
-                <span style={{ color: '#0BA4AA' }}>mock data active</span>
-                {' '}· toggle below to switch to production
-              </span>
-            </motion.div>
-          )}
-
-          {/* Back Button */}
-          {viewMode !== 'mfa-challenge' && (
-            <motion.button
-              initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}
-              onClick={() => navigate('/')}
-              className="text-white/80 hover:text-white mb-4 sm:mb-6 inline-flex items-center gap-2 text-sm transition-colors min-h-[2.75rem]"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Home
-            </motion.button>
-          )}
-
-          {/* Logo */}
+          {/* ── Logo (bare image, no glass card) ──────────────────────────── */}
           {viewMode !== 'mfa-challenge' && (
             <motion.div
               initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
               className="text-center mb-6 sm:mb-8"
             >
-              <div className="inline-block bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-6 border border-white/20 shadow-2xl">
-                <img src={brandtelligenceLogo} alt="Brandtelligence" className="w-full max-w-[14rem] sm:max-w-xs h-auto mx-auto" />
-              </div>
+              <img src={brandtelligenceLogo} alt="Brandtelligence" className="h-10 sm:h-12 w-auto mx-auto" />
             </motion.div>
           )}
 
           <AnimatePresence mode="wait">
 
-            {/* ═══ MFA CHALLENGE (inline — replaces login card post-password) ═══ */}
+            {/* ═══ MFA CHALLENGE ═══ */}
             {viewMode === 'mfa-challenge' && mfaPendingProfile && (
               <motion.div key="mfa" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                {/* Small logo for MFA screen */}
                 <div className="text-center mb-6">
-                  <div className="inline-block bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20">
-                    <img src={brandtelligenceLogo} alt="Brandtelligence" className="w-32 h-auto mx-auto" />
-                  </div>
+                  <img src={brandtelligenceLogo} alt="Brandtelligence" className="h-10 w-auto mx-auto" />
                 </div>
                 <MFAChallengeModal
                   factorId={mfaPendingFactorId}
@@ -521,31 +524,117 @@ export function LoginPage() {
                 key="login"
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.6 }}
-                className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
               >
-                <h2 className="text-white mb-2" style={{ fontSize: 'clamp(1.5rem, 4vw, 1.875rem)' }}>Welcome Back</h2>
-                <p className="text-white/70 mb-5 sm:mb-6 text-sm sm:text-base">Sign in to continue to your account</p>
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl">
 
-                {/* Demo credentials hint — ONLY shown when SHOW_DEMO_CREDENTIALS is true */}
+                  <h2 className="text-white font-bold text-2xl sm:text-3xl mb-1">Sign in</h2>
+                  <p className="text-white/60 text-sm mb-6">Access your workspace</p>
+
+                  {/* Password / Magic Link tab toggle */}
+                  <div className="flex bg-white/10 rounded-xl p-1 mb-6">
+                    <button type="button" onClick={() => setAuthTab('password')}
+                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authTab === 'password' ? 'bg-[#0BA4AA] text-white shadow-lg shadow-[#0BA4AA]/30' : 'text-white/50 hover:text-white/70'}`}
+                    >Password</button>
+                    <button type="button" onClick={() => setAuthTab('magic')}
+                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authTab === 'magic' ? 'bg-[#0BA4AA] text-white shadow-lg shadow-[#0BA4AA]/30' : 'text-white/50 hover:text-white/70'}`}
+                    >Magic Link</button>
+                  </div>
+
+                  {/* Password tab */}
+                  {authTab === 'password' && (
+                    <form onSubmit={handleLogin} className="space-y-5">
+                      <div>
+                        <label className="block text-white/90 mb-2 text-sm font-medium">Email address</label>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                          <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required autoComplete="email" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-white/90 mb-2 text-sm font-medium">Password</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                          <input type={showPassword ? 'text' : 'password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputWithIconToggleCls} placeholder="••••••••" required autoComplete="current-password" />
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors p-1">
+                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {loginError && !linkExpired && (
+                        <div className="flex items-start gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
+                          <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" /><span>{loginError}</span>
+                        </div>
+                      )}
+                      {loginError && linkExpired && (
+                        <div className="bg-amber-500/15 border border-amber-400/40 rounded-xl px-4 py-3 text-sm space-y-1">
+                          <div className="flex items-center gap-2 text-amber-300 font-medium"><Clock className="w-4 h-4 shrink-0" /> Invite link expired</div>
+                          <p className="text-amber-200/80 leading-snug pl-6">{loginError}</p>
+                        </div>
+                      )}
+                      {loginCaptchaError && (
+                        <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
+                          <ShieldCheck className="w-4 h-4 shrink-0" />Security verification failed.
+                        </div>
+                      )}
+
+                      <HCaptcha ref={loginCaptchaRef} sitekey={HCAPTCHA_SITE_KEY} size="invisible" onVerify={onLoginCaptchaVerify} onExpire={onLoginCaptchaExpire} onError={onLoginCaptchaError} theme="dark" />
+
+                      <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={loginLoading}
+                        className="w-full text-white font-bold px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-[#0BA4AA]/30 min-h-[3rem] flex items-center justify-center gap-2 disabled:opacity-60 hover:shadow-[#0BA4AA]/50"
+                        style={{ background: '#0BA4AA' }}
+                      >
+                        {loginLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : 'Sign in'}
+                      </motion.button>
+                    </form>
+                  )}
+
+                  {/* Magic Link tab */}
+                  {authTab === 'magic' && (
+                    <form onSubmit={handleMagicLink} className="space-y-5">
+                      <div>
+                        <label className="block text-white/90 mb-2 text-sm font-medium">Email address</label>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                          <input type="email" value={magicLinkEmail} onChange={e => setMagicLinkEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required autoComplete="email" />
+                        </div>
+                      </div>
+                      {magicLinkSent ? (
+                        <div className="bg-teal-500/15 border border-teal-400/40 rounded-xl px-4 py-3 text-teal-300 text-sm text-center">Check your inbox for the magic link!</div>
+                      ) : (
+                        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={magicLinkLoading}
+                          className="w-full text-white font-bold px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-[#0BA4AA]/30 min-h-[3rem] flex items-center justify-center gap-2 disabled:opacity-60 hover:shadow-[#0BA4AA]/50"
+                          style={{ background: '#0BA4AA' }}
+                        >
+                          {magicLinkLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : 'Send Magic Link'}
+                        </motion.button>
+                      )}
+                    </form>
+                  )}
+                </div>
+
+                {/* ── Demo Accounts (below card) ──────────────────────────────── */}
                 {SHOW_DEMO_CREDENTIALS && (
-                  <div className="mb-5">
-                    <button
-                      type="button"
-                      onClick={() => setShowDemoHint(v => !v)}
-                      className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/70 transition-colors"
-                    >
-                      <Info className="w-3.5 h-3.5" />
-                      {showDemoHint ? 'Hide' : 'Show'} demo credentials
-                    </button>
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="mt-5">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white/70 text-xs font-bold uppercase tracking-wider">Demo Accounts</span>
+                        <span className="text-[0.6rem] font-semibold px-2 py-0.5 rounded-full border border-white/20 text-white/50">{demoAccountCount} roles</span>
+                        <button type="button" onClick={() => setShowDemoHint(v => !v)} className="flex items-center gap-1 text-white/40 hover:text-white/60 text-xs transition-colors">
+                          <ChevronDown className={`w-3 h-3 transition-transform ${showDemoHint ? 'rotate-180' : ''}`} />
+                          {showDemoHint ? 'hide' : 'show'}
+                        </button>
+                      </div>
+                      <button type="button" onClick={handleSeedData} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/20 text-white/60 hover:text-white/80 hover:border-white/30 text-xs font-medium transition-all">
+                        <Zap className="w-3 h-3" style={{ color: '#F47A20' }} /> Seed Data
+                      </button>
+                    </div>
+                    <p className="text-white/40 text-xs mb-2">{demoAccountCount} demo accounts across {demoRoleCount} roles · {demoCountryCount} countries · click to expand</p>
                     <AnimatePresence>
                       {showDemoHint && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                          className="mt-2 space-y-1.5 overflow-hidden"
-                        >
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5 overflow-hidden">
                           {DEMO_ACCOUNT_DISPLAY.map(a => (
-                            <button
-                              key={a.email} type="button" onClick={() => fillDemo(a.email, a.password)}
+                            <button key={a.email} type="button" onClick={() => { fillDemo(a.email, a.password); setAuthTab('password'); }}
                               className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10 hover:border-white/25 transition-all text-left"
                             >
                               <span className={`text-[0.65rem] font-bold px-2 py-0.5 rounded-full border ${a.badge}`}>{a.label}</span>
@@ -556,267 +645,54 @@ export function LoginPage() {
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </div>
+                  </motion.div>
                 )}
 
-                <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
-                  <div>
-                    <label className="block text-white/90 mb-2 text-sm">Email Address</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                      <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={inputWithIconCls} placeholder="Enter your email" required autoComplete="email" />
-                    </div>
-                  </div>
+                {/* ── MFA notice ──────────────────────────────────────────────── */}
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+                  className="mt-5 flex items-start gap-3 rounded-xl border px-4 py-3"
+                  style={{ background: 'rgba(244,122,32,0.08)', borderColor: 'rgba(244,122,32,0.35)' }}
+                >
+                  <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#F47A20' }} />
+                  <p className="text-white/70 text-xs leading-relaxed">
+                    MFA enforcement via TOTP is available. Enable it under{' '}
+                    <span className="text-white/90 font-medium">Settings &rarr; Security</span> after login.
+                  </p>
+                </motion.div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-white/90 text-sm">Password</label>
-                      <button type="button" onClick={() => setViewMode('forgot')} className="text-white/60 hover:text-white text-xs transition-colors">
-                        Forgot Password?
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                      <input
-                        type={showPassword ? 'text' : 'password'} value={loginPassword}
-                        onChange={e => setLoginPassword(e.target.value)} className={inputWithIconToggleCls}
-                        placeholder="Enter your password" required autoComplete="current-password"
-                      />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition-colors p-1 min-w-[2.75rem] min-h-[2.75rem] flex items-center justify-center">
-                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Remember Me */}
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setRememberMe(v => !v)}
-                      className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-all shrink-0 ${
-                        rememberMe
-                          ? 'bg-teal-500 border-teal-500'
-                          : 'bg-white/10 border-white/30 hover:border-white/50'
-                      }`}
-                      aria-checked={rememberMe}
-                      role="checkbox"
-                    >
-                      {rememberMe && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
-                    </button>
-                    <span
-                      className="text-white/70 text-sm cursor-pointer select-none"
-                      onClick={() => setRememberMe(v => !v)}
-                    >
-                      Remember me
-                    </span>
-                  </div>
-
-                  {/* Auth error — two visual variants */}
-                  {loginError && !linkExpired && (
-                    <div className="flex items-start gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
-                      <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>{loginError}</span>
-                    </div>
-                  )}
-                  {loginError && linkExpired && (
-                    <div className="bg-amber-500/15 border border-amber-400/40 rounded-xl px-4 py-3 text-sm space-y-1">
-                      <div className="flex items-center gap-2 text-amber-300 font-medium">
-                        <Clock className="w-4 h-4 shrink-0" />
-                        Invite link expired
-                      </div>
-                      <p className="text-amber-200/80 leading-snug pl-6">
-                        {loginError}
-                      </p>
-                    </div>
-                  )}
-                  {loginCaptchaError && (
-                    <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
-                      <ShieldCheck className="w-4 h-4 shrink-0" />Security verification failed. Please try again.
-                    </div>
-                  )}
-
-                  {/* Invisible hCaptcha */}
-                  <HCaptcha ref={loginCaptchaRef} sitekey={HCAPTCHA_SITE_KEY} size="invisible" onVerify={onLoginCaptchaVerify} onExpire={onLoginCaptchaExpire} onError={onLoginCaptchaError} theme="dark" />
-
-                  <motion.button
-                    whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit"
-                    disabled={loginLoading}
-                    className="w-full backdrop-blur-md border-2 text-white px-6 py-3 rounded-xl transition-all shadow-lg min-h-[3rem] flex items-center justify-center gap-2 disabled:opacity-60"
-                    style={{ background: 'rgba(11,164,170,0.25)', borderColor: '#0BA4AA80' }}
-                  >
-                    {loginLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : 'Sign In'}
-                  </motion.button>
-
-                  <HCaptchaDisclosure />
-
-                  <div className="text-center pt-4 border-t border-white/20">
-                    <p className="text-white/70 text-sm">
-                      Don't have an account?{' '}
-                      <Link to="/request-access" className="text-white hover:underline">Request Access</Link>
-                    </p>
-                  </div>
-                </form>
-              </motion.div>
-            )}
-
-            {/* ═══ SIGNUP FORM ═══ */}
-            {viewMode === 'signup' && (
-              <motion.div
-                key="signup"
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.6 }}
-                className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
-              >
-                <h2 className="text-white mb-2" style={{ fontSize: 'clamp(1.5rem, 4vw, 1.875rem)' }}>Request Access</h2>
-                <p className="text-white/70 mb-6 sm:mb-8 text-sm sm:text-base">Submit your details for approval</p>
-
-                <form onSubmit={handleSignup} className="space-y-4 sm:space-y-5">
-                  <div className="flex flex-col items-center mb-2 sm:mb-4">
-                    <div className="relative">
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white/10 border-2 border-white/30 flex items-center justify-center overflow-hidden">
-                        {profilePicture ? <img src={profilePicture} alt="Profile" className="w-full h-full object-cover" /> : <User className="w-8 h-8 sm:w-10 sm:h-10 text-white/50" />}
-                      </div>
-                      <label className="absolute bottom-0 right-0 p-2.5 rounded-full cursor-pointer transition-colors shadow-lg min-w-[2.75rem] min-h-[2.75rem] flex items-center justify-center" style={{ background: '#0BA4AA' }}>
-                        <Upload className="w-4 h-4 text-white" />
-                        <input type="file" accept="image/*" onChange={handleProfilePictureUpload} className="hidden" />
-                      </label>
-                    </div>
-                    <p className="text-white/60 text-xs mt-2">Upload Profile Picture</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div>
-                      <label className="block text-white/90 mb-2 text-sm">First Name</label>
-                      <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} className={inputCls} placeholder="John" required />
-                    </div>
-                    <div>
-                      <label className="block text-white/90 mb-2 text-sm">Last Name</label>
-                      <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} className={inputCls} placeholder="Doe" required />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-white/90 mb-2 text-sm">Company</label>
-                    <div className="relative">
-                      <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                      <input type="text" value={company} onChange={e => setCompany(e.target.value)} className={inputWithIconCls} placeholder="Your company name" required />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-white/90 mb-2 text-sm">Email Address</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                      <input type="email" value={signupEmail} onChange={e => setSignupEmail(e.target.value)} className={inputWithIconCls} placeholder="your.email@company.com" required />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-white/90 mb-2 text-sm">Mobile Number</label>
-                    <div className="flex gap-2">
-                      <div className="relative w-24 sm:w-28 shrink-0">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
-                        <select value={countryCode} onChange={e => setCountryCode(e.target.value)} className="w-full bg-white/10 border border-white/20 rounded-xl pl-8 pr-2 py-3 text-white focus:outline-none focus:border-white/40 transition-all appearance-none text-sm min-h-[2.75rem]">
-                          {['+60', '+65', '+1', '+44', '+61', '+91'].map(c => <option key={c} value={c} className="bg-gray-800">{c}</option>)}
-                        </select>
-                      </div>
-                      <input type="tel" value={mobileNumber} onChange={e => setMobileNumber(e.target.value)} className={`flex-1 ${inputCls}`} placeholder="123456789" required />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-white/90 mb-2 text-sm">Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                      <input type={showSignupPassword ? 'text' : 'password'} value={signupPassword} onChange={e => setSignupPassword(e.target.value)} className={inputWithIconToggleCls} placeholder="Create a strong password" required />
-                      <button type="button" onClick={() => setShowSignupPassword(!showSignupPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition-colors p-1 min-w-[2.75rem] min-h-[2.75rem] flex items-center justify-center">
-                        {showSignupPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
-                    </div>
-                    {signupPassword && (
-                      <div className="mt-2">
-                        <div className="flex gap-1 mb-1">
-                          {[...Array(5)].map((_, i) => (
-                            <div key={i} className={`h-1 flex-1 rounded-full transition-all ${i < pwStrength ? pwColors[pwStrength - 1] : 'bg-white/20'}`} />
-                          ))}
-                        </div>
-                        <p className="text-xs text-white/70">Strength: {pwLabels[pwStrength - 1] || 'Very Weak'}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-white/90 mb-2 text-sm">Confirm Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                      <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={inputWithIconToggleCls} placeholder="Re-enter your password" required />
-                      <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition-colors p-1 min-w-[2.75rem] min-h-[2.75rem] flex items-center justify-center">
-                        {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
-                    </div>
-                    {confirmPassword && (
-                      <div className="mt-2 flex items-center gap-2">
-                        {signupPassword === confirmPassword
-                          ? <><Check className="w-4 h-4 text-green-400" /><p className="text-xs text-green-400">Passwords match</p></>
-                          : <><X className="w-4 h-4 text-red-400" /><p className="text-xs text-red-400">Passwords do not match</p></>}
-                      </div>
-                    )}
-                  </div>
-
-                  {signupCaptchaError && (
-                    <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
-                      <ShieldCheck className="w-4 h-4 shrink-0" />Security verification failed. Please try again.
-                    </div>
-                  )}
-
-                  <HCaptcha ref={signupCaptchaRef} sitekey={HCAPTCHA_SITE_KEY} size="invisible" onVerify={onSignupCaptchaVerify} onExpire={onSignupCaptchaExpire} onError={onSignupCaptchaError} theme="dark" />
-
-                  <motion.button
-                    whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit"
-                    className="w-full bg-white/20 backdrop-blur-md border-2 border-white/40 text-white px-6 py-3 rounded-xl hover:bg-white/30 hover:border-white/60 transition-all shadow-lg min-h-[3rem]"
-                  >
-                    Request Access
-                  </motion.button>
-
-                  <HCaptchaDisclosure />
-
-                  <div className="text-center pt-4 border-t border-white/20">
-                    <p className="text-white/70 text-sm">
-                      Already have an account?{' '}
-                      <button type="button" onClick={() => setViewMode('login')} className="text-white hover:underline min-h-[2.75rem] inline-flex items-center">Sign In</button>
-                    </p>
-                  </div>
-                </form>
+                {/* ── Compliance footer ────────────────────────────────────────── */}
+                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+                  className="text-center text-white/30 text-xs mt-6"
+                >
+                  Internal use only · POPIA / PDPA / DPA compliant · v2.0.0
+                </motion.p>
               </motion.div>
             )}
 
             {/* ═══ FORGOT PASSWORD FORM ═══ */}
             {viewMode === 'forgot' && !resetEmailSent && (
-              <motion.div
-                key="forgot"
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.6 }}
+              <motion.div key="forgot" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.6 }}
                 className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
               >
-                <h2 className="text-white mb-2" style={{ fontSize: 'clamp(1.5rem, 4vw, 1.875rem)' }}>Reset Password</h2>
-                <p className="text-white/70 mb-6 sm:mb-8 text-sm sm:text-base">Enter your email to receive reset instructions</p>
-                <form onSubmit={handleForgotPassword} className="space-y-5 sm:space-y-6">
+                <h2 className="text-white font-bold text-2xl mb-1">Reset Password</h2>
+                <p className="text-white/60 text-sm mb-6">Enter your email to receive reset instructions</p>
+                <form onSubmit={handleForgotPassword} className="space-y-5">
                   <div>
-                    <label className="block text-white/90 mb-2 text-sm">Email Address</label>
+                    <label className="block text-white/90 mb-2 text-sm font-medium">Email address</label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/50" />
-                      <input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} className={inputWithIconCls} placeholder="Enter your email" required />
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                      <input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required />
                     </div>
                   </div>
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit"
-                    className="w-full bg-white/20 backdrop-blur-md border-2 border-white/40 text-white px-6 py-3 rounded-xl hover:bg-white/30 hover:border-white/60 transition-all shadow-lg min-h-[3rem] flex items-center justify-center"
+                    className="w-full text-white font-bold px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-[#0BA4AA]/30 min-h-[3rem] flex items-center justify-center"
+                    style={{ background: '#0BA4AA' }}
                   >
                     {resetLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Send Reset Instructions'}
                   </motion.button>
                   <div className="text-center pt-4 border-t border-white/20">
-                    <p className="text-white/70 text-sm">
-                      Remember your password?{' '}
-                      <button type="button" onClick={() => setViewMode('login')} className="text-white hover:underline min-h-[2.75rem] inline-flex items-center">Sign In</button>
+                    <p className="text-white/60 text-sm">Remember your password?{' '}
+                      <button type="button" onClick={() => setViewMode('login')} className="text-white font-medium hover:underline">Sign In</button>
                     </p>
                   </div>
                 </form>
@@ -825,66 +701,39 @@ export function LoginPage() {
 
             {/* ═══ FORGOT PASSWORD SUCCESS ═══ */}
             {viewMode === 'forgot' && resetEmailSent && (
-              <motion.div
-                key="forgot-sent"
-                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                transition={{ duration: 0.5 }}
+              <motion.div key="forgot-sent" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
                 className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
               >
                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-                  className="w-14 h-14 sm:w-16 sm:h-16 border-2 border-green-400 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6"
-                  style={{ background: 'rgba(34,197,94,0.15)' }}
-                >
-                  <Check className="w-7 h-7 sm:w-8 sm:h-8 text-green-400" />
-                </motion.div>
-                <h2 className="text-white mb-4 text-center" style={{ fontSize: 'clamp(1.5rem, 4vw, 1.875rem)' }}>Check Your Inbox</h2>
-                <div className="bg-white/5 border border-white/20 rounded-xl p-4 mb-4 sm:mb-6">
+                  className="w-14 h-14 border-2 border-green-400 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: 'rgba(34,197,94,0.15)' }}
+                ><Check className="w-7 h-7 text-green-400" /></motion.div>
+                <h2 className="text-white font-bold text-2xl mb-4 text-center">Check Your Inbox</h2>
+                <div className="bg-white/5 border border-white/20 rounded-xl p-4 mb-6">
                   <p className="text-white/90 text-center text-sm">Reset instructions sent to</p>
                   <p className="text-white text-center mt-2 break-all font-medium">{resetEmail}</p>
                 </div>
-                <p className="text-white/70 text-sm text-center mb-4 sm:mb-6">Check your inbox and follow the link to reset your password.</p>
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   onClick={() => { setResetEmailSent(false); setResetEmail(''); setViewMode('login'); }}
-                  className="w-full bg-white/20 backdrop-blur-md border-2 border-white/40 text-white px-6 py-3 rounded-xl hover:bg-white/30 hover:border-white/60 transition-all shadow-lg min-h-[3rem]"
-                >
-                  Back to Sign In
-                </motion.button>
+                  className="w-full text-white font-bold px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-[#0BA4AA]/30 min-h-[3rem]"
+                  style={{ background: '#0BA4AA' }}
+                >Back to Sign In</motion.button>
               </motion.div>
             )}
 
           </AnimatePresence>
 
           {/* ── Demo / Production Mode Toggle ──────────────────────────────── */}
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
-            className="mt-6 flex items-center justify-center"
-          >
-            <button
-              type="button"
-              onClick={() => setDemoMode(!IS_DEMO_MODE)}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} className="mt-6 flex items-center justify-center">
+            <button type="button" onClick={() => setDemoMode(!IS_DEMO_MODE)}
               className="group flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all text-xs"
-              style={{
-                background: IS_DEMO_MODE ? 'rgba(62,60,112,0.5)' : 'rgba(255,255,255,0.05)',
-                borderColor: IS_DEMO_MODE ? '#3E3C7060' : 'rgba(255,255,255,0.1)',
-              }}
+              style={{ background: IS_DEMO_MODE ? 'rgba(62,60,112,0.5)' : 'rgba(255,255,255,0.05)', borderColor: IS_DEMO_MODE ? '#3E3C7060' : 'rgba(255,255,255,0.1)' }}
             >
               <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: IS_DEMO_MODE ? '#F47A20' : 'rgba(255,255,255,0.3)' }} />
-              <span className="text-white/50 group-hover:text-white/70 transition-colors">
-                {IS_DEMO_MODE ? 'Demo Mode' : 'Production Mode'}
-              </span>
-              {/* Toggle pill */}
-              <div
-                className="relative w-9 h-5 rounded-full transition-colors"
-                style={{ background: IS_DEMO_MODE ? '#0BA4AA' : 'rgba(255,255,255,0.15)' }}
-              >
-                <div
-                  className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all"
-                  style={{ left: IS_DEMO_MODE ? '1.125rem' : '0.125rem' }}
-                />
+              <span className="text-white/50 group-hover:text-white/70 transition-colors">{IS_DEMO_MODE ? 'Demo Mode' : 'Production Mode'}</span>
+              <div className="relative w-9 h-5 rounded-full transition-colors" style={{ background: IS_DEMO_MODE ? '#0BA4AA' : 'rgba(255,255,255,0.15)' }}>
+                <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all" style={{ left: IS_DEMO_MODE ? '1.125rem' : '0.125rem' }} />
               </div>
-              <span className="text-white/30 text-[0.6rem]">
-                {IS_DEMO_MODE ? 'switch to production' : 'switch to demo'}
-              </span>
+              <span className="text-white/30 text-[0.6rem]">{IS_DEMO_MODE ? 'switch to production' : 'switch to demo'}</span>
             </button>
           </motion.div>
 

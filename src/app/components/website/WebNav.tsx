@@ -11,6 +11,7 @@ import {
   Sun, Moon,
 } from 'lucide-react';
 import { useWebTheme } from '../../contexts/WebThemeContext';
+import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 
 interface MegaItem { icon: React.ReactNode; label: string; desc: string; href: string; }
 
@@ -131,12 +132,7 @@ export function WebNav() {
 
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2.5 shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-bt-teal to-bt-teal-dark flex items-center justify-center shadow-lg shadow-bt-teal/30">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <span className={`font-bold text-lg tracking-tight transition-colors ${logoText}`}>
-                Brandtelligence
-              </span>
+              <img src={brandLogo} alt="Brandtelligence" className="h-8 w-auto object-contain" />
             </Link>
 
             {/* Desktop nav */}

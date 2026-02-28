@@ -5452,34 +5452,107 @@ try {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CRON 5 — AUDIT LOG INTEGRITY CHECK  (runs weekly, Sunday 04:00 UTC)
+// AUDIT LOG INTEGRITY CHECK  (shared logic for cron + on-demand)
 // ISO 27001 A.12.4.2 — protection of log information; detect gaps/tampering.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runAuditIntegrityCheck(trigger: 'cron' | 'manual', triggeredBy?: string): Promise<{ health: 'ok' | 'warning'; gaps: string[]; checked: number; ts: string }> {
+  const now = new Date();
+  const gaps: string[] = [];
+
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const raw = await kv.get(`security_audit_log:${dateStr}`);
+    if (!raw) gaps.push(dateStr);
+  }
+
+  const ts = now.toISOString();
+  const result = { health: (gaps.length > 0 ? 'warning' : 'ok') as 'ok' | 'warning', gaps, checked: 7, ts, trigger, triggeredBy };
+
+  if (gaps.length > 0) {
+    console.log(`[audit-integrity] missing dates: ${gaps.join(', ')} (trigger=${trigger})`);
+    logSecurityEvent({ ts, userId: triggeredBy, action: 'AUDIT_INTEGRITY_WARNING', route: `${trigger}:audit-integrity`, detail: `missingDates=${gaps.join(',')}` });
+
+    // Send email alert to Super Admin (best-effort, never throw)
+    try {
+      const { data: smtpRow } = await supabaseAdmin
+        .from("smtp_config").select("*").eq("id", "global").maybeSingle();
+      if (smtpRow?.host) {
+        const smtpCfg = rowToSmtpConfig(smtpRow);
+        if (smtpCfg.pass) smtpCfg.pass = await decrypt(smtpCfg.pass);
+        const transporter = nodemailer.createTransport({
+          host: smtpCfg.host, port: parseInt(smtpCfg.port, 10),
+          secure: parseInt(smtpCfg.port, 10) === 465,
+          auth: smtpCfg.user && smtpCfg.pass ? { user: smtpCfg.user, pass: smtpCfg.pass } : undefined,
+        });
+        const portalUrl = (Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "") + "/super/audit";
+        const gapRows = gaps.map(g => `<tr><td style="padding:8px 14px;font-size:13px;color:#dc2626;border-bottom:1px solid #fecaca;">${g}</td></tr>`).join("");
+        const alertHtml = fbWrap(
+          `Audit Log Integrity Warning`,
+          `<p style="font-size:15px;line-height:1.7;color:#444;">
+             The ${trigger === 'cron' ? 'weekly automated' : 'manual on-demand'} audit log integrity check detected
+             <strong>${gaps.length} missing day${gaps.length !== 1 ? 's' : ''}</strong> in the security audit log.
+           </p>
+           <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #fecaca;border-radius:10px;overflow:hidden;margin:20px 0;">
+             <thead><tr style="background:#fef2f2;">
+               <th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#991b1b;text-align:left;border-bottom:2px solid #fecaca;">Missing Dates</th>
+             </tr></thead>
+             <tbody>${gapRows}</tbody>
+           </table>
+           ${fbWarn("Missing audit log days may indicate system downtime, log tampering, or a misconfigured cron. Investigate immediately per ISO 27001 A.12.4.2.")}
+           ${fbBtn(portalUrl, "View Compliance Dashboard", "#dc2626")}`,
+        );
+        const alertTo = smtpCfg.fromEmail || "it@brandtelligence.com.my";
+        await transporter.sendMail({
+          from: `"Brandtelligence Platform" <${smtpCfg.fromEmail || "noreply@brandtelligence.com.my"}>`,
+          to: alertTo,
+          subject: `[SECURITY] Audit Log Integrity Warning - ${gaps.length} missing day${gaps.length !== 1 ? 's' : ''}`,
+          html: alertHtml,
+        });
+        console.log(`[audit-integrity] alert email sent to ${alertTo}`);
+      } else {
+        console.log("[audit-integrity] SMTP not configured, skipping alert email");
+      }
+    } catch (emailErr) {
+      console.log(`[audit-integrity] alert email failed (non-fatal): ${errMsg(emailErr)}`);
+    }
+  } else {
+    console.log(`[audit-integrity] all 7 days OK (trigger=${trigger})`);
+    logSecurityEvent({ ts, userId: triggeredBy, action: 'AUDIT_INTEGRITY_OK', route: `${trigger}:audit-integrity`, detail: 'last7days=complete' });
+  }
+
+  await kv.set("audit_integrity_last_check", JSON.stringify(result));
+  return result;
+}
+
+// POST /compliance/run-integrity-check  SUPER_ADMIN only (manual on-demand)
+app.post("/make-server-309fe679/compliance/run-integrity-check", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    const rateLimited = await rateLimit(c, 'integrity-check', 1, 60);
+    if (rateLimited instanceof Response) return rateLimited;
+
+    const result = await runAuditIntegrityCheck('manual', (auth as AuthIdentity).userId);
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'INTEGRITY_CHECK_MANUAL', route: '/compliance/run-integrity-check', detail: `health=${result.health} gaps=${result.gaps.length}` });
+
+    return c.json({ success: true, ...result });
+  } catch (err) {
+    console.log(`[compliance/run-integrity-check POST] ${errMsg(err)}`);
+    return c.json({ error: `runIntegrityCheck: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRON 5 — AUDIT LOG INTEGRITY CHECK  (runs weekly, Sunday 04:00 UTC)
 // ─────────────────────────────────────────────────────────────────────────────
 try {
   Deno.cron("audit-log-integrity-check", "0 4 * * 0", async () => {
     console.log("[audit-integrity] tick");
     try {
-      const now = new Date();
-      const gaps: string[] = [];
-
-      // Check that every day in the last 7 days has a security_audit_log entry
-      for (let i = 1; i <= 7; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().slice(0, 10);
-        const raw = await kv.get(`security_audit_log:${dateStr}`);
-        if (!raw) {
-          gaps.push(dateStr);
-        }
-      }
-
-      if (gaps.length > 0) {
-        console.log(`[audit-integrity] ⚠ missing audit log entries for dates: ${gaps.join(', ')}`);
-        logSecurityEvent({ ts: new Date().toISOString(), action: 'AUDIT_INTEGRITY_WARNING', route: 'cron:audit-integrity', detail: `missingDates=${gaps.join(',')}` });
-      } else {
-        console.log("[audit-integrity] ✓ all 7 days have audit log entries");
-        logSecurityEvent({ ts: new Date().toISOString(), action: 'AUDIT_INTEGRITY_OK', route: 'cron:audit-integrity', detail: 'last7days=complete' });
-      }
+      await runAuditIntegrityCheck('cron');
     } catch (outerErr) {
       console.log(`[audit-integrity] error: ${errMsg(outerErr)}`);
     }

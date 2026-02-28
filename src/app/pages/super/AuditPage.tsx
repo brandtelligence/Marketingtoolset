@@ -28,6 +28,7 @@ import {
   fetchRetentionPolicy,
   updateRetentionPolicy,
   fetchComplianceStatus,
+  runIntegrityCheckNow,
   type AuditLog,
   type SecurityAuditEntry,
   type SecurityAuditDaySummary,
@@ -139,8 +140,9 @@ function ComplianceHealthTab() {
   const t = useDashboardTheme();
   const [status, setStatus] = useState<ComplianceStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
 
-  useEffect(() => {
+  const loadStatus = useCallback(() => {
     setLoading(true);
     fetchComplianceStatus()
       .then(setStatus)
@@ -150,6 +152,27 @@ function ComplianceHealthTab() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const handleRunCheck = async () => {
+    setRunning(true);
+    try {
+      const result = await runIntegrityCheckNow();
+      if (result.health === 'ok') {
+        toast.success(`Integrity check passed — all ${result.checked} days have audit log entries`);
+      } else {
+        toast.warning(`Integrity check found ${result.gaps.length} missing day${result.gaps.length !== 1 ? 's' : ''}: ${result.gaps.join(', ')}`);
+      }
+      // Reload compliance status to reflect the new check
+      loadStatus();
+    } catch (err: any) {
+      console.error('[ComplianceHealthTab] manual check error:', err);
+      toast.error(`Integrity check failed: ${err.message}`);
+    } finally {
+      setRunning(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -183,12 +206,23 @@ function ComplianceHealthTab() {
     <>
       {/* Overall health banner */}
       <div className={`rounded-2xl border p-6 mb-6 ${hc.cls}`}>
-        <div className="flex items-center gap-4">
-          {hc.icon}
-          <div>
-            <h3 className="text-lg font-bold">{hc.label}</h3>
-            <p className="text-sm opacity-80 mt-1">{hc.desc}</p>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            {hc.icon}
+            <div>
+              <h3 className="text-lg font-bold">{hc.label}</h3>
+              <p className="text-sm opacity-80 mt-1">{hc.desc}</p>
+            </div>
           </div>
+          <PrimaryBtn
+            variant="ghost"
+            onClick={handleRunCheck}
+            loading={running}
+            disabled={running}
+          >
+            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+            {running ? 'Running…' : 'Run Check Now'}
+          </PrimaryBtn>
         </div>
       </div>
 

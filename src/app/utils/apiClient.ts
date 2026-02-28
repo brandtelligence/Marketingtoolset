@@ -695,3 +695,29 @@ export async function fetchComplianceStatus(): Promise<ComplianceStatus> {
   }
   return api<ComplianceStatus>('/compliance-status');
 }
+
+// ─── Manual Integrity Check (Phase 6 — on-demand) ─────────────────────────────
+
+export interface IntegrityCheckOnDemandResult {
+  success: boolean;
+  health:  'ok' | 'warning';
+  gaps:    string[];
+  checked: number;
+  ts:      string;
+  trigger: string;
+}
+
+export async function runIntegrityCheckNow(): Promise<IntegrityCheckOnDemandResult> {
+  if (!IS_PRODUCTION) {
+    // Demo mode — simulate a successful check
+    return {
+      success: true,
+      health: 'ok',
+      gaps: [],
+      checked: 7,
+      ts: new Date().toISOString(),
+      trigger: 'manual',
+    };
+  }
+  return api<IntegrityCheckOnDemandResult>('/compliance/run-integrity-check', { method: 'POST' });
+}
