@@ -6,21 +6,24 @@
  *   2. Application Audit   – existing admin action log (fetchAuditLogs)
  *   3. Security Audit Log  – Phase 6 ISO 27001 A.12.4 security events with CSV export
  *   4. Data Retention       – Phase 6 PDPA s.10 / ISO 27001 A.18.1.3 retention policy
+ *   5. Penetration Test     – Penetration test results and findings
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Download, ShieldCheck, Database, BookOpen, Calendar,
   RefreshCw, Loader2, Save, Info, AlertTriangle, Clock,
   ChevronLeft, ChevronRight, BarChart3, Activity,
   CheckCircle2, XCircle, HelpCircle, Timer, Cog,
+  Bell, Plus, Trash2, ToggleLeft, ToggleRight, Mail, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { DataTable, Column } from '../../components/saas/DataTable';
 import { StatusBadge, RoleBadge } from '../../components/saas/StatusBadge';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { PenTestChecklist } from '../../components/saas/PenTestChecklist';
 import {
   fetchAuditLogs,
   fetchSecurityAuditLog,
@@ -29,11 +32,14 @@ import {
   updateRetentionPolicy,
   fetchComplianceStatus,
   runIntegrityCheckNow,
+  fetchAlertRecipients,
+  updateAlertRecipients,
   type AuditLog,
   type SecurityAuditEntry,
   type SecurityAuditDaySummary,
   type RetentionPolicy,
   type ComplianceStatus,
+  type AlertRecipient,
 } from '../../utils/apiClient';
 
 // ─── CSV Export Utility ───────────────────────────────────────────────────────
@@ -62,11 +68,16 @@ const ACTION_COLORS: Record<string, string> = {
   SESSION_EXPIRED:         'bg-amber-500/15 text-amber-600 border-amber-500/25',
   SECURITY_LOG_VIEWED:     'bg-sky-500/15 text-sky-600 border-sky-500/25',
   RETENTION_POLICY_CHANGED:'bg-purple-500/15 text-purple-600 border-purple-500/25',
+  ALERT_RECIPIENTS_UPDATED:'bg-orange-500/15 text-orange-600 border-orange-500/25',
+  AUDIT_INTEGRITY_OK:      'bg-emerald-500/15 text-emerald-600 border-emerald-500/25',
+  AUDIT_INTEGRITY_WARNING: 'bg-amber-500/15 text-amber-600 border-amber-500/25',
+  INTEGRITY_CHECK_MANUAL:  'bg-sky-500/15 text-sky-600 border-sky-500/25',
+  PENTEST_RESULTS_UPDATED: 'bg-orange-500/15 text-orange-600 border-orange-500/25',
 };
 
 const DEFAULT_ACTION_CLS = 'bg-gray-500/15 text-gray-600 border-gray-500/25';
 
-type TabKey = 'compliance' | 'app' | 'security' | 'retention';
+type TabKey = 'compliance' | 'app' | 'security' | 'retention' | 'pentest';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -76,12 +87,26 @@ export function AuditPage() {
   const t = useDashboardTheme();
   const [activeTab, setActiveTab] = useState<TabKey>('app');
 
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  // ── Pen test fail count from localStorage (lightweight, no API call) ────────
+  const [penTestFailCount, setPenTestFailCount] = useState(0);
+
+  // Recompute when switching tabs (user may have just changed results on pentest tab)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('btl_pentest_results');
+      if (!raw) { setPenTestFailCount(0); return; }
+      const results = JSON.parse(raw) as Record<string, { status: string }>;
+      setPenTestFailCount(Object.values(results).filter(r => r.status === 'fail').length);
+    } catch { setPenTestFailCount(0); }
+  }, [activeTab]);
+
+  const tabs: { key: TabKey; label: string; icon: React.ReactNode; badge?: number }[] = useMemo(() => [
     { key: 'compliance', label: 'Compliance Health', icon: <Activity className="w-4 h-4" /> },
     { key: 'app',       label: 'Application Audit', icon: <BookOpen className="w-4 h-4" /> },
     { key: 'security',  label: 'Security Log',      icon: <ShieldCheck className="w-4 h-4" /> },
     { key: 'retention', label: 'Data Retention',     icon: <Database className="w-4 h-4" /> },
-  ];
+    { key: 'pentest',   label: 'Penetration Test',   icon: <ShieldCheck className="w-4 h-4" style={{ color: '#F47A20' }} />, badge: penTestFailCount },
+  ], [penTestFailCount]);
 
   return (
     <div>
@@ -91,7 +116,7 @@ export function AuditPage() {
       />
 
       {/* Tab bar */}
-      <div className={`flex gap-1 ${t.tabBg} rounded-xl p-1 mb-6 w-fit`}>
+      <div className={`flex flex-wrap gap-1 ${t.tabBg} rounded-xl p-1 mb-6 w-fit max-w-full`}>
         {tabs.map(tab => (
           <button
             key={tab.key}
@@ -102,6 +127,11 @@ export function AuditPage() {
           >
             {tab.icon}
             {tab.label}
+            {tab.badge != null && tab.badge > 0 && (
+              <span className="flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[0.625rem] font-bold bg-red-500 text-white leading-none">
+                {tab.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -109,7 +139,7 @@ export function AuditPage() {
       <AnimatePresence mode="wait">
         {activeTab === 'compliance' && (
           <motion.div key="compliance" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            <ComplianceHealthTab />
+            <ComplianceHealthTab onNavigateToTab={setActiveTab} />
           </motion.div>
         )}
         {activeTab === 'app' && (
@@ -127,6 +157,11 @@ export function AuditPage() {
             <DataRetentionTab />
           </motion.div>
         )}
+        {activeTab === 'pentest' && (
+          <motion.div key="pentest" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <PenetrationTestTab />
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
@@ -136,7 +171,7 @@ export function AuditPage() {
 // TAB 1 — COMPLIANCE HEALTH  (aggregated cron status, integrity checks, overall health)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ComplianceHealthTab() {
+function ComplianceHealthTab({ onNavigateToTab }: { onNavigateToTab: (tab: TabKey) => void }) {
   const t = useDashboardTheme();
   const [status, setStatus] = useState<ComplianceStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -194,13 +229,30 @@ function ComplianceHealthTab() {
     );
   }
 
+  // Derive composite health: escalate to 'warning' if pen test has failures
+  const penFails = status.penTestProgress?.fail ?? 0;
+  const compositeHealth: 'healthy' | 'warning' | 'unknown' =
+    status.health === 'unknown'   ? 'unknown' :
+    status.health === 'warning'   ? 'warning' :
+    penFails > 0                  ? 'warning' :
+    /* all OK */                    'healthy';
+
+  const integrityWarning = status.health === 'warning';
+  const penTestOnly = penFails > 0 && !integrityWarning;
+  const bothWarnings = penFails > 0 && integrityWarning;
+
+  const warningDesc =
+    bothWarnings  ? `Missing audit log days detected AND ${penFails} penetration test case${penFails !== 1 ? 's' : ''} failed. Review both the integrity history and Penetration Test tab.` :
+    penTestOnly   ? `${penFails} penetration test case${penFails !== 1 ? 's' : ''} failed. Review the Penetration Test tab for details.` :
+    /* integrity */ 'Missing audit log days detected in recent integrity checks. Review the integrity history below.';
+
   const healthConfig = {
     healthy: { icon: <CheckCircle2 className="w-8 h-8 text-emerald-500" />, label: 'All Systems Healthy', cls: 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600', desc: 'All integrity checks passed. No missing audit log days detected.' },
-    warning: { icon: <AlertTriangle className="w-8 h-8 text-amber-500" />, label: 'Warnings Detected', cls: 'bg-amber-500/10 border-amber-500/25 text-amber-600', desc: 'Missing audit log days detected in recent integrity checks. Review the integrity history below.' },
+    warning: { icon: <AlertTriangle className="w-8 h-8 text-amber-500" />, label: 'Warnings Detected', cls: 'bg-amber-500/10 border-amber-500/25 text-amber-600', desc: warningDesc },
     unknown: { icon: <HelpCircle className="w-8 h-8 text-gray-400" />, label: 'No Data Yet', cls: t.isDark ? 'bg-white/5 border-white/10 text-white/50' : 'bg-gray-50 border-gray-200 text-gray-500', desc: 'The weekly integrity check has not run yet. It is scheduled to run every Sunday at 04:00 UTC.' },
   };
 
-  const hc = healthConfig[status.health];
+  const hc = healthConfig[compositeHealth];
 
   return (
     <>
@@ -377,6 +429,12 @@ function ComplianceHealthTab() {
         </Card>
       </div>
 
+      {/* Penetration Test Readiness */}
+      <PenTestReadinessCard progress={status.penTestProgress} onViewDetails={() => onNavigateToTab('pentest')} />
+
+      {/* Alert Recipients */}
+      <AlertRecipientsCard />
+
       {/* ISO / PDPA compliance footer */}
       <div className={`mt-6 flex items-start gap-2.5 p-3 rounded-xl border text-xs ${
         t.isDark ? 'bg-sky-500/5 border-sky-500/20 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-700'
@@ -387,6 +445,392 @@ function ComplianceHealthTab() {
         </div>
       </div>
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PENETRATION TEST READINESS CARD  (summary from server-stored pen test results)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface PenTestProgress {
+  total: number;
+  pass: number;
+  fail: number;
+  partial: number;
+  notTested: number;
+  na: number;
+  updatedAt: string | null;
+}
+
+function PenTestReadinessCard({ progress, onViewDetails }: { progress?: PenTestProgress; onViewDetails: () => void }) {
+  const t = useDashboardTheme();
+
+  // Total expected test cases (from the checklist definition)
+  const TOTAL_DEFINED = 51; // 9 categories × avg ~5.7 items
+
+  const p = progress ?? { total: 0, pass: 0, fail: 0, partial: 0, notTested: 0, na: 0, updatedAt: null };
+  const assessed = p.pass + p.fail + p.partial + p.na;
+  const assessedPct = p.total > 0 ? Math.round((assessed / TOTAL_DEFINED) * 100) : 0;
+  const passRate = assessed > 0 ? Math.round((p.pass / (p.pass + p.fail + p.partial)) * 100) : 0;
+
+  // Determine readiness level
+  const readiness: 'not_started' | 'in_progress' | 'needs_attention' | 'ready' =
+    p.total === 0           ? 'not_started' :
+    p.fail > 0              ? 'needs_attention' :
+    assessedPct < 80        ? 'in_progress' :
+    /* 80%+ assessed, 0 fails */ 'ready';
+
+  const readinessConfig = {
+    not_started:     { label: 'Not Started',     cls: t.isDark ? 'bg-white/5 border-white/10 text-white/50' : 'bg-gray-50 border-gray-200 text-gray-500',       icon: <HelpCircle className="w-5 h-5" /> },
+    in_progress:     { label: 'In Progress',     cls: 'bg-sky-500/10 border-sky-500/25 text-sky-600',       icon: <ShieldCheck className="w-5 h-5" /> },
+    needs_attention: { label: 'Needs Attention', cls: 'bg-red-500/10 border-red-500/25 text-red-600',       icon: <XCircle className="w-5 h-5" /> },
+    ready:           { label: 'Ready',           cls: 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600', icon: <CheckCircle2 className="w-5 h-5" /> },
+  };
+
+  const rc = readinessConfig[readiness];
+
+  return (
+    <Card title="Penetration Test Readiness" className="mt-6">
+      <div className="flex items-start gap-4">
+        {/* Status badge */}
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold ${rc.cls}`}>
+          {rc.icon}
+          {rc.label}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          {readiness === 'not_started' ? (
+            <p className={`${t.textFaint} text-sm`}>
+              No pen test results have been recorded yet. Visit the <strong className={t.text}>Penetration Test</strong> tab to begin assessing the {TOTAL_DEFINED} test cases.
+            </p>
+          ) : (
+            <>
+              <p className={`${t.textMd} text-sm`}>
+                {assessedPct}% assessed ({assessed} of {TOTAL_DEFINED} test cases)
+                {p.fail > 0 && <span className="text-red-500 font-bold"> · {p.fail} failed</span>}
+              </p>
+              {p.updatedAt && (
+                <p className={`${t.textFaint} text-xs mt-1`}>
+                  Last updated: {new Date(p.updatedAt).toLocaleString()}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* View Details button */}
+        <button
+          onClick={onViewDetails}
+          className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            t.isDark
+              ? 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10'
+              : 'bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-gray-900 border border-gray-200'
+          }`}
+        >
+          View Details
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Progress breakdown */}
+      {p.total > 0 && (
+        <div className="mt-4">
+          {/* Mini bar */}
+          <div className={`h-2.5 rounded-full overflow-hidden flex ${t.isDark ? 'bg-white/10' : 'bg-gray-100'}`}>
+            {p.pass > 0    && <div className="bg-emerald-500 transition-all" style={{ width: `${(p.pass / TOTAL_DEFINED) * 100}%` }} />}
+            {p.partial > 0 && <div className="bg-amber-500 transition-all"   style={{ width: `${(p.partial / TOTAL_DEFINED) * 100}%` }} />}
+            {p.fail > 0    && <div className="bg-red-500 transition-all"     style={{ width: `${(p.fail / TOTAL_DEFINED) * 100}%` }} />}
+            {p.na > 0      && <div className={`${t.isDark ? 'bg-white/20' : 'bg-gray-300'} transition-all`} style={{ width: `${(p.na / TOTAL_DEFINED) * 100}%` }} />}
+          </div>
+
+          {/* Stat chips */}
+          <div className="flex flex-wrap gap-3 mt-3">
+            {([
+              ['Pass', p.pass, 'text-emerald-500'],
+              ['Partial', p.partial, 'text-amber-500'],
+              ['Fail', p.fail, 'text-red-500'],
+              ['Not Tested', TOTAL_DEFINED - assessed, t.textFaint],
+              ['N/A', p.na, t.textFaint],
+            ] as const).filter(([, count]) => count > 0).map(([label, count, cls]) => (
+              <span key={label} className={`text-xs font-semibold ${cls}`}>
+                {count} {label}
+              </span>
+            ))}
+            {assessed > 0 && p.fail === 0 && (
+              <span className="text-xs font-semibold text-emerald-500 ml-auto">
+                {passRate}% pass rate
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERT RECIPIENTS CARD  (configurable stakeholder email list for integrity alerts)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ROLE_OPTIONS = ['IT Admin', 'CISO', 'DPO', 'CTO', 'Compliance Officer', 'CEO', 'Custom'];
+
+function AlertRecipientsCard() {
+  const t = useDashboardTheme();
+
+  const [recipients, setRecipients] = useState<AlertRecipient[]>([]);
+  const [savedRecipients, setSavedRecipients] = useState<AlertRecipient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Add new recipient form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newRole, setNewRole] = useState('IT Admin');
+
+  const isDirty = JSON.stringify(recipients) !== JSON.stringify(savedRecipients);
+
+  useEffect(() => {
+    fetchAlertRecipients()
+      .then(r => { setRecipients(r); setSavedRecipients(r); })
+      .catch(err => {
+        console.error('[AlertRecipientsCard] load error:', err);
+        toast.error(`Failed to load alert recipients: ${err.message}`);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleToggle = (id: string) => {
+    setRecipients(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+  };
+
+  const handleRemove = (id: string) => {
+    setRecipients(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleAdd = () => {
+    if (!newName.trim() || !newEmail.trim()) {
+      toast.error('Name and email are required');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      toast.error('Invalid email format');
+      return;
+    }
+    if (recipients.some(r => r.email.toLowerCase() === newEmail.toLowerCase())) {
+      toast.error('This email is already in the recipient list');
+      return;
+    }
+    const nr: AlertRecipient = {
+      id: crypto.randomUUID(),
+      email: newEmail.trim(),
+      name: newName.trim(),
+      role: newRole,
+      enabled: true,
+      addedAt: new Date().toISOString(),
+    };
+    setRecipients(prev => [...prev, nr]);
+    setNewName('');
+    setNewEmail('');
+    setNewRole('IT Admin');
+    setShowAddForm(false);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updated = await updateAlertRecipients(recipients);
+      setRecipients(updated);
+      setSavedRecipients(updated);
+      toast.success(`Alert recipients saved — ${updated.filter(r => r.enabled).length} active`);
+    } catch (err: any) {
+      console.error('[AlertRecipientsCard] save error:', err);
+      toast.error(`Failed to save: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDiscard = () => {
+    setRecipients(savedRecipients);
+    setShowAddForm(false);
+    setNewName('');
+    setNewEmail('');
+    setNewRole('IT Admin');
+  };
+
+  const enabledCount = recipients.filter(r => r.enabled).length;
+
+  const inputCls = `w-full rounded-xl border px-3 py-2 text-sm transition-all focus:outline-none ${
+    t.isDark
+      ? 'bg-white/5 border-white/15 text-white placeholder-white/40 focus:border-white/30'
+      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-gray-300'
+  }`;
+  const selectCls = `rounded-xl border px-3 py-2 text-sm transition-all focus:outline-none ${
+    t.isDark
+      ? 'bg-white/5 border-white/15 text-white focus:border-white/30'
+      : 'bg-white border-gray-200 text-gray-900 focus:border-gray-300'
+  }`;
+
+  if (loading) {
+    return (
+      <Card title="Integrity Alert Recipients" className="mt-6">
+        <div className="flex items-center justify-center py-10 gap-3">
+          <Loader2 className={`w-4 h-4 animate-spin ${t.textFaint}`} />
+          <span className={`${t.textFaint} text-sm`}>Loading recipients…</span>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      title={
+        <div className="flex items-center gap-2">
+          <Bell className="w-4 h-4" style={{ color: '#F47A20' }} />
+          <span>Integrity Alert Recipients</span>
+          <span className={`text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border ${
+            t.isDark ? 'border-white/15 text-white/50' : 'border-gray-200 text-gray-500'
+          }`}>
+            {enabledCount} active
+          </span>
+        </div>
+      }
+      className="mt-6"
+    >
+      <p className={`${t.textFaint} text-xs mb-4`}>
+        When the weekly or on-demand integrity check detects missing audit log days, an alert email is sent to all enabled recipients below.
+      </p>
+
+      {/* Recipients list */}
+      {recipients.length === 0 ? (
+        <div className={`flex items-center gap-3 py-6 justify-center ${t.textFaint}`}>
+          <Mail className="w-5 h-5" />
+          <span className="text-sm">No recipients configured — add at least one stakeholder</span>
+        </div>
+      ) : (
+        <div className="space-y-2 mb-4">
+          {recipients.map(r => (
+            <div key={r.id} className={`flex items-center gap-3 p-3 rounded-xl border ${t.s1} ${t.border}`}>
+              {/* Toggle */}
+              <button
+                type="button"
+                onClick={() => handleToggle(r.id)}
+                className="shrink-0 transition-colors"
+                title={r.enabled ? 'Disable this recipient' : 'Enable this recipient'}
+              >
+                {r.enabled
+                  ? <ToggleRight className="w-6 h-6 text-emerald-500" />
+                  : <ToggleLeft className={`w-6 h-6 ${t.textFaint}`} />}
+              </button>
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-sm font-semibold ${r.enabled ? t.text : t.textFaint} truncate`}>{r.name}</span>
+                  <span className={`text-[0.6rem] font-semibold px-2 py-0.5 rounded-full border ${
+                    t.isDark ? 'border-white/15 text-white/40' : 'border-gray-200 text-gray-400'
+                  }`}>{r.role}</span>
+                </div>
+                <p className={`${t.textFaint} text-xs font-mono truncate`}>{r.email}</p>
+              </div>
+
+              {/* Remove */}
+              <button
+                type="button"
+                onClick={() => handleRemove(r.id)}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  t.isDark ? 'hover:bg-red-500/15 text-white/30 hover:text-red-400' : 'hover:bg-red-50 text-gray-300 hover:text-red-500'
+                }`}
+                title="Remove recipient"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add new recipient form */}
+      <AnimatePresence>
+        {showAddForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className={`p-4 rounded-xl border ${t.isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`${t.text} text-sm font-semibold`}>Add Recipient</span>
+                <button type="button" onClick={() => setShowAddForm(false)} className={`${t.textFaint} hover:${t.text} transition-colors`}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                <input
+                  type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                  placeholder="Full name" className={inputCls}
+                />
+                <input
+                  type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                  placeholder="email@company.com" className={inputCls}
+                />
+                <select value={newRole} onChange={e => setNewRole(e.target.value)} className={selectCls}>
+                  {ROLE_OPTIONS.map(ro => <option key={ro} value={ro}>{ro}</option>)}
+                </select>
+              </div>
+              <button
+                type="button" onClick={handleAdd}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                style={{ background: '#0BA4AA' }}
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Recipient
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Action bar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setShowAddForm(true)}
+          disabled={showAddForm}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+            t.isDark
+              ? 'border-white/15 text-white/60 hover:text-white hover:border-white/25 disabled:opacity-40'
+              : 'border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 disabled:opacity-40'
+          }`}
+        >
+          <Plus className="w-3.5 h-3.5" /> Add Stakeholder
+        </button>
+
+        {isDirty && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="flex items-center gap-2"
+          >
+            <span className={`text-xs ${t.isDark ? 'text-amber-400' : 'text-amber-600'}`}>Unsaved changes</span>
+            <button
+              type="button" onClick={handleDiscard}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                t.isDark ? 'border-white/15 text-white/60 hover:text-white' : 'border-gray-200 text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Discard
+            </button>
+            <button
+              type="button" onClick={handleSave} disabled={saving}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-60"
+              style={{ background: '#0BA4AA' }}
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              {saving ? 'Saving…' : 'Save Recipients'}
+            </button>
+          </motion.div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -941,4 +1385,12 @@ function DataRetentionTab() {
       </div>
     </>
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 5 — PENETRATION TEST CHECKLIST
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function PenetrationTestTab() {
+  return <PenTestChecklist />;
 }

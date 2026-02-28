@@ -1888,6 +1888,25 @@ app.get("/make-server-309fe679/compliance-status", async (c) => {
       crons: REGISTERED_CRONS,
       retentionConfigured: !!retentionPolicy,
       retentionPolicy,
+      alertRecipientsCount: (await getAlertRecipients()).filter(r => r.enabled).length,
+      penTestProgress: await (async () => {
+        try {
+          const raw = await kv.get("pentest_results");
+          if (!raw) return { total: 0, pass: 0, fail: 0, partial: 0, notTested: 0, na: 0, updatedAt: null };
+          const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+          const results = parsed.results ?? {};
+          const entries = Object.values(results) as { status: string }[];
+          return {
+            total: entries.length,
+            pass: entries.filter(e => e.status === 'pass').length,
+            fail: entries.filter(e => e.status === 'fail').length,
+            partial: entries.filter(e => e.status === 'partial').length,
+            notTested: entries.filter(e => e.status === 'not_tested').length,
+            na: entries.filter(e => e.status === 'na').length,
+            updatedAt: parsed.updatedAt ?? null,
+          };
+        } catch { return { total: 0, pass: 0, fail: 0, partial: 0, notTested: 0, na: 0, updatedAt: null }; }
+      })(),
     });
   } catch (err) {
     console.log(`[compliance-status GET] ${errMsg(err)}`);
@@ -5504,14 +5523,20 @@ async function runAuditIntegrityCheck(trigger: 'cron' | 'manual', triggeredBy?: 
            ${fbWarn("Missing audit log days may indicate system downtime, log tampering, or a misconfigured cron. Investigate immediately per ISO 27001 A.12.4.2.")}
            ${fbBtn(portalUrl, "View Compliance Dashboard", "#dc2626")}`,
         );
-        const alertTo = smtpCfg.fromEmail || "it@brandtelligence.com.my";
+        // Fetch configurable alert recipients (multi-stakeholder)
+        const alertRecipients = await getAlertRecipients();
+        const enabledRecipients = alertRecipients.filter(r => r.enabled);
+        const alertTo = enabledRecipients.length > 0
+          ? enabledRecipients.map(r => r.name ? `"${r.name}" <${r.email}>` : r.email).join(', ')
+          : smtpCfg.fromEmail || "it@brandtelligence.com.my";
+        const fromAddr = smtpCfg.fromEmail || "noreply@brandtelligence.com.my";
         await transporter.sendMail({
-          from: `"Brandtelligence Platform" <${smtpCfg.fromEmail || "noreply@brandtelligence.com.my"}>`,
+          from: `"Brandtelligence Platform" <${fromAddr}>`,
           to: alertTo,
           subject: `[SECURITY] Audit Log Integrity Warning - ${gaps.length} missing day${gaps.length !== 1 ? 's' : ''}`,
           html: alertHtml,
         });
-        console.log(`[audit-integrity] alert email sent to ${alertTo}`);
+        console.log(`[audit-integrity] alert email sent to ${enabledRecipients.length} recipient(s): ${alertTo}`);
       } else {
         console.log("[audit-integrity] SMTP not configured, skipping alert email");
       }
@@ -5542,6 +5567,155 @@ app.post("/make-server-309fe679/compliance/run-integrity-check", async (c) => {
   } catch (err) {
     console.log(`[compliance/run-integrity-check POST] ${errMsg(err)}`);
     return c.json({ error: `runIntegrityCheck: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPLIANCE ALERT RECIPIENTS  (configurable stakeholder email list)
+// KV key: "compliance_alert_recipients" → JSON array of AlertRecipient objects
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AlertRecipient {
+  id: string;
+  email: string;
+  name: string;
+  role: string;   // e.g. 'CISO', 'DPO', 'IT Admin', 'CTO', 'Custom'
+  enabled: boolean;
+  addedAt: string;
+  addedBy?: string;
+}
+
+async function getAlertRecipients(): Promise<AlertRecipient[]> {
+  const raw = await kv.get("compliance_alert_recipients");
+  if (!raw) {
+    // Seed with default Super Admin recipient
+    const defaults: AlertRecipient[] = [{
+      id: crypto.randomUUID(),
+      email: "it@brandtelligence.com.my",
+      name: "IT Admin",
+      role: "IT Admin",
+      enabled: true,
+      addedAt: new Date().toISOString(),
+    }];
+    await kv.set("compliance_alert_recipients", JSON.stringify(defaults));
+    return defaults;
+  }
+  return typeof raw === "string" ? JSON.parse(raw) : raw;
+}
+
+// GET /compliance/alert-recipients  →  SUPER_ADMIN only
+app.get("/make-server-309fe679/compliance/alert-recipients", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    const recipients = await getAlertRecipients();
+    return c.json({ success: true, recipients });
+  } catch (err) {
+    console.log(`[compliance/alert-recipients GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchAlertRecipients: ${errMsg(err)}` }, 500);
+  }
+});
+
+// PUT /compliance/alert-recipients  →  SUPER_ADMIN only
+app.put("/make-server-309fe679/compliance/alert-recipients", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json();
+    const recipients: AlertRecipient[] = body.recipients;
+
+    if (!Array.isArray(recipients)) {
+      return c.json({ error: "recipients must be an array" }, 400);
+    }
+
+    // Validate each recipient
+    for (const r of recipients) {
+      if (!r.email || !r.name) {
+        return c.json({ error: "Each recipient must have an email and name" }, 400);
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email)) {
+        return c.json({ error: `Invalid email: ${r.email}` }, 400);
+      }
+    }
+
+    await kv.set("compliance_alert_recipients", JSON.stringify(recipients));
+
+    const enabledCount = recipients.filter(r => r.enabled).length;
+    logSecurityEvent({
+      ts: new Date().toISOString(),
+      userId: (auth as AuthIdentity).userId,
+      action: 'ALERT_RECIPIENTS_UPDATED',
+      route: '/compliance/alert-recipients',
+      detail: `total=${recipients.length} enabled=${enabledCount}`,
+    });
+
+    console.log(`[compliance/alert-recipients PUT] updated: ${recipients.length} recipients (${enabledCount} enabled)`);
+    return c.json({ success: true, recipients });
+  } catch (err) {
+    console.log(`[compliance/alert-recipients PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateAlertRecipients: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PENETRATION TEST RESULTS  (server-side persistence for shared pen test state)
+// KV key: "pentest_results" → JSON object { results, updatedAt, updatedBy }
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /compliance/pentest-results  →  SUPER_ADMIN only
+app.get("/make-server-309fe679/compliance/pentest-results", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    const raw = await kv.get("pentest_results");
+    if (!raw) return c.json({ success: true, results: {}, updatedAt: null, updatedBy: null });
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return c.json({ success: true, ...parsed });
+  } catch (err) {
+    console.log(`[compliance/pentest-results GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchPentestResults: ${errMsg(err)}` }, 500);
+  }
+});
+
+// PUT /compliance/pentest-results  →  SUPER_ADMIN only
+app.put("/make-server-309fe679/compliance/pentest-results", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json();
+    const results = body.results;
+
+    if (!results || typeof results !== 'object') {
+      return c.json({ error: "results must be an object" }, 400);
+    }
+
+    const payload = {
+      results,
+      updatedAt: new Date().toISOString(),
+      updatedBy: (auth as AuthIdentity).userId,
+    };
+
+    await kv.set("pentest_results", JSON.stringify(payload));
+
+    const totalTests = Object.keys(results).length;
+    const passed = Object.values(results).filter((r: any) => r.status === 'pass').length;
+    const failed = Object.values(results).filter((r: any) => r.status === 'fail').length;
+
+    logSecurityEvent({
+      ts: new Date().toISOString(),
+      userId: (auth as AuthIdentity).userId,
+      action: 'PENTEST_RESULTS_UPDATED',
+      route: '/compliance/pentest-results',
+      detail: `total=${totalTests} pass=${passed} fail=${failed}`,
+    });
+
+    console.log(`[compliance/pentest-results PUT] saved: ${totalTests} results (${passed} pass, ${failed} fail)`);
+    return c.json({ success: true, ...payload });
+  } catch (err) {
+    console.log(`[compliance/pentest-results PUT] ${errMsg(err)}`);
+    return c.json({ error: `updatePentestResults: ${errMsg(err)}` }, 500);
   }
 });
 

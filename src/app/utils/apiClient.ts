@@ -657,6 +657,16 @@ export interface ComplianceStatus {
   crons:               ComplianceCron[];
   retentionConfigured: boolean;
   retentionPolicy:     RetentionPolicy | null;
+  alertRecipientsCount?: number;
+  penTestProgress?: {
+    total: number;
+    pass: number;
+    fail: number;
+    partial: number;
+    notTested: number;
+    na: number;
+    updatedAt: string | null;
+  };
 }
 
 export async function fetchComplianceStatus(): Promise<ComplianceStatus> {
@@ -691,6 +701,8 @@ export async function fetchComplianceStatus(): Promise<ComplianceStatus> {
       ],
       retentionConfigured: false,
       retentionPolicy: null,
+      alertRecipientsCount: 2,
+      penTestProgress: { total: 18, pass: 12, fail: 1, partial: 3, notTested: 33, na: 2, updatedAt: new Date(Date.now() - 2 * 86400000).toISOString() },
     };
   }
   return api<ComplianceStatus>('/compliance-status');
@@ -720,4 +732,71 @@ export async function runIntegrityCheckNow(): Promise<IntegrityCheckOnDemandResu
     };
   }
   return api<IntegrityCheckOnDemandResult>('/compliance/run-integrity-check', { method: 'POST' });
+}
+
+// ─── Compliance Alert Recipients ──────────────────────────────────────────────
+
+export interface AlertRecipient {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  enabled: boolean;
+  addedAt: string;
+  addedBy?: string;
+}
+
+export async function fetchAlertRecipients(): Promise<AlertRecipient[]> {
+  if (!IS_PRODUCTION) {
+    return [
+      { id: 'ar-1', email: 'it@brandtelligence.com.my', name: 'IT Admin', role: 'IT Admin', enabled: true, addedAt: new Date().toISOString() },
+      { id: 'ar-2', email: 'ciso@brandtelligence.com.my', name: 'Ahmad Razak', role: 'CISO', enabled: true, addedAt: new Date().toISOString() },
+      { id: 'ar-3', email: 'dpo@brandtelligence.com.my', name: 'Siti Aminah', role: 'DPO', enabled: false, addedAt: new Date().toISOString() },
+    ];
+  }
+  const res = await api<{ success: boolean; recipients: AlertRecipient[] }>('/compliance/alert-recipients');
+  return res.recipients;
+}
+
+export async function updateAlertRecipients(recipients: AlertRecipient[]): Promise<AlertRecipient[]> {
+  if (!IS_PRODUCTION) {
+    return recipients;
+  }
+  const res = await api<{ success: boolean; recipients: AlertRecipient[] }>('/compliance/alert-recipients', {
+    method: 'PUT',
+    body: JSON.stringify({ recipients }),
+  });
+  return res.recipients;
+}
+
+// ─── Penetration Test Results (server-side persistence) ───────────────────────
+
+export interface PenTestResultEntry {
+  status: 'not_tested' | 'pass' | 'fail' | 'partial' | 'na';
+  notes: string;
+  testedAt?: string;
+  tester?: string;
+}
+
+export interface PenTestResultsPayload {
+  results: Record<string, PenTestResultEntry>;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export async function fetchPenTestResults(): Promise<PenTestResultsPayload> {
+  if (!IS_PRODUCTION) {
+    return { results: {}, updatedAt: null, updatedBy: null };
+  }
+  return api<PenTestResultsPayload & { success: boolean }>('/compliance/pentest-results');
+}
+
+export async function savePenTestResults(results: Record<string, PenTestResultEntry>): Promise<PenTestResultsPayload> {
+  if (!IS_PRODUCTION) {
+    return { results, updatedAt: new Date().toISOString(), updatedBy: 'demo-user' };
+  }
+  return api<PenTestResultsPayload & { success: boolean }>('/compliance/pentest-results', {
+    method: 'PUT',
+    body: JSON.stringify({ results }),
+  });
 }

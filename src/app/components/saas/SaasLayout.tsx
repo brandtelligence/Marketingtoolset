@@ -337,7 +337,7 @@ export function StatCard({ label, value, delta, icon, color = 'purple' }: StatCa
 }
 
 // ── Section card ───────────────────────────────────────────────────────────────
-export function Card({ title, children, actions, className }: { title?: string; children: ReactNode; actions?: ReactNode; className?: string }) {
+export function Card({ title, children, actions, className }: { title?: ReactNode; children: ReactNode; actions?: ReactNode; className?: string }) {
   const t = useDashboardTheme();
   return (
     <div className={`${t.s0} border ${t.border} rounded-2xl ${className ?? ''}`}>
