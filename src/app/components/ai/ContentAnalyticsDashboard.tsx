@@ -1,10 +1,13 @@
-import { useMemo } from 'react';
-import { motion } from 'motion/react';
+import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   TrendingUp, CheckCircle, Clock,
   FileText, CalendarDays, Check, XCircle,
   Heart, MessageCircle, Repeat2, Eye, Timer,
+  Upload, X, AlertCircle, Download, Loader2,
+  RefreshCw, Wifi,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -14,7 +17,9 @@ import {
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit, SiWhatsapp,
   SiTelegram,
 } from 'react-icons/si';
-import { type ContentCard, type ContentStatus } from '../../contexts/ContentContext';
+import { type ContentCard, type ContentStatus, type EngagementData, useContent } from '../../contexts/ContentContext';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 import { getSlaStatusWith, SLA_BREACH_HOURS, SLA_WARNING_HOURS } from '../../utils/sla';
 import { useAuth } from '../AuthContext';
 import { useSlaConfig } from '../../hooks/useSlaConfig';
@@ -150,32 +155,385 @@ function KPICard({
   );
 }
 
+// ─── CSV Engagement Importer ──────────────────────────────────────────────────
+
+/**
+ * Expected CSV columns (header row required, order flexible):
+ *   cardTitle | platform | likes | comments | shares | reach
+ *
+ * Matching is done case-insensitively on `cardTitle` against card.title.
+ */
+
+interface CsvRow {
+  cardTitle: string;
+  platform:  string;
+  likes:     number;
+  comments:  number;
+  shares:    number;
+  reach:     number;
+}
+
+interface MatchedRow extends CsvRow {
+  cardId:    string;
+  matched:   boolean;
+}
+
+function parseCsv(raw: string): CsvRow[] {
+  const lines = raw.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z]/g, ''));
+  const colIdx = (name: string) => headers.indexOf(name);
+
+  const iTitle    = colIdx('cardtitle');
+  const iPlatform = colIdx('platform');
+  const iLikes    = colIdx('likes');
+  const iComments = colIdx('comments');
+  const iShares   = colIdx('shares');
+  const iReach    = colIdx('reach');
+
+  if (iTitle === -1) throw new Error('Missing required column: cardTitle');
+
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    return {
+      cardTitle: cols[iTitle]   ?? '',
+      platform:  iPlatform >= 0 ? (cols[iPlatform] ?? '') : '',
+      likes:     iLikes    >= 0 ? (parseInt(cols[iLikes],    10) || 0) : 0,
+      comments:  iComments >= 0 ? (parseInt(cols[iComments], 10) || 0) : 0,
+      shares:    iShares   >= 0 ? (parseInt(cols[iShares],   10) || 0) : 0,
+      reach:     iReach    >= 0 ? (parseInt(cols[iReach],    10) || 0) : 0,
+    };
+  });
+}
+
+const CSV_TEMPLATE = [
+  'cardTitle,platform,likes,comments,shares,reach',
+  '"Ramadan Campaign 2025",instagram,1240,88,45,9800',
+  '"Product Launch Post",facebook,632,34,21,5100',
+].join('\n');
+
+function EngagementCsvImporter({
+  cards,
+  onClose,
+}: {
+  cards: ContentCard[];
+  onClose: () => void;
+}) {
+  const { updateCard } = useContent();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows,     setRows]     = useState<MatchedRow[] | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const handleFile = useCallback((file: File) => {
+    setError(null);
+    setRows(null);
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const parsed = parseCsv(e.target?.result as string);
+        if (!parsed.length) { setError('No data rows found in the CSV.'); return; }
+        const matched: MatchedRow[] = parsed.map(row => {
+          const match = cards.find(c =>
+            c.title.toLowerCase().trim() === row.cardTitle.toLowerCase().trim(),
+          );
+          return { ...row, cardId: match?.id ?? '', matched: !!match };
+        });
+        setRows(matched);
+      } catch (err: any) {
+        setError(err.message);
+      }
+    };
+    reader.readAsText(file);
+  }, [cards]);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const handleApply = async () => {
+    if (!rows) return;
+    setApplying(true);
+    const toApply = rows.filter(r => r.matched);
+    let applied = 0;
+    for (const row of toApply) {
+      const card = cards.find(c => c.id === row.cardId);
+      if (!card) continue;
+      updateCard({
+        ...card,
+        engagementData: {
+          likes:     row.likes,
+          comments:  row.comments,
+          shares:    row.shares,
+          reach:     row.reach,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      applied++;
+    }
+    await new Promise(r => setTimeout(r, 300)); // brief visual pause
+    setApplying(false);
+    toast.success(`Engagement data imported for ${applied} card${applied !== 1 ? 's' : ''}`, {
+      description: `${rows.length - applied} row${rows.length - applied !== 1 ? 's' : ''} had no matching card`,
+    });
+    onClose();
+  };
+
+  const downloadTemplate = () => {
+    const blob = new Blob([CSV_TEMPLATE], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'engagement_import_template.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const matchedCount   = rows?.filter(r => r.matched).length  ?? 0;
+  const unmatchedCount = rows?.filter(r => !r.matched).length ?? 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[9100] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ scale: 0.95, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 16 }}
+        className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: 'linear-gradient(150deg,rgba(14,12,28,0.99) 0%,rgba(8,6,18,0.99) 100%)', border: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/8 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-teal-500/15 border border-teal-400/25 flex items-center justify-center">
+            <Upload className="w-4 h-4 text-teal-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-white font-bold text-sm">Import Engagement Metrics</h2>
+            <p className="text-white/35 text-xs mt-0.5">Upload a CSV to bulk-update engagement data on published cards</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/6 hover:bg-white/12 flex items-center justify-center text-white/50 hover:text-white transition-all">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+          {/* Template download */}
+          <button
+            onClick={downloadTemplate}
+            className="flex items-center gap-2 text-xs text-teal-400 hover:text-teal-300 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download CSV template
+          </button>
+
+          {/* Drop zone */}
+          {!rows && (
+            <div
+              onDrop={handleDrop}
+              onDragOver={e => e.preventDefault()}
+              onClick={() => fileRef.current?.click()}
+              className="border-2 border-dashed border-white/15 hover:border-teal-400/40 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group"
+            >
+              <Upload className="w-8 h-8 text-white/20 group-hover:text-teal-400/60 transition-colors" />
+              <div className="text-center">
+                <p className="text-white/50 text-sm font-medium">Drop your CSV here or click to browse</p>
+                <p className="text-white/25 text-xs mt-1">Columns: <span className="font-mono">cardTitle, platform, likes, comments, shares, reach</span></p>
+              </div>
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-400/20 rounded-xl">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <p className="text-red-300 text-xs leading-relaxed">{error}</p>
+            </div>
+          )}
+
+          {/* Preview table */}
+          {rows && (
+            <div className="space-y-3">
+              {/* Summary badges */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-1 rounded-full bg-white/6 border border-white/10 text-white/60 text-xs">{rows.length} rows parsed</span>
+                {matchedCount > 0   && <span className="px-2.5 py-1 rounded-full bg-green-500/12 border border-green-400/20 text-green-300 text-xs">✓ {matchedCount} matched</span>}
+                {unmatchedCount > 0 && <span className="px-2.5 py-1 rounded-full bg-amber-500/12 border border-amber-400/20 text-amber-300 text-xs">⚠ {unmatchedCount} unmatched</span>}
+                <button onClick={() => { setRows(null); setError(null); }} className="ml-auto text-white/30 hover:text-white/60 text-[10px] transition-colors">
+                  Upload different file
+                </button>
+              </div>
+
+              {/* Table */}
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-white/8" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                        {['Status', 'Card Title', 'Likes', 'Comments', 'Shares', 'Reach'].map(h => (
+                          <th key={h} className="text-left text-white/40 px-3 py-2.5 font-semibold uppercase tracking-wider text-[10px]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {rows.map((row, i) => (
+                        <tr key={i} className={`transition-colors ${row.matched ? 'hover:bg-white/3' : 'opacity-50'}`}>
+                          <td className="px-3 py-2.5 shrink-0">
+                            {row.matched
+                              ? <span className="w-5 h-5 rounded-full bg-green-500/15 border border-green-400/25 flex items-center justify-center"><Check className="w-3 h-3 text-green-400" /></span>
+                              : <span className="w-5 h-5 rounded-full bg-amber-500/15 border border-amber-400/25 flex items-center justify-center"><AlertCircle className="w-3 h-3 text-amber-400" /></span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-white/70 font-medium max-w-[180px] truncate">{row.cardTitle}</td>
+                          <td className="px-3 py-2.5 text-pink-300/80 font-mono">{row.likes.toLocaleString()}</td>
+                          <td className="px-3 py-2.5 text-blue-300/80 font-mono">{row.comments.toLocaleString()}</td>
+                          <td className="px-3 py-2.5 text-green-300/80 font-mono">{row.shares.toLocaleString()}</td>
+                          <td className="px-3 py-2.5 text-purple-300/80 font-mono">{row.reach.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {rows && matchedCount > 0 && (
+          <div className="px-5 py-4 border-t border-white/8 shrink-0 flex items-center gap-3">
+            <p className="flex-1 text-white/30 text-xs">
+              Will update engagement metrics on {matchedCount} card{matchedCount !== 1 ? 's' : ''}
+            </p>
+            <button onClick={onClose} className="px-4 py-2 rounded-xl border border-white/12 bg-white/5 hover:bg-white/10 text-white/60 text-sm font-semibold transition-all">
+              Cancel
+            </button>
+            <button
+              onClick={handleApply}
+              disabled={applying}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all
+                bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500
+                text-white shadow-lg shadow-teal-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {applying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Apply to {matchedCount} Card{matchedCount !== 1 ? 's' : ''}
+            </button>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface ContentAnalyticsDashboardProps {
   cards: ContentCard[];
 }
 
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
+
 export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardProps) {
+
+  const [showImporter, setShowImporter] = useState(false);
+  const [syncing,      setSyncing]      = useState(false);
+  const [syncStatus,   setSyncStatus]   = useState<{ lastSyncAt?: string; synced?: number; errors?: number } | null>(null);
+
+  const { updateCard, refreshCards } = useContent();
 
   // ── Per-tenant SLA thresholds ─────────────────────────────────────────────
   const { user } = useAuth();
+  const tenantId = user?.tenantId;
+
+  // Load sync status on mount
+  useEffect(() => {
+    if (!tenantId) return;
+    (async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const r = await fetch(`${API_BASE}/social/analytics/sync-status?tenantId=${tenantId}`, { headers });
+        const d = await r.json();
+        if (d.status) setSyncStatus(d.status);
+      } catch { /* non-fatal */ }
+    })();
+  }, [tenantId]);
+
+  const handleSync = async () => {
+    if (!tenantId) { toast.error('No tenant ID'); return; }
+    setSyncing(true);
+    try {
+      const headers = await getAuthHeaders(true);
+      const res = await fetch(`${API_BASE}/social/analytics/sync`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ tenantId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+
+      setSyncStatus({ lastSyncAt: new Date().toISOString(), synced: data.synced, errors: data.errors });
+
+      if (data.synced > 0) {
+        toast.success(`Synced engagement for ${data.synced} card${data.synced !== 1 ? 's' : ''}`, {
+          description: data.errors > 0 ? `${data.errors} card(s) had errors` : 'All platforms synced successfully',
+        });
+        // Re-fetch cards from the server so the dashboard picks up updated engagement data
+        await refreshCards();
+      } else if (data.errors > 0) {
+        toast.error(`Sync completed with ${data.errors} error(s)`, {
+          description: data.details?.map((d: any) => d.error).filter(Boolean).slice(0, 3).join('; '),
+        });
+      } else {
+        toast.info('No published cards to sync', { description: 'Publish some content first, then sync to pull live metrics.' });
+      }
+    } catch (err: any) {
+      console.error('[analytics/sync]', err);
+      toast.error(`Sync failed: ${err.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
   const { warningHours, breachHours } = useSlaConfig(user?.tenantId ?? undefined);
 
+  // ── Period picker ─────────────────────────────────────────────────────────
+  type Period = '7d' | '14d' | '30d' | '90d' | 'all';
+  const [period, setPeriod] = useState<Period>('30d');
+
+  const PERIOD_OPTIONS: { id: Period; label: string }[] = [
+    { id: '7d',  label: '7 days'   },
+    { id: '14d', label: '14 days'  },
+    { id: '30d', label: '30 days'  },
+    { id: '90d', label: '90 days'  },
+    { id: 'all', label: 'All time' },
+  ];
+
+  const filteredCards = useMemo(() => {
+    if (period === 'all') return cards;
+    const days = period === '7d' ? 7 : period === '14d' ? 14 : period === '30d' ? 30 : 90;
+    const cutoff = new Date(Date.now() - days * 86400000);
+    return cards.filter(c => {
+      const d = c.createdAt instanceof Date ? c.createdAt : new Date(c.createdAt);
+      return d >= cutoff;
+    });
+  }, [cards, period]);
+
   // ── KPI derivations ──────────────────────────────────────────────────────
-  const totalCards = cards.length;
+  const totalCards = filteredCards.length;
 
   const { approvalRate, decisionedCount } = useMemo(() => {
-    const decisioned  = cards.filter(c => ['approved','scheduled','published','rejected'].includes(c.status));
-    const approved    = cards.filter(c => ['approved','scheduled','published'].includes(c.status));
+    const decisioned  = filteredCards.filter(c => ['approved','scheduled','published','rejected'].includes(c.status));
+    const approved    = filteredCards.filter(c => ['approved','scheduled','published'].includes(c.status));
     return {
       approvalRate:    decisioned.length > 0 ? (approved.length / decisioned.length) * 100 : null,
       decisionedCount: decisioned.length,
     };
-  }, [cards]);
+  }, [filteredCards]);
 
   const avgTurnaround = useMemo(() => {
-    const approvedWithDates = cards.filter(c => c.approvedAt && c.createdAt);
+    const approvedWithDates = filteredCards.filter(c => c.approvedAt && c.createdAt);
     if (!approvedWithDates.length) return null;
     const avgMs = approvedWithDates.reduce((sum, c) =>
       sum + (c.approvedAt!.getTime() - c.createdAt.getTime()), 0
@@ -184,17 +542,17 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
     if (hours < 1)  return '< 1 hr';
     if (hours < 24) return `${hours.toFixed(1)} hrs`;
     return `${(hours / 24).toFixed(1)} days`;
-  }, [cards]);
+  }, [filteredCards]);
 
   // ── Platform breakdown ────────────────────────────────────────────────────
   const platformData = useMemo(() => {
     const counts: Record<string, number> = {};
-    cards.forEach(c => { counts[c.platform] = (counts[c.platform] || 0) + 1; });
+    filteredCards.forEach(c => { counts[c.platform] = (counts[c.platform] || 0) + 1; });
     return Object.entries(counts)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 7)
       .map(([platform, count]) => ({ platform, count }));
-  }, [cards]);
+  }, [filteredCards]);
 
   const maxPlatformCount = platformData[0]?.count || 1;
 
@@ -203,27 +561,28 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
     return STATUS_ORDER
       .map(status => ({
         name:  statusMeta[status].label,
-        value: cards.filter(c => c.status === status).length,
+        value: filteredCards.filter(c => c.status === status).length,
         hex:   statusMeta[status].hex,
         status,
       }))
       .filter(d => d.value > 0);
-  }, [cards]);
+  }, [filteredCards]);
 
-  // ── Published this month ──────────────────────────────────────────────────
+  // ── Published this period ─────────────────────────────────────────────────
   const publishedThisMonth = useMemo(() => {
-    const now = new Date();
-    return cards.filter(c =>
-      c.status === 'published' &&
-      c.approvedAt &&
-      c.approvedAt.getMonth()    === now.getMonth() &&
-      c.approvedAt.getFullYear() === now.getFullYear()
+    if (period === 'all') {
+      return filteredCards.filter(c => c.status === 'published').length;
+    }
+    const days = period === '7d' ? 7 : period === '14d' ? 14 : period === '30d' ? 30 : 90;
+    const cutoff = new Date(Date.now() - days * 86400000);
+    return filteredCards.filter(c =>
+      c.status === 'published' && c.approvedAt && c.approvedAt >= cutoff
     ).length;
-  }, [cards]);
+  }, [filteredCards, period]);
 
   // ── Engagement aggregates ─────────────────────────────────────────────────
   const { engagementByPlatform, totalLikes, totalReach, avgEngagementRate, hasEngagement } = useMemo(() => {
-    const withData = cards.filter(c => c.status === 'published' && c.engagementData);
+    const withData = filteredCards.filter(c => c.status === 'published' && c.engagementData);
     const map: Record<string, { likes: number; comments: number; shares: number; reach: number }> = {};
 
     withData.forEach(c => {
@@ -255,23 +614,111 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
     const avgEngagementRate = totalReach > 0 ? (totalEngage / totalReach) * 100 : null;
 
     return { engagementByPlatform, totalLikes, totalReach, avgEngagementRate, hasEngagement: withData.length > 0 };
-  }, [cards]);
+  }, [filteredCards]);
 
   // ── SLA snapshot ──────────────────────────────────────────────────────────
   const { slaOk, slaWarning, slaBreached, hasPending } = useMemo(() => {
-    const pending = cards.filter(c => c.status === 'pending_approval');
+    const pending = filteredCards.filter(c => c.status === 'pending_approval');
     return {
       slaOk:       pending.filter(c => getSlaStatusWith(c, warningHours, breachHours) === 'ok').length,
       slaWarning:  pending.filter(c => getSlaStatusWith(c, warningHours, breachHours) === 'warning').length,
       slaBreached: pending.filter(c => getSlaStatusWith(c, warningHours, breachHours) === 'breached').length,
       hasPending:  pending.length > 0,
     };
-  }, [cards, warningHours, breachHours]);
+  }, [filteredCards, warningHours, breachHours]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5">
+
+      {/* ── Dashboard header row ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-white/40 text-[10px] font-semibold uppercase tracking-wider">Analytics Overview</p>
+          {/* Period picker */}
+          <div className="flex items-center gap-1 p-0.5 bg-white/5 border border-white/10 rounded-xl">
+            {PERIOD_OPTIONS.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setPeriod(opt.id)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+                  period === opt.id
+                    ? 'bg-[#0BA4AA]/20 text-[#0BA4AA] border border-[#0BA4AA]/30'
+                    : 'text-white/30 hover:text-white/60'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {period !== 'all' && (
+            <span className="text-white/20 text-[10px]">
+              {filteredCards.length} of {cards.length} cards in period
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Sync status indicator */}
+          {syncStatus?.lastSyncAt && (
+            <span className="text-white/20 text-[10px] flex items-center gap-1">
+              <Wifi className="w-2.5 h-2.5" />
+              Last sync: {new Date(syncStatus.lastSyncAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {syncStatus.synced !== undefined && ` · ${syncStatus.synced} synced`}
+            </span>
+          )}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-400/25 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-purple-200 text-xs font-semibold transition-all disabled:opacity-40"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing…' : 'Sync from Platforms'}
+          </button>
+          <button
+            onClick={() => setShowImporter(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-400/25 bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 hover:text-teal-200 text-xs font-semibold transition-all"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import CSV
+          </button>
+          <button
+            onClick={() => {
+              // Export analytics data as CSV
+              const publishedCards = filteredCards.filter(c => c.status === 'published' && c.engagementData);
+              const csvLines = [
+                'Title,Platform,Status,Likes,Comments,Shares,Reach,Published At,Created At',
+                ...filteredCards.map(c => {
+                  const ed = c.engagementData;
+                  return [
+                    `"${(c.title || '').replace(/"/g, '""')}"`,
+                    c.platform,
+                    c.status,
+                    ed?.likes ?? '',
+                    ed?.comments ?? '',
+                    ed?.shares ?? '',
+                    ed?.reach ?? '',
+                    c.approvedAt ? new Date(c.approvedAt as any).toISOString().slice(0, 10) : '',
+                    c.createdAt ? new Date(c.createdAt as any).toISOString().slice(0, 10) : '',
+                  ].join(',');
+                }),
+              ];
+              const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `analytics-export-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success('Analytics exported', { description: `${filteredCards.length} cards exported to CSV` });
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/12 bg-white/5 hover:bg-white/10 text-white/50 hover:text-white/70 text-xs font-semibold transition-all"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+        </div>
+      </div>
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -279,7 +726,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           icon={FileText}
           label="Total Cards"
           value={totalCards}
-          sub={`across ${Object.keys(cards.reduce((a, c) => ({ ...a, [c.platform]: 1 }), {})).length} platforms`}
+          sub={`across ${Object.keys(filteredCards.reduce((a, c) => ({ ...a, [c.platform]: 1 }), {})).length} platforms`}
           accentClass="bg-purple-500/50"
           delay={0}
         />
@@ -301,9 +748,9 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
         />
         <KPICard
           icon={CheckCircle}
-          label="Published (mo.)"
+          label={period === 'all' ? 'Total Published' : `Published (${period})`}
           value={publishedThisMonth}
-          sub="cards published this month"
+          sub={period === 'all' ? 'all published cards' : `cards published in last ${period}`}
           accentClass="bg-green-600/40"
           delay={0.15}
         />
@@ -584,6 +1031,16 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           Real-time
         </span>
       </motion.div>
+
+      {/* ── CSV Importer modal ── */}
+      <AnimatePresence>
+        {showImporter && (
+          <EngagementCsvImporter
+            cards={cards}
+            onClose={() => setShowImporter(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

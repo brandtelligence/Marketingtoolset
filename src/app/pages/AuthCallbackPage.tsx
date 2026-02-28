@@ -37,7 +37,8 @@ import { BackgroundLayout } from '../components/BackgroundLayout';
 import { supabase } from '../utils/supabaseClient';
 import { buildProfileFromSupabaseUser, useAuth } from '../components/AuthContext';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../utils/authHeaders';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -289,8 +290,7 @@ export function AuthCallbackPage() {
       const res = await fetch(`${SERVER}/auth/activate-account`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`,
+          ...(await getAuthHeaders(true)),
         },
         body: JSON.stringify({ userId, password }),
       });

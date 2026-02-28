@@ -34,11 +34,11 @@ import {
   IS_DEMO_MODE, MFA_RECOVERY_CODE_COUNT, TOTP_ISSUER,
   SS_MFA_PENDING_USER, SS_MFA_TARGET_ROUTE,
 } from '../config/appConfig';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../utils/authHeaders';
 import type { UserProfile } from '../components/AuthContext';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const AUTH   = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 
 // ─── Recovery code generator ──────────────────────────────────────────────────
 
@@ -245,7 +245,7 @@ export function MFAEnrollPage() {
       if (pendingUser?.supabaseUid) {
         try {
           await fetch(`${SERVER}/mfa-recovery/store`, {
-            method: 'POST', headers: AUTH,
+            method: 'POST', headers: await getAuthHeaders(true),
             body: JSON.stringify({ userId: pendingUser.supabaseUid, codes }),
           });
         } catch { /* silent — user still enrolled; recovery codes shown on screen */ }

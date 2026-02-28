@@ -12,10 +12,10 @@ import {
   DEFAULT_EMAIL_TEMPLATES, TEMPLATE_TAGS,
   EmailTemplate, EmailTemplateTag,
 } from '../../data/defaultEmailTemplates';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const AUTH   = { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' };
 
 const TAG_COLOURS: Record<string, string> = {
   Onboarding: 'bg-purple-500/20 text-purple-600 border-purple-500/30',
@@ -60,7 +60,7 @@ export function EmailTemplatesPage() {
   useEffect(() => {
     DEFAULT_EMAIL_TEMPLATES.forEach(async (tpl) => {
       try {
-        const res  = await fetch(`${SERVER}/email-templates/${tpl.id}`, { headers: AUTH });
+        const res  = await fetch(`${SERVER}/email-templates/${tpl.id}`, { headers: await getAuthHeaders(true) });
         const json = await res.json();
         if (json.template) {
           setTemplates(prev => prev.map(t =>
@@ -90,7 +90,7 @@ export function EmailTemplatesPage() {
       const updated = { ...editing, subject: editSubject, html: editHtml };
       const res = await fetch(`${SERVER}/email-templates/${editing.id}`, {
         method: 'PUT',
-        headers: AUTH,
+        headers: await getAuthHeaders(true),
         body: JSON.stringify(updated),
       });
       const json = await res.json();
@@ -115,7 +115,7 @@ export function EmailTemplatesPage() {
     setResetting(true);
     try {
       const res = await fetch(`${SERVER}/email-templates/${editing.id}`, {
-        method: 'DELETE', headers: AUTH,
+        method: 'DELETE', headers: await getAuthHeaders(true),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Reset failed');
@@ -139,7 +139,7 @@ export function EmailTemplatesPage() {
     try {
       const res = await fetch(`${SERVER}/email-templates/${editing.id}/test`, {
         method: 'POST',
-        headers: AUTH,
+        headers: await getAuthHeaders(true),
         body: JSON.stringify({ to: testEmail, subject: editSubject, html: editHtml }),
       });
       const json = await res.json();

@@ -25,10 +25,10 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '../../utils/supabaseClient';
 import { IS_DEMO_MODE } from '../../config/appConfig';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const AUTH   = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -204,7 +204,7 @@ export function MFAChallengeModal({
       }
       // Production: validate via server (server checks KV and marks code used)
       const res  = await fetch(`${SERVER}/mfa-recovery/verify`, {
-        method: 'POST', headers: AUTH,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({ userId: supabaseUid, code: recoveryVal.trim().toUpperCase() }),
       });
       const json = await res.json();

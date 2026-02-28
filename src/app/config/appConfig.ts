@@ -5,7 +5,10 @@
  *
  * THIS IS A PRODUCTION APPLICATION.
  * ─────────────────────────────────
- * The default mode is PRODUCTION. Demo mode must be explicitly opted in to.
+ * The default mode is PRODUCTION. Demo mode can be activated via:
+ *   1. VITE_APP_ENV=demo env var (build-time)
+ *   2. localStorage 'btl_demo_mode' === 'true' (runtime toggle on login page)
+ * Setting no env var AND no localStorage flag = production mode.
  *
  * HOW MODES WORK
  * ──────────────
@@ -27,6 +30,8 @@
  *      real Supabase project. KV saves, Auth admin calls, email — all real.
  *   ✅ Super Admin seeded — it@brandtelligence.com.my exists in Supabase Auth.
  *   ✅ MFA server routes — /mfa/policy, /mfa-recovery/*, /security/policy
+ *   ✅ IS_DEMO_MODE gate — `|| true` removed. Production is the default.
+ *      Demo mode requires explicit VITE_APP_ENV=demo env var.
  *
  * REQUIRED ONE-TIME SUPABASE DASHBOARD SETUP
  * ──────────────────────────────────────────
@@ -37,7 +42,7 @@
  *      (the server /auth/signup and /tenants/invite routes handle this)
  *
  * STRICT RULES (do not violate)
- * ──────────────────────────────
+ * ───────────────────────────���──
  *  1. NEVER write demo/mock content directly into component .tsx files.
  *     All demo content lives exclusively in src/app/data/mockSaasData.ts.
  *
@@ -55,19 +60,36 @@
 
 /**
  * PRODUCTION is the default.
- * Demo mode must be explicitly opted in via VITE_APP_ENV=demo.
- * Setting no env var = production mode.
+ * Demo mode can be activated via:
+ *   1. VITE_APP_ENV=demo env var (build-time)
+ *   2. localStorage 'btl_demo_mode' === 'true' (runtime toggle on login page)
+ * Setting no env var AND no localStorage flag = production mode.
  */
-export const IS_DEMO_MODE: boolean =
-  (import.meta as any).env?.VITE_APP_ENV === 'demo' ||
-  // ── FIGMA MAKE PREVIEW ────────────────────────────────────────────────────
-  // Hardcoded true so every dashboard is previewable without real Supabase
-  // credentials. Flip this back to `false` (or remove the `|| true`) before
-  // deploying to marketingtool.brandtelligence.my.
-  true;
+function resolveDemoMode(): boolean {
+  if ((import.meta as any).env?.VITE_APP_ENV === 'demo') return true;
+  try { return globalThis.localStorage?.getItem('btl_demo_mode') === 'true'; }
+  catch { return false; }
+}
+
+export const IS_DEMO_MODE: boolean = resolveDemoMode();
 
 /** Convenience inverse alias. */
 export const IS_PRODUCTION: boolean = !IS_DEMO_MODE;
+
+/**
+ * Toggle demo mode at runtime.
+ * Sets localStorage and reloads the page so all module-level consts re-evaluate.
+ */
+export function setDemoMode(enabled: boolean): void {
+  try {
+    if (enabled) {
+      globalThis.localStorage?.setItem('btl_demo_mode', 'true');
+    } else {
+      globalThis.localStorage?.removeItem('btl_demo_mode');
+    }
+  } catch { /* SSR / restricted context — ignore */ }
+  globalThis.location?.reload();
+}
 
 // ─── Feature flags (derived from gate) ────────────────────────────────────────
 

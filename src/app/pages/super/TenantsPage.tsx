@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Building2, Users, CreditCard, ToggleLeft, ToggleRight, Eye, AlertTriangle, Send, Sparkles, Zap, RotateCcw } from 'lucide-react';
+import { Building2, Users, CreditCard, ToggleLeft, ToggleRight, Eye, AlertTriangle, Send, Sparkles, Zap, RotateCcw, Timer, CheckCircle2, AlertOctagon, Shield } from 'lucide-react';
+import { useSlaConfig, type SlaConfig } from '../../hooks/useSlaConfig';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn, StatCard } from '../../components/saas/SaasLayout';
 import { DataTable, Column } from '../../components/saas/DataTable';
@@ -10,16 +11,16 @@ import { useOutletContext } from 'react-router';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { formatRM } from '../../utils/format';
 import { useAuth } from '../../components/AuthContext';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
-import { IS_PRODUCTION } from '../../config/appConfig';
-import { supabase } from '../../utils/supabaseClient';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
+
 import {
   fetchTenants, updateTenant, fetchModules, fetchTenantUsers, fetchInvoices,
   fetchTenantAIBudget, updateTenantAILimit,
   type Tenant, type TenantStatus, type TenantAIBudget,
 } from '../../utils/apiClient';
 
-type TabKey = 'overview' | 'modules' | 'users' | 'invoices' | 'ai_budget';
+type TabKey = 'overview' | 'modules' | 'users' | 'invoices' | 'ai_budget' | 'sla';
 
 // ─── Preset token limit options ────────────────────────────────────────────────
 
@@ -53,12 +54,7 @@ function AIBudgetTab({
     const load = async () => {
       setLoading(true);
       try {
-        let token = '';
-        if (IS_PRODUCTION) {
-          const { data: { session } } = await supabase.auth.getSession();
-          token = session?.access_token ?? '';
-        }
-        const b = await fetchTenantAIBudget(tenant.id, token);
+        const b = await fetchTenantAIBudget(tenant.id);
         if (!cancelled) {
           setBudget(b);
           setInputValue(String(b.limit));
@@ -82,12 +78,7 @@ function AIBudgetTab({
     }
     setSaving(true);
     try {
-      let token = '';
-      if (IS_PRODUCTION) {
-        const { data: { session } } = await supabase.auth.getSession();
-        token = session?.access_token ?? '';
-      }
-      await updateTenantAILimit(tenant.id, n, token);
+      await updateTenantAILimit(tenant.id, n);
       setBudget(prev => prev ? { ...prev, limit: n, isCustom: true } : null);
       toast.success(`AI token budget updated to ${n.toLocaleString()} tokens/mo for ${tenant.name}`);
     } catch (err: any) {
@@ -100,12 +91,7 @@ function AIBudgetTab({
   const handleReset = async () => {
     setResetting(true);
     try {
-      let token = '';
-      if (IS_PRODUCTION) {
-        const { data: { session } } = await supabase.auth.getSession();
-        token = session?.access_token ?? '';
-      }
-      await updateTenantAILimit(tenant.id, null, token);
+      await updateTenantAILimit(tenant.id, null);
       setBudget(prev => prev ? { ...prev, limit: DEFAULT_LIMIT, isCustom: false } : null);
       setInputValue(String(DEFAULT_LIMIT));
       setCustomMode(false);
@@ -287,6 +273,182 @@ function AIBudgetTab({
   );
 }
 
+// ─── SLA Config Tab ────────────────────────────────────────────────────────────
+
+const PLATFORM_DEFAULTS: SlaConfig = { warningHours: 24, breachHours: 48 };
+
+function SLATab({ tenant, t }: { tenant: Tenant; t: ReturnType<typeof useDashboardTheme> }) {
+  const { warningHours, breachHours, isLoading, isSaving, saveConfig } = useSlaConfig(tenant.id);
+  const [warnInput,   setWarnInput]   = useState('');
+  const [breachInput, setBreachInput] = useState('');
+  const [dirty,       setDirty]       = useState(false);
+
+  // Sync inputs when remote config loads
+  useEffect(() => {
+    if (!isLoading) {
+      setWarnInput(String(warningHours));
+      setBreachInput(String(breachHours));
+      setDirty(false);
+    }
+  }, [isLoading, warningHours, breachHours]);
+
+  const isCustom  = warningHours !== PLATFORM_DEFAULTS.warningHours || breachHours !== PLATFORM_DEFAULTS.breachHours;
+  const warnNum   = parseInt(warnInput,   10);
+  const breachNum = parseInt(breachInput, 10);
+  const canSave   = dirty && !isNaN(warnNum) && !isNaN(breachNum) && warnNum >= 1 && breachNum > warnNum;
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    const ok = await saveConfig({ warningHours: warnNum, breachHours: breachNum }, tenant.id);
+    if (ok) {
+      toast.success(`SLA thresholds updated for ${tenant.name}`);
+      setDirty(false);
+    } else {
+      toast.error('Failed to save SLA config — check server logs');
+    }
+  };
+
+  const handleReset = async () => {
+    const ok = await saveConfig(PLATFORM_DEFAULTS, tenant.id);
+    if (ok) {
+      setWarnInput(String(PLATFORM_DEFAULTS.warningHours));
+      setBreachInput(String(PLATFORM_DEFAULTS.breachHours));
+      setDirty(false);
+      toast.success(`SLA thresholds reset to platform defaults for ${tenant.name}`);
+    } else {
+      toast.error('Reset failed — check server logs');
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <span className="w-7 h-7 rounded-full border-2 border-[#0BA4AA] border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  const segments = [
+    { label: 'On Time',  sub: `0 – ${warningHours}h`,          color: '#22c55e', bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.2)',  icon: CheckCircle2 },
+    { label: 'At Risk',  sub: `${warningHours} – ${breachHours}h`, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)', icon: Timer },
+    { label: 'Breached', sub: `> ${breachHours}h`,              color: '#ef4444', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.2)',  icon: AlertOctagon },
+  ];
+
+  return (
+    <div className="space-y-5">
+
+      {/* Header */}
+      <div className="flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+          style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)' }}>
+          <Shield className="w-4 h-4 text-amber-400" />
+        </div>
+        <div>
+          <p className={`${t.text} text-sm font-semibold`}>SLA Thresholds</p>
+          <p className={`${t.textFaint} text-xs`}>
+            Configure approval SLA timers for <span className="font-medium">{tenant.name}</span>
+          </p>
+        </div>
+        {isCustom && (
+          <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-semibold"
+            style={{ background: 'rgba(62,60,112,0.15)', border: '1px solid rgba(62,60,112,0.3)', color: '#a78bfa' }}>
+            Custom
+          </span>
+        )}
+      </div>
+
+      {/* Traffic-light overview */}
+      <div className="grid grid-cols-3 gap-2.5">
+        {segments.map(({ label, sub, color, bg, border, icon: Icon }) => (
+          <div key={label} className="rounded-xl p-3 flex flex-col gap-1"
+            style={{ background: bg, border: `1px solid ${border}` }}>
+            <Icon className="w-4 h-4" style={{ color }} />
+            <p className={`${t.text} text-xs font-semibold mt-1`}>{label}</p>
+            <p className={`${t.textFaint} text-[10px] font-mono`}>{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Editable fields */}
+      <div className="space-y-3">
+        <p className={`${t.textFaint} text-xs font-semibold uppercase tracking-wider`}>Override Thresholds</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          {/* Warning */}
+          <div>
+            <label className={`${t.textFaint} text-xs mb-1.5 block`}>
+              <span className="text-amber-400">⚠</span> Warning after (hours)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={1} max={719}
+                value={warnInput}
+                onChange={e => { setWarnInput(e.target.value); setDirty(true); }}
+                className={`flex-1 px-3 py-2 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/30 transition-all ${t.inputCls ?? `${t.s1} ${t.border} ${t.text}`}`}
+              />
+              <span className={`${t.textFaint} text-xs shrink-0`}>h</span>
+            </div>
+          </div>
+          {/* Breach */}
+          <div>
+            <label className={`${t.textFaint} text-xs mb-1.5 block`}>
+              <span className="text-red-400">🔴</span> Breach after (hours)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={2} max={720}
+                value={breachInput}
+                onChange={e => { setBreachInput(e.target.value); setDirty(true); }}
+                className={`flex-1 px-3 py-2 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-400/30 transition-all ${t.inputCls ?? `${t.s1} ${t.border} ${t.text}`}`}
+              />
+              <span className={`${t.textFaint} text-xs shrink-0`}>h</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Validation hint */}
+        {dirty && !canSave && (
+          <p className="text-red-400 text-xs">
+            Warning must be ≥ 1h and Breach must be greater than Warning.
+          </p>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-1">
+        <PrimaryBtn
+          variant="teal"
+          onClick={handleSave}
+          loading={isSaving}
+          className="flex-1"
+        >
+          <Shield className="w-3.5 h-3.5" />
+          Save Thresholds
+        </PrimaryBtn>
+        <PrimaryBtn
+          variant="ghost"
+          onClick={handleReset}
+          loading={isSaving}
+          title={`Reset to platform defaults (${PLATFORM_DEFAULTS.warningHours}h / ${PLATFORM_DEFAULTS.breachHours}h)`}
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Reset
+        </PrimaryBtn>
+      </div>
+
+      {/* Info note */}
+      <div className={`${t.s0} rounded-xl p-3 border ${t.border}`}>
+        <p className={`${t.textFaint} text-xs leading-relaxed`}>
+          <span className="font-semibold">Platform defaults:</span>{' '}
+          {PLATFORM_DEFAULTS.warningHours}h warning · {PLATFORM_DEFAULTS.breachHours}h breach.
+          Changes take effect immediately — the Tenant Admin can also adjust these in their own Settings page.
+          SLA escalation emails are sent automatically when the breach threshold is exceeded.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function TenantsPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
@@ -350,10 +512,9 @@ export function TenantsPage() {
     setResendLoading(true);
     try {
       const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-      const AUTH   = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
       const res = await fetch(`${SERVER}/auth/resend-tenant-invite`, {
         method: 'POST',
-        headers: AUTH,
+        headers: await getAuthHeaders(true),
         body: JSON.stringify({
           email:      selected.adminEmail,
           tenantId:   selected.id,
@@ -426,6 +587,7 @@ export function TenantsPage() {
     { key: 'users',      label: `Users (${tenantUsers.length})` },
     { key: 'invoices',   label: `Invoices (${tenantInvoices.length})` },
     { key: 'ai_budget',  label: '🤖 AI Budget' },
+    { key: 'sla',        label: '⏱ SLA Config' },
   ];
 
   return (
@@ -589,6 +751,11 @@ export function TenantsPage() {
             {/* AI Budget */}
             {activeTab === 'ai_budget' && selected && (
               <AIBudgetTab tenant={selected} t={t} />
+            )}
+
+            {/* SLA Config */}
+            {activeTab === 'sla' && selected && (
+              <SLATab tenant={selected} t={t} />
             )}
           </div>
         )}

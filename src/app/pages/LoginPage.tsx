@@ -32,13 +32,15 @@ import { useAuth, buildProfileFromSupabaseUser, type UserProfile } from '../comp
 import { BackgroundLayout } from '../components/BackgroundLayout';
 import { MFAChallengeModal } from '../components/saas/MFAChallengeModal';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../utils/authHeaders';
 import { supabase } from '../utils/supabaseClient';
 import {
   IS_PRODUCTION, IS_DEMO_MODE,
   SHOW_DEMO_CREDENTIALS,
   MFA_ALWAYS_REQUIRED_ROLES,
   SS_MFA_PENDING_USER, SS_MFA_TARGET_ROUTE,
+  setDemoMode,
 } from '../config/appConfig';
 
 // ─── Demo data (isolated — used only when IS_DEMO_MODE is true) ───────────────
@@ -46,7 +48,7 @@ import {
 import { MOCK_AUTH_USERS, MOCK_TENANTS, MOCK_TENANT_USERS } from '../data/mockSaasData';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const AUTH_H = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
+
 const HCAPTCHA_SITE_KEY = 'c4c493ae-610a-4666-9400-7cf45358637c';
 
 // Demo accounts chip list — rendered ONLY when SHOW_DEMO_CREDENTIALS is true
@@ -100,6 +102,16 @@ export function LoginPage() {
     if (saved) {
       setLoginEmail(saved);
       setRememberMe(true);
+    }
+  }, []);
+
+  // ── Phase 2.2: Show session-expired toast when redirected from AuthContext ──
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reason') === 'session_expired') {
+      toast.info('Your session has expired — please sign in again.');
+      // Strip the query param so a page refresh doesn't re-show the toast
+      window.history.replaceState({}, '', '/login');
     }
   }, []);
 
@@ -168,7 +180,7 @@ export function LoginPage() {
   const [loginCaptchaError,  setLoginCaptchaError]  = useState(false);
   const [signupCaptchaError, setSignupCaptchaError] = useState(false);
 
-  // ─────────────────────────────────────────────────���───────────────────────
+  // ────────────────────────────────────────────────────────────────────────
   // PRODUCTION AUTH FLOW
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -241,7 +253,7 @@ export function LoginPage() {
   const fetchTenantAdminMfaPolicy = async (): Promise<boolean> => {
     if (_mfaPolicyCache !== null) return _mfaPolicyCache;
     try {
-      const res  = await fetch(`${SERVER}/mfa/policy`, { headers: AUTH_H });
+      const res  = await fetch(`${SERVER}/mfa/policy`, { headers: await getAuthHeaders(true) });
       const json = await res.json();
       _mfaPolicyCache = json.requireTenantAdminMfa ?? false;
       return _mfaPolicyCache!;
@@ -370,7 +382,7 @@ export function LoginPage() {
     setResetLoading(true);
     try {
       const res  = await fetch(`${SERVER}/auth/reset-password`, {
-        method: 'POST', headers: AUTH_H,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({ email: resetEmail }),
       });
       const json = await res.json();
@@ -453,9 +465,7 @@ export function LoginPage() {
               <span className="text-xs font-semibold text-white/80">
                 Demo Mode —{' '}
                 <span style={{ color: '#0BA4AA' }}>mock data active</span>
-                {' '}· set{' '}
-                <code className="font-mono text-[0.65rem] bg-white/10 px-1 rounded">VITE_APP_ENV=production</code>
-                {' '}for live Supabase
+                {' '}· toggle below to switch to production
               </span>
             </motion.div>
           )}
@@ -843,6 +853,41 @@ export function LoginPage() {
             )}
 
           </AnimatePresence>
+
+          {/* ── Demo / Production Mode Toggle ──────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
+            className="mt-6 flex items-center justify-center"
+          >
+            <button
+              type="button"
+              onClick={() => setDemoMode(!IS_DEMO_MODE)}
+              className="group flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all text-xs"
+              style={{
+                background: IS_DEMO_MODE ? 'rgba(62,60,112,0.5)' : 'rgba(255,255,255,0.05)',
+                borderColor: IS_DEMO_MODE ? '#3E3C7060' : 'rgba(255,255,255,0.1)',
+              }}
+            >
+              <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: IS_DEMO_MODE ? '#F47A20' : 'rgba(255,255,255,0.3)' }} />
+              <span className="text-white/50 group-hover:text-white/70 transition-colors">
+                {IS_DEMO_MODE ? 'Demo Mode' : 'Production Mode'}
+              </span>
+              {/* Toggle pill */}
+              <div
+                className="relative w-9 h-5 rounded-full transition-colors"
+                style={{ background: IS_DEMO_MODE ? '#0BA4AA' : 'rgba(255,255,255,0.15)' }}
+              >
+                <div
+                  className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all"
+                  style={{ left: IS_DEMO_MODE ? '1.125rem' : '0.125rem' }}
+                />
+              </div>
+              <span className="text-white/30 text-[0.6rem]">
+                {IS_DEMO_MODE ? 'switch to production' : 'switch to demo'}
+              </span>
+            </button>
+          </motion.div>
+
         </div>
       </div>
     </BackgroundLayout>

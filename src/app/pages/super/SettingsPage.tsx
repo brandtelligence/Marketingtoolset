@@ -9,12 +9,13 @@ import {
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { Field, Input, Select } from '../../components/saas/DrawerForm';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 import { useNavigate } from 'react-router';
 import { MALAYSIA_GATEWAYS, getGatewayById } from '../../data/paymentGateways';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const AUTH   = { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' };
+
 
 // ─── Shared Toggle ────────────────────────────────────────────────────────────
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -199,7 +200,7 @@ export function SettingsPage() {
     // SMTP
     (async () => {
       try {
-        const res  = await fetch(`${SERVER}/smtp/config`, { headers: AUTH });
+        const res  = await fetch(`${SERVER}/smtp/config`, { headers: await getAuthHeaders(true) });
         const json = await res.json();
         if (json.config) {
           const c = json.config;
@@ -217,7 +218,7 @@ export function SettingsPage() {
     // Payment Gateway
     (async () => {
       try {
-        const res  = await fetch(`${SERVER}/payment-gateway/config`, { headers: AUTH });
+        const res  = await fetch(`${SERVER}/payment-gateway/config`, { headers: await getAuthHeaders(true) });
         const json = await res.json();
         if (json.config) {
           const c = json.config;
@@ -234,9 +235,10 @@ export function SettingsPage() {
     // Security Policy + MFA Policy (load both, merge)
     (async () => {
       try {
+        const authH = await getAuthHeaders(true);
         const [secRes, mfaRes] = await Promise.all([
-          fetch(`${SERVER}/security/policy`, { headers: AUTH }),
-          fetch(`${SERVER}/mfa/policy`,      { headers: AUTH }),
+          fetch(`${SERVER}/security/policy`, { headers: authH }),
+          fetch(`${SERVER}/mfa/policy`,      { headers: authH }),
         ]);
         const secJson = await secRes.json();
         const mfaJson = await mfaRes.json();
@@ -261,7 +263,7 @@ export function SettingsPage() {
     setSmtpLoading(true);
     try {
       const res  = await fetch(`${SERVER}/smtp/config`, {
-        method: 'POST', headers: AUTH,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({ host: smtpHost, port: smtpPort, user: smtpUser, pass: smtpPass, fromEmail, fromName }),
       });
       const json = await res.json();
@@ -280,7 +282,7 @@ export function SettingsPage() {
     setTestLoading(true);
     try {
       const res  = await fetch(`${SERVER}/smtp/test`, {
-        method: 'POST', headers: AUTH,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({ to: 'it@brandtelligence.com.my', config: { host: smtpHost, port: smtpPort, user: smtpUser, pass: smtpPass, fromEmail, fromName } }),
       });
       const json = await res.json();
@@ -299,7 +301,7 @@ export function SettingsPage() {
     setGatewayLoading(true);
     try {
       const res  = await fetch(`${SERVER}/payment-gateway/config`, {
-        method: 'POST', headers: AUTH,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({ gatewayId, sandboxMode, liveCreds, sandboxCreds, gracePeriod }),
       });
       const json = await res.json();
@@ -326,7 +328,7 @@ export function SettingsPage() {
     setTestGwLoading(true);
     try {
       const res  = await fetch(`${SERVER}/payment-gateway/test`, {
-        method: 'POST', headers: AUTH,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({ gateway: gatewayId, sandboxCreds: sandboxBucket }),
       });
       const json = await res.json();
@@ -357,11 +359,11 @@ export function SettingsPage() {
       // Save security policy fields
       const [secRes, mfaRes] = await Promise.all([
         fetch(`${SERVER}/security/policy`, {
-          method: 'POST', headers: AUTH,
+          method: 'POST', headers: await getAuthHeaders(true),
           body: JSON.stringify({ minPasswordLen, sessionTimeout, inviteTtl, mfaRequired }),
         }),
         fetch(`${SERVER}/mfa/policy`, {
-          method: 'POST', headers: AUTH,
+          method: 'POST', headers: await getAuthHeaders(true),
           body: JSON.stringify({ requireTenantAdminMfa: mfaRequired }),
         }),
       ]);

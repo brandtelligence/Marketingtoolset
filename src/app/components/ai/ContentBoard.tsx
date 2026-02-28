@@ -4,6 +4,7 @@ import {
   FileText, Clock, CheckCircle, CalendarDays, Check, XCircle, Loader2,
   ChevronLeft, ChevronRight, CheckSquare2, Square, X,
   ShieldCheck, AlertTriangle, BarChart2, Users, Trophy, Sparkles, Timer,
+  Share2,
 } from 'lucide-react';
 import {
   SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
@@ -18,12 +19,15 @@ import {
 } from '../../contexts/ContentContext';
 import { availableTeamMembers } from '../../contexts/ProjectsContext';
 import { ContentCardCompact, ContentCardDetail } from './ContentCard';
+import { ShareForReviewDialog } from './ShareForReviewDialog';
+import { AutoPublishFailureBanner } from './AutoPublishFailureBanner';
 import { ContentAnalyticsDashboard } from './ContentAnalyticsDashboard';
 import { ContentCalendarView } from './ContentCalendarView';
 import { ContentLeaderboard } from './ContentLeaderboard';
 import { socialPlatforms } from './aiEngine';
 import { useFoldableLayout } from '../../hooks/useFoldableLayout';
-import { projectId as supabaseProjectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId as supabaseProjectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 import {
   getSlaStatusWith, getSlaHoursElapsed, formatSlaAge,
   SLA_BREACH_HOURS, SLA_WARNING_HOURS,
@@ -110,6 +114,11 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
   const [bulkRejectReason,    setBulkRejectReason]    = useState('');
   const [bulkBusy,            setBulkBusy]            = useState(false);
 
+  // ── Bulk "Share for Review" mode ──────────────────────────────────────────
+  // Allows selecting any non-draft card to bundle into a client review link.
+  const [bulkShareMode,       setBulkShareMode]       = useState(false);
+  const [showBulkShareDialog, setShowBulkShareDialog] = useState(false);
+
   // ── Analytics panel ───────────────────────────────────────────────────────
   const [showAnalytics,    setShowAnalytics]    = useState(false);
   const [showLeaderboard,  setShowLeaderboard]  = useState(false);
@@ -165,36 +174,39 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
       const canEscalate = user.role === 'TENANT_ADMIN' || user.role === 'SUPER_ADMIN';
       if (!slaEscalatedRef.current && canEscalate && allBreached.length > 0 && user.tenantId) {
         slaEscalatedRef.current = true;
-        const payload = {
-          tenantId: user.tenantId,
-          breachHours,
-          cards: allBreached.map(c => ({
-            id:           c.id,
-            title:        c.title,
-            platform:     c.platform,
-            createdBy:    c.createdBy,
-            hoursElapsed: getSlaHoursElapsed(c) ?? 0,
-          })),
-          escalateTo: [{ name: `${user.firstName} ${user.lastName}`, email: user.email }],
-        };
-        fetch(
-          `https://${supabaseProjectId}.supabase.co/functions/v1/make-server-309fe679/sla/escalate`,
-          {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
-            body:    JSON.stringify(payload),
-          },
-        )
-          .then(r => r.json())
-          .then(data => {
+        (async () => {
+          try {
+            const payload = {
+              tenantId: user.tenantId,
+              breachHours,
+              cards: allBreached.map(c => ({
+                id:           c.id,
+                title:        c.title,
+                platform:     c.platform,
+                createdBy:    c.createdBy,
+                hoursElapsed: getSlaHoursElapsed(c) ?? 0,
+              })),
+              escalateTo: [{ name: `${user.firstName} ${user.lastName}`, email: user.email }],
+            };
+            const res = await fetch(
+              `https://${supabaseProjectId}.supabase.co/functions/v1/make-server-309fe679/sla/escalate`,
+              {
+                method:  'POST',
+                headers: await getAuthHeaders(true),
+                body:    JSON.stringify(payload),
+              },
+            );
+            const data = await res.json();
             if (data.sent > 0) {
               toast.info(
                 `📧 Escalation email sent for ${data.sent} SLA-breached card${data.sent !== 1 ? 's' : ''}`,
                 { description: 'Your team has been notified via email.', duration: 5000 },
               );
             }
-          })
-          .catch(err => console.log('[sla/escalate] client error:', err));
+          } catch (err) {
+            console.log('[sla/escalate] client error:', err);
+          }
+        })();
       }
     }, 900);
     return () => clearTimeout(t);
@@ -284,10 +296,15 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
     [cards]
   );
 
-  // Actionable cards on the current page (for Select All on this page)
+  // Actionable cards on the current page (for Select All on this page).
+  // In share mode any non-draft card is actionable; in approval mode only the user's pending cards.
   const pageActionableIds = useMemo(
-    () => new Set(paginatedCards.filter(c => myActionableIds.has(c.id)).map(c => c.id)),
-    [paginatedCards, myActionableIds]
+    () => new Set(
+      paginatedCards
+        .filter(c => bulkShareMode ? c.status !== 'draft' : myActionableIds.has(c.id))
+        .map(c => c.id)
+    ),
+    [paginatedCards, myActionableIds, bulkShareMode]
   );
 
   const allPageSelected =
@@ -300,12 +317,24 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
     [cards]
   );
 
-  // ── Toggle bulk mode ──
+  // ── Toggle bulk approval mode ──
   const toggleBulkMode = () => {
     setBulkMode(v => {
-      if (v) setSelectedIds(new Set()); // clear on exit
+      if (v) setSelectedIds(new Set());
       return !v;
     });
+    setBulkShareMode(false); // mutually exclusive
+    setSelectedIds(new Set());
+  };
+
+  // ── Toggle bulk share-for-review mode ──
+  const toggleBulkShareMode = () => {
+    setBulkShareMode(v => {
+      if (v) setSelectedIds(new Set());
+      return !v;
+    });
+    setBulkMode(false); // mutually exclusive
+    setSelectedIds(new Set());
   };
 
   // ── Toggle individual card selection ──
@@ -335,12 +364,26 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
     }
   };
 
+  // ── All non-draft card IDs (for share-all-global in share mode) ──
+  const allShareableIds = useMemo(
+    () => new Set(cards.filter(c => c.status !== 'draft').map(c => c.id)),
+    [cards]
+  );
+
   // ── Select all actionable across all pages ──
   const handleSelectAllGlobal = () => {
-    if (selectedIds.size === myActionableIds.size) {
-      setSelectedIds(new Set());
+    if (bulkShareMode) {
+      if (selectedIds.size === allShareableIds.size) {
+        setSelectedIds(new Set());
+      } else {
+        setSelectedIds(new Set(allShareableIds));
+      }
     } else {
-      setSelectedIds(new Set(myActionableIds));
+      if (selectedIds.size === myActionableIds.size) {
+        setSelectedIds(new Set());
+      } else {
+        setSelectedIds(new Set(myActionableIds));
+      }
     }
   };
 
@@ -501,7 +544,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
         `https://${supabaseProjectId}.supabase.co/functions/v1/make-server-309fe679/ai/refine-caption`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+          headers: await getAuthHeaders(true),
           body: JSON.stringify({ platform: newPlatform, title: newTitle.trim(), caption: '' }),
         }
       );
@@ -568,6 +611,23 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               }
             </motion.button>
           )}
+
+          {/* Share for Review toggle — always visible */}
+          <motion.button
+            onClick={toggleBulkShareMode}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm border transition-all ${
+              bulkShareMode
+                ? 'bg-[#F47A20]/20 border-[#F47A20]/40 text-[#F47A20] shadow-orange-500/10 shadow-md'
+                : 'bg-white/8 border-white/15 text-white/70 hover:bg-white/15 hover:text-white hover:border-white/25'
+            }`}
+          >
+            {bulkShareMode
+              ? <><X className="w-4 h-4" /> Exit Share Mode</>
+              : <><Share2 className="w-4 h-4" /><span className="hidden sm:inline">Share for Review</span></>
+            }
+          </motion.button>
 
           {/* Analytics toggle */}
           <motion.button
@@ -705,7 +765,18 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
         )}
       </AnimatePresence>
 
-      {/* ── Bulk mode instruction banner ── */}
+      {/* ── Auto-publish failure alert banner ── */}
+      {user?.tenantId && (
+        <AutoPublishFailureBanner
+          tenantId={user.tenantId}
+          onOpenCard={(cardId) => {
+            const card = cards.find(c => c.id === cardId);
+            if (card) setSelectedCard(card);
+          }}
+        />
+      )}
+
+      {/* ── Bulk approval mode instruction banner ── */}
       <AnimatePresence>
         {bulkMode && (
           <motion.div
@@ -726,7 +797,6 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                   </p>
                 </div>
               </div>
-              {/* Select all / deselect all shortcut */}
               <button
                 onClick={handleSelectAllGlobal}
                 className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300/80 hover:text-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-500/10 transition-all shrink-0 border border-amber-400/20"
@@ -741,9 +811,44 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
         )}
       </AnimatePresence>
 
-      {/* ── My approval queue callout (non-bulk mode only) ── */}
+      {/* ── Bulk share-for-review mode instruction banner ── */}
       <AnimatePresence>
-        {!bulkMode && myPendingCount > 0 && (
+        {bulkShareMode && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-[#F47A20]/30 bg-[#F47A20]/6">
+              <div className="flex items-center gap-2.5">
+                <Share2 className="w-4 h-4 text-[#F47A20] shrink-0" />
+                <div>
+                  <p className="text-orange-200 text-xs font-semibold">
+                    Share for Review Mode — select cards to send to a client
+                  </p>
+                  <p className="text-orange-300/50 text-[10px] mt-0.5">
+                    Any non-draft card can be selected. A single shareable review link will be generated.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleSelectAllGlobal}
+                className="flex items-center gap-1.5 text-[11px] font-semibold text-[#F47A20]/80 hover:text-[#F47A20] px-3 py-1.5 rounded-lg hover:bg-[#F47A20]/10 transition-all shrink-0 border border-[#F47A20]/20"
+              >
+                {selectedIds.size === allShareableIds.size
+                  ? <><Square className="w-3 h-3" /> Clear all</>
+                  : <><CheckSquare2 className="w-3 h-3" /> Select all {allShareableIds.size}</>
+                }
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── My approval queue callout (non-bulk, non-share mode only) ── */}
+      <AnimatePresence>
+        {!bulkMode && !bulkShareMode && myPendingCount > 0 && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -1096,7 +1201,11 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               >
                 <AnimatePresence>
                   {paginatedCards.map(card => {
-                    const isSelectable = myActionableIds.has(card.id);
+                    // In approval mode: only cards the user can approve are selectable.
+                    // In share mode: any non-draft card is selectable.
+                    const isSelectable = bulkShareMode
+                      ? card.status !== 'draft'
+                      : myActionableIds.has(card.id);
                     const isSelected   = selectedIds.has(card.id);
                     return (
                       <ContentCardCompact
@@ -1104,7 +1213,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                         card={card}
                         projectTeamMembers={projectTeamMembers}
                         onOpenDetail={setSelectedCard}
-                        bulkMode={bulkMode}
+                        bulkMode={bulkMode || bulkShareMode}
                         isSelectable={isSelectable}
                         isSelected={isSelected}
                         onToggleSelect={handleToggleSelect}
@@ -1141,7 +1250,56 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
         )}
       </AnimatePresence>
 
-      {/* ── Floating bulk action bar (grid mode only) ── */}
+      {/* ── Floating bulk SHARE action bar ── */}
+      <AnimatePresence>
+        {bulkShareMode && viewMode === 'grid' && (
+          <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 32 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            className="sticky bottom-4 z-40 flex justify-center pointer-events-none"
+          >
+            <div
+              className="pointer-events-auto flex flex-col sm:flex-row items-center gap-3 px-5 py-3.5 rounded-2xl border border-[#F47A20]/25 shadow-2xl shadow-black/60"
+              style={{ background: 'rgba(15,10,40,0.94)', backdropFilter: 'blur(20px)' }}
+            >
+              {/* Count */}
+              <div>
+                <p className="text-white font-semibold text-sm leading-tight">
+                  {selectedIds.size === 0 ? 'Select non-draft cards' : `${selectedIds.size} card${selectedIds.size !== 1 ? 's' : ''} selected`}
+                </p>
+                <p className="text-white/35 text-[10px] leading-tight">Click cards to add to the review bundle</p>
+              </div>
+
+              <div className="hidden sm:block h-8 w-px bg-white/10" />
+
+              {/* Share button */}
+              <motion.button
+                whileHover={{ scale: selectedIds.size > 0 ? 1.03 : 1 }}
+                whileTap={{ scale: selectedIds.size > 0 ? 0.97 : 1 }}
+                onClick={() => selectedIds.size > 0 && setShowBulkShareDialog(true)}
+                disabled={selectedIds.size === 0}
+                className="flex items-center gap-2 bg-[#F47A20]/20 hover:bg-[#F47A20]/35 border border-[#F47A20]/40 text-[#F47A20] px-5 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed min-w-[10rem] justify-center"
+              >
+                <Share2 className="w-4 h-4" />
+                Share{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+              </motion.button>
+
+              {/* Exit */}
+              <button
+                onClick={() => { setBulkShareMode(false); setSelectedIds(new Set()); }}
+                className="p-2 rounded-xl text-white/35 hover:text-white/70 hover:bg-white/8 transition-all"
+                title="Exit share mode"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Floating bulk APPROVE action bar (grid mode only) ── */}
       <AnimatePresence>
         {bulkMode && viewMode === 'grid' && (
           <motion.div
@@ -1345,6 +1503,19 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
           />
         )}
       </AnimatePresence>
+
+      {/* ── Bulk Share for Review dialog ── */}
+      {showBulkShareDialog && (
+        <ShareForReviewDialog
+          cards={cards.filter(c => selectedIds.has(c.id))}
+          tenantId={user?.tenantId ?? ''}
+          onClose={() => {
+            setShowBulkShareDialog(false);
+            setBulkShareMode(false);
+            setSelectedIds(new Set());
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -6,10 +6,10 @@ import { StatusBadge } from '../../components/saas/StatusBadge';
 import { formatRM } from '../../utils/format';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { fetchModules, fetchFeatures, updateModule, updateFeature, type Module, type Feature } from '../../utils/apiClient';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const AUTH   = { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' };
 
 // ── Inline price editor ────────────────────────────────────────────────────────
 function PriceEditor({
@@ -133,7 +133,7 @@ export function ModulesPage() {
     setSeeding(true);
     setSeedResult(null);
     try {
-      const res  = await fetch(`${SERVER}/seed-modules`, { method: 'POST', headers: AUTH });
+      const res  = await fetch(`${SERVER}/seed-modules`, { method: 'POST', headers: await getAuthHeaders(true) });
       const json = await res.json();
       if (!res.ok) {
         setSeedResult({ modulesInDb: 0, featuresInDb: 0, error: json.error ?? `HTTP ${res.status}` });

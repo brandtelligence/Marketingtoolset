@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../utils/authHeaders';
 import { SLA_WARNING_HOURS, SLA_BREACH_HOURS } from '../utils/sla';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,7 +29,7 @@ async function fetchConfig(tenantId: string): Promise<SlaConfig> {
   try {
     const res = await fetch(
       `${API_BASE}/sla/config?tenantId=${encodeURIComponent(tenantId)}`,
-      { headers: { Authorization: `Bearer ${publicAnonKey}` } },
+      { headers: await getAuthHeaders() },
     );
     if (!res.ok) return DEFAULT_CONFIG;
     const body = await res.json();
@@ -97,7 +98,7 @@ export function useSlaConfig(tenantId?: string) {
     try {
       const res = await fetch(`${API_BASE}/sla/config`, {
         method:  'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+        headers: await getAuthHeaders(true),
         body:    JSON.stringify({ tenantId: tid, ...newConfig }),
       });
       const data = await res.json();

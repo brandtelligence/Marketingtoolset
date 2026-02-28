@@ -1,16 +1,89 @@
-import { useState } from 'react';
-import { Save, Lock, Bell, Shield, Eye, EyeOff, Timer } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Save, Lock, Bell, Shield, Eye, EyeOff, Timer, Sparkles, ImageIcon, Video, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { Field, Input } from '../../components/saas/DrawerForm';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { useSlaConfig } from '../../hooks/useSlaConfig';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
+import { IS_DEMO_MODE } from '../../config/appConfig';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
+
+// ─── AI Usage hook ─────────────────────────────────────────────────────────────
+
+interface AiUsage { imageCount: number; videoCount: number; totalCostUsd: number; lastUpdated: string | null; }
+
+function getMonthOptions(n: number): { key: string; label: string }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    return {
+      key:   d.toISOString().slice(0, 7),
+      label: d.toLocaleDateString('en-MY', { month: 'long', year: 'numeric' }),
+    };
+  });
+}
+
+function useAiMediaUsage(tenantId: string | undefined) {
+  const months = getMonthOptions(3);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [usageMap,    setUsageMap]    = useState<Record<string, AiUsage>>({});
+  const [loading,     setLoading]     = useState(false);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    if (IS_DEMO_MODE) {
+      // Plausible demo data
+      const now = new Date().toISOString().slice(0, 7);
+      const prev = new Date(); prev.setMonth(prev.getMonth() - 1);
+      const p1   = prev.toISOString().slice(0, 7);
+      const prev2 = new Date(); prev2.setMonth(prev2.getMonth() - 2);
+      const p2    = prev2.toISOString().slice(0, 7);
+      setUsageMap({
+        [now]: { imageCount: 14, videoCount: 3,  totalCostUsd: 2.62, lastUpdated: new Date().toISOString() },
+        [p1]:  { imageCount: 22, videoCount: 7,  totalCostUsd: 5.26, lastUpdated: null },
+        [p2]:  { imageCount: 8,  videoCount: 1,  totalCostUsd: 1.14, lastUpdated: null },
+      });
+      return;
+    }
+    setLoading(true);
+    const keys = months.map(m => m.key).join(',');
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/ai/media-usage?tenantId=${encodeURIComponent(tenantId)}&months=${encodeURIComponent(keys)}`, {
+          headers: await getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (data.usage) setUsageMap(data.usage);
+      } catch (e) {
+        console.error('[AI usage]', e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [tenantId]);
+
+  const currentKey   = months[selectedIdx]?.key ?? '';
+  const currentLabel = months[selectedIdx]?.label ?? '';
+  const usage        = usageMap[currentKey] ?? { imageCount: 0, videoCount: 0, totalCostUsd: 0, lastUpdated: null };
+  const totalItems   = (usage.imageCount ?? 0) + (usage.videoCount ?? 0);
+  const maxItems     = Math.max(...months.map(m => {
+    const u = usageMap[m.key];
+    return u ? (u.imageCount + u.videoCount) : 0;
+  }), 1);
+
+  return { months, selectedIdx, setSelectedIdx, usage, currentLabel, currentKey, totalItems, maxItems, loading, usageMap };
+}
 
 export function TenantSettingsPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
   const { warningHours, breachHours, isLoading: slaLoading, isSaving: slaSaving, saveConfig } = useSlaConfig(user?.tenantId ?? undefined);
+  const aiUsage = useAiMediaUsage(user?.tenantId ?? undefined);
 
   // ── SLA local edit state (initialised lazily from hook) ──────────────────
   const [slaWarn,   setSlaWarn]   = useState<string>('');
@@ -291,6 +364,101 @@ export function TenantSettingsPage() {
           </div>
         </Card>
       </div>
+
+      {/* ── AI Media Usage ── */}
+      <Card title="🤖 AI Media Usage" className="mt-6">
+        <div className="space-y-4">
+          <p className={`${t.textFaint} text-xs leading-relaxed`}>
+            Monthly usage of AI image (DALL-E 3) and video (Replicate minimax/video-01) generation.
+            Costs are in USD and reflect approximate API billing.
+          </p>
+
+          {/* Month selector */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => aiUsage.setSelectedIdx(i => Math.min(i + 1, aiUsage.months.length - 1))}
+              disabled={aiUsage.selectedIdx >= aiUsage.months.length - 1}
+              className={`w-7 h-7 flex items-center justify-center rounded-lg border ${t.border} ${t.s1} ${t.textFaint} hover:${t.textMd} disabled:opacity-30 transition-all`}
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className={`flex-1 text-center text-sm font-semibold ${t.text}`}>{aiUsage.currentLabel}</span>
+            <button
+              onClick={() => aiUsage.setSelectedIdx(i => Math.max(i - 1, 0))}
+              disabled={aiUsage.selectedIdx <= 0}
+              className={`w-7 h-7 flex items-center justify-center rounded-lg border ${t.border} ${t.s1} ${t.textFaint} hover:${t.textMd} disabled:opacity-30 transition-all`}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Stats row */}
+          {aiUsage.loading ? (
+            <div className="flex items-center gap-2 py-4">
+              <span className="w-4 h-4 rounded-full border-2 border-teal-400/40 border-t-teal-400 animate-spin" />
+              <span className={`${t.textFaint} text-xs`}>Loading usage data…</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Images',      value: aiUsage.usage.imageCount,  Icon: ImageIcon, color: 'text-teal-400',   bg: 'bg-teal-500/10',   border: 'border-teal-400/20' },
+                { label: 'Videos',      value: aiUsage.usage.videoCount,  Icon: Video,     color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-400/20' },
+                { label: 'Total Cost',  value: `$${aiUsage.usage.totalCostUsd.toFixed(2)}`, Icon: TrendingUp, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-400/20' },
+              ].map(({ label, value, Icon, color, bg, border }) => (
+                <div key={label} className={`flex flex-col gap-2 p-3 ${bg} border ${border} rounded-xl`}>
+                  <Icon className={`w-4 h-4 ${color}`} />
+                  <p className={`text-xl font-bold ${t.text}`}>{value}</p>
+                  <p className={`${t.textFaint} text-xs`}>{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Bar chart across months */}
+          <div className="space-y-2">
+            <p className={`${t.textFaint} text-[10px] uppercase tracking-wider font-semibold`}>Last 3 months</p>
+            {aiUsage.months.map((m, i) => {
+              const u    = aiUsage.usageMap[m.key] ?? { imageCount: 0, videoCount: 0, totalCostUsd: 0 };
+              const tot  = u.imageCount + u.videoCount;
+              const pct  = Math.round((tot / aiUsage.maxItems) * 100);
+              const isSel = i === aiUsage.selectedIdx;
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => aiUsage.setSelectedIdx(i)}
+                  className={`w-full flex items-center gap-3 p-2 rounded-lg border transition-all text-left
+                    ${isSel ? `${t.s1} ${t.border}` : 'border-transparent hover:' + t.s0}`}
+                >
+                  <span className={`${t.textFaint} text-[10px] w-14 shrink-0 truncate`}>{m.label.split(' ')[0]}</span>
+                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-teal-500 to-teal-400 transition-all duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className={`${t.textFaint} text-[10px] w-12 text-right shrink-0`}>{tot} items</span>
+                  <span className={`${isSel ? 'text-teal-400' : t.textFaint} text-[10px] w-10 text-right shrink-0 font-mono`}>${u.totalCostUsd.toFixed(2)}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Last updated note */}
+          {aiUsage.usage.lastUpdated && (
+            <p className={`${t.textFaint} text-[10px]`}>
+              Last generation: {new Date(aiUsage.usage.lastUpdated).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+
+          <div className={`flex items-start gap-2 p-3 ${t.s0} border ${t.border} rounded-xl`}>
+            <Sparkles className={`w-3.5 h-3.5 ${t.textFaint} shrink-0 mt-0.5`} />
+            <p className={`${t.textFaint} text-[10px] leading-relaxed`}>
+              AI media generation costs are billed directly by OpenAI (images) and Replicate (videos) to your platform plan.
+              Contact your Super Admin to review overall platform AI spend.
+            </p>
+          </div>
+        </div>
+      </Card>
 
       {/* Danger Zone */}
       <Card title="⚠️ Danger Zone" className="mt-6">

@@ -13,7 +13,7 @@
  * branches accordingly. Mock data is NEVER touched here.
  */
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import type { RoleType } from '../data/mockSaasData';
 import { IS_PRODUCTION } from '../config/appConfig';
 import { supabase } from '../utils/supabaseClient';
@@ -106,6 +106,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,           setUser]           = useState<UserProfile | null>(null);
   const [sessionLoading, setSessionLoading] = useState(IS_PRODUCTION);
 
+  // Track whether the user was previously authenticated so we can detect
+  // session-expiry transitions (was logged in → session lost) and redirect.
+  const wasAuthenticatedRef = useRef(false);
+
   // ── Production session recovery on mount ───────────────────────────────────
   // In production, Supabase persists the session in localStorage.
   // On reload we reconstruct the user profile from the stored session so the
@@ -126,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Consider AAL2 session as MFA-verified
           const aal = (session as any).aal ?? 'aal1';
           setUser({ ...profile, mfaVerified: aal === 'aal2' });
+          wasAuthenticatedRef.current = true;
         }
       } catch (err) {
         console.error('[AuthContext] Session recovery error:', err);
@@ -137,14 +142,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     recover();
 
     // Also listen for Supabase auth state changes (token refresh, sign-out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!cancelled) {
         if (session?.user) {
           const profile = buildProfileFromSupabaseUser(session.user);
           const aal = (session as any).aal ?? 'aal1';
           setUser(prev => prev ? { ...prev, ...profile, mfaVerified: aal === 'aal2' } : profile);
+          wasAuthenticatedRef.current = true;
         } else {
           setUser(null);
+          // Phase 2.2: redirect to /login on session expiry if user was previously
+          // authenticated and is currently on a protected route.
+          // Using window.location (not router navigate) because AuthProvider sits
+          // above RouterProvider, and a full reload ensures clean state after expiry.
+          if (wasAuthenticatedRef.current) {
+            wasAuthenticatedRef.current = false;
+            const path = window.location.pathname;
+            const isProtected = /^\/(app|super|tenant|mfa-enroll)(\/|$)/.test(path);
+            if (isProtected) {
+              window.location.href = '/login?reason=session_expired';
+            }
+          }
         }
       }
     });
@@ -155,7 +173,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = (userData: UserProfile) => setUser(userData);
+  const login = (userData: UserProfile) => {
+    setUser(userData);
+    wasAuthenticatedRef.current = true;
+  };
 
   const logout = async () => {
     if (IS_PRODUCTION) {

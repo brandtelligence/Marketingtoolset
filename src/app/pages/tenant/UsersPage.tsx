@@ -7,14 +7,14 @@ import { StatusBadge, RoleBadge } from '../../components/saas/StatusBadge';
 import { DrawerForm, Field, Input, Select, ConfirmDialog } from '../../components/saas/DrawerForm';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 import {
   fetchTenantUsers, createTenantUser, updateTenantUser, deleteTenantUser,
   type TenantUser, type RoleType,
 } from '../../utils/apiClient';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const AUTH   = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` };
 
 export function TenantUsersPage() {
   const t = useDashboardTheme();
@@ -43,7 +43,7 @@ export function TenantUsersPage() {
     let emailOk = true;
     try {
       const res  = await fetch(`${SERVER}/auth/invite-user`, {
-        method: 'POST', headers: AUTH,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({
           email:      inviteEmail,
           templateId: 'welcome_employee',
@@ -107,7 +107,7 @@ export function TenantUsersPage() {
   const handleResendInvite = async (u: TenantUser) => {
     try {
       const res  = await fetch(`${SERVER}/auth/invite-user`, {
-        method: 'POST', headers: AUTH,
+        method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({
           email:      u.email,
           templateId: 'welcome_employee',

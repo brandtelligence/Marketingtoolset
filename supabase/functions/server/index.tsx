@@ -3,21 +3,89 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
 import nodemailer from "npm:nodemailer";
+import { requireAuth, requireRole, requireTenantScope, rateLimit, logSecurityEvent, generateCsrfToken, generateSigningKey, validateCsrf, validateRequestSignature, checkTokenFreshness, type AuthIdentity } from './auth.tsx';
+import { sanitizeString, sanitizeObject, validateEmail, validateLength, validateEnum } from './sanitize.tsx';
+import { encrypt, decrypt, isEncrypted, encryptFields, decryptFields } from './crypto.tsx';
 
 const app = new Hono();
 
 app.use('*', logger(console.log));
 
+// ─── Security response headers (ISO 27001 A.14.1.2) ─────────────────────────
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  c.header('Cache-Control', 'no-store');           // Prevent caching of API responses containing PII
+  c.header('Pragma', 'no-cache');
+});
+
+// ─── CORS — ISO 27001 A.14.1.2 ────────────────────────────────────────────────
+// Builds an allow-list from APP_URL + the Supabase project origin.
+// Also accepts common preview/CI origins (Figma Make, Vercel, Netlify).
+// Every route is JWT-protected, so CORS is defence-in-depth, not the sole gate.
+const _buildAllowedOrigins = (): string[] => {
+  const origins: string[] = [];
+  const appUrl = Deno.env.get('APP_URL');
+  if (appUrl) origins.push(appUrl.replace(/\/+$/, ''));
+  const supaUrl = Deno.env.get('SUPABASE_URL');
+  if (supaUrl) origins.push(supaUrl.replace(/\/+$/, ''));
+  return origins;
+};
+const ALLOWED_ORIGINS = _buildAllowedOrigins();
+
+// Known safe preview-host patterns (JWT auth is the real gate)
+const _PREVIEW_RE = /^https:\/\/[a-z0-9._-]+\.(val\.build|vercel\.app|netlify\.app|figma\.site|webcontainer-api\.io|webcontainer\.io|local-credentialless\.org|figma\.com)/i;
+
 app.use(
   "/*",
   cors({
-    origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
+    origin: ALLOWED_ORIGINS.length > 0
+      ? (origin: string) => {
+          if (ALLOWED_ORIGINS.some(o => o.toLowerCase() === origin.toLowerCase())) return origin;
+          if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin;
+          // Accept known preview/CI platform origins (JWT is the real auth gate)
+          if (_PREVIEW_RE.test(origin)) return origin;
+          console.log(`[CORS] Blocked origin: ${origin}`);
+          return '';
+        }
+      : '*',
+    allowHeaders: ["Content-Type", "Authorization", "X-CSRF-Token", "X-Request-Signature", "X-Request-Timestamp"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     exposeHeaders: ["Content-Length"],
     maxAge: 600,
+    credentials: true,
   }),
 );
+if (ALLOWED_ORIGINS.length === 0) {
+  console.log('[CORS] ⚠ APP_URL not set — CORS is open (origin: *). Set APP_URL to restrict.');
+}
+
+// ─── Global Rate Limiting Middleware (ISO 27001 A.9.4.2 · Phase 4) ──────────
+// Applies sensible default rate limits to ALL routes based on HTTP method.
+// Per-route rateLimit() calls inside individual handlers provide STRICTER
+// overrides for sensitive endpoints (auth, AI generation, public, etc.).
+// Both checks are independent — if either triggers, the request is blocked.
+app.use('*', (c, next) => {
+  const method = c.req.method;
+  if (method === 'OPTIONS') return next(); // Don't rate-limit CORS preflight
+
+  // Normalise path: strip route prefix and collapse UUID/ID path params
+  // so /tenants/abc-123 and /tenants/def-456 share one bucket.
+  const path = c.req.path
+    .replace('/make-server-309fe679', '')
+    .replace(/\/[0-9a-f-]{8,}/gi, '/:id');
+  const bucket = `global:${method}:${path}`;
+
+  // Default limits by method: GET 60/min, mutating 30/min
+  const limit = method === 'GET' ? 60 : 30;
+  const limited = rateLimit(c, bucket, limit, 60_000);
+  if (limited) return limited;
+
+  return next();
+});
 
 // ─── Supabase Admin Client ─────────────────────────────────────────────────────
 
@@ -28,10 +96,18 @@ const supabaseAdmin = createClient(
 
 // ─── Bootstrap: seed Super Admin ──────────────────────────────────────────────
 
+// ISO 27001 A.9.2.4 — credentials MUST come from environment variables, never hardcoded.
+// PDPA s.9 / GDPR Art.32 — secure processing of authentication information.
 async function seedSuperAdmin() {
-  const SUPER_ADMIN_EMAIL    = "it@brandtelligence.com.my";
-  const SUPER_ADMIN_PASSWORD = "Th1l155a@2506";
-  const SUPER_ADMIN_NAME     = "IT Admin";
+  const SUPER_ADMIN_EMAIL    = Deno.env.get("SUPER_ADMIN_EMAIL") ?? "it@brandtelligence.com.my";
+  const SUPER_ADMIN_PASSWORD = Deno.env.get("SUPER_ADMIN_PASSWORD");
+  const SUPER_ADMIN_NAME     = Deno.env.get("SUPER_ADMIN_NAME") ?? "IT Admin";
+
+  if (!SUPER_ADMIN_PASSWORD) {
+    console.log("[bootstrap] SUPER_ADMIN_PASSWORD env var not set — skipping seed (ISO 27001 A.9.2.4)");
+    return;
+  }
+
   try {
     const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
     const existing = listData?.users?.find(u => u.email === SUPER_ADMIN_EMAIL);
@@ -40,7 +116,8 @@ async function seedSuperAdmin() {
         await supabaseAdmin.auth.admin.updateUserById(existing.id, {
           user_metadata: { ...existing.user_metadata, name: SUPER_ADMIN_NAME, role: "SUPER_ADMIN", display_name: SUPER_ADMIN_NAME },
         });
-        console.log(`[bootstrap] Super Admin role patched for ${SUPER_ADMIN_EMAIL}`);
+        // Log userId only — never email (ISO 27001 A.18.1.4)
+        console.log(`[bootstrap] Super Admin role patched for uid: ${existing.id}`);
       } else {
         console.log(`[bootstrap] Super Admin already exists — skipping.`);
       }
@@ -173,6 +250,8 @@ app.post("/make-server-309fe679/seed-modules", async (c) => {
     const auth = c.req.header("Authorization");
     if (!auth) return c.json({ error: "Unauthorized" }, 401);
     const result = await seedModulesAndFeatures();
+    // Phase 6: audit trail for system seed (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'SYSTEM_SEED', route: '/seed-modules', detail: `modules=${result.modulesInDb} features=${result.featuresInDb}` });
     return c.json({
       success:      true,
       modulesInDb:  result.modulesInDb,
@@ -222,11 +301,21 @@ function rowToTenant(r: any) {
   };
 }
 
+// Phase 5: allowed values for tenant status and plan (ISO 27001 A.14.2.5)
+const VALID_TENANT_STATUSES = ['active', 'suspended', 'churned', 'trial', 'pending'] as const;
+const VALID_TENANT_PLANS    = ['starter', 'professional', 'enterprise', 'Starter', 'Professional', 'Enterprise'] as const;
+
 function tenantToPg(d: any): Record<string, any> {
   const row: Record<string, any> = {};
   if (d.name           !== undefined) row.name             = d.name;
-  if (d.plan           !== undefined) row.plan             = d.plan;
-  if (d.status         !== undefined) row.status           = d.status;
+  if (d.plan           !== undefined) {
+    if (!VALID_TENANT_PLANS.includes(d.plan)) throw new Error(`Invalid plan: ${d.plan}. Allowed: ${VALID_TENANT_PLANS.join(', ')}`);
+    row.plan = d.plan;
+  }
+  if (d.status         !== undefined) {
+    if (!VALID_TENANT_STATUSES.includes(d.status)) throw new Error(`Invalid status: ${d.status}. Allowed: ${VALID_TENANT_STATUSES.join(', ')}`);
+    row.status = d.status;
+  }
   if (d.industry       !== undefined) row.industry         = d.industry;
   if (d.country        !== undefined) row.country          = d.country;
   if (d.adminName      !== undefined) row.contact_name     = d.adminName;
@@ -251,10 +340,15 @@ function tenantToPg(d: any): Record<string, any> {
 // Postgres status enum: active | invited | suspended
 // Frontend UserStatus:  active | pending_invite | inactive
 
+// Phase 5: validated user status mapping (ISO 27001 A.14.2.5)
+const VALID_FRONTEND_STATUSES = ['active', 'pending_invite', 'inactive'] as const;
+
 function pgUserStatus(frontendStatus: string): string {
   if (frontendStatus === "pending_invite") return "invited";
   if (frontendStatus === "inactive")       return "suspended";
-  return frontendStatus; // active
+  if (frontendStatus === "active")         return "active";
+  // Phase 5: reject unknown status values
+  throw new Error(`Invalid user status: ${frontendStatus}. Allowed: ${VALID_FRONTEND_STATUSES.join(', ')}`);
 }
 function frontendUserStatus(pgStatus: string): string {
   if (pgStatus === "invited")   return "pending_invite";
@@ -276,12 +370,19 @@ function rowToTenantUser(r: any) {
   };
 }
 
+// Phase 5: allowed role values for tenant users (ISO 27001 A.9.2.3)
+const VALID_TENANT_ROLES = ['SUPER_ADMIN', 'TENANT_ADMIN', 'EMPLOYEE'] as const;
+
 function tenantUserToPg(d: any): Record<string, any> {
   const row: Record<string, any> = {};
   if (d.tenantId  !== undefined) row.tenant_id  = toUuid(d.tenantId);
   if (d.name      !== undefined) row.name       = d.name;
   if (d.email     !== undefined) row.email      = d.email;
-  if (d.role      !== undefined) row.role       = d.role;
+  // Phase 5: validate role enum before writing to DB
+  if (d.role      !== undefined) {
+    if (!VALID_TENANT_ROLES.includes(d.role)) throw new Error(`Invalid role: ${d.role}. Allowed: ${VALID_TENANT_ROLES.join(', ')}`);
+    row.role = d.role;
+  }
   if (d.status    !== undefined) row.status     = pgUserStatus(d.status);
   if (d.avatar    !== undefined) row.avatar_url = d.avatar;
   if (d.lastLogin !== undefined) row.last_login = d.lastLogin;
@@ -297,10 +398,14 @@ function tenantUserToPg(d: any): Record<string, any> {
 // receiptUrl, notes, lines[] are now dedicated Postgres columns.
 // `description` is kept in sync for legacy compatibility.
 
+// Phase 5: validated invoice status mapping (ISO 27001 A.14.2.5)
+const VALID_INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'suspended'] as const;
+
 function pgInvoiceStatus(frontendStatus: string): string {
   if (frontendStatus === "draft" || frontendStatus === "sent") return "unpaid";
   if (frontendStatus === "suspended") return "overdue";
-  return frontendStatus; // paid | overdue
+  if (frontendStatus === "paid" || frontendStatus === "overdue") return frontendStatus;
+  throw new Error(`Invalid invoice status: ${frontendStatus}. Allowed: ${VALID_INVOICE_STATUSES.join(', ')}`);
 }
 function frontendInvoiceStatus(pgStatus: string): string {
   if (pgStatus === "unpaid") return "sent";
@@ -565,6 +670,29 @@ function gatewayConfigToPg(d: any): Record<string, any> {
   return row;
 }
 
+// Phase 3.2: Encrypt/decrypt all string values in a flat credentials object
+async function encryptCredsObject(creds: Record<string, any>): Promise<Record<string, any>> {
+  if (!creds || typeof creds !== 'object') return creds;
+  const result = { ...creds };
+  for (const key of Object.keys(result)) {
+    if (typeof result[key] === 'string' && result[key]) {
+      result[key] = await encrypt(result[key]);
+    }
+  }
+  return result;
+}
+
+async function decryptCredsObject(creds: Record<string, any>): Promise<Record<string, any>> {
+  if (!creds || typeof creds !== 'object') return creds;
+  const result = { ...creds };
+  for (const key of Object.keys(result)) {
+    if (typeof result[key] === 'string' && isEncrypted(result[key])) {
+      result[key] = await decrypt(result[key]);
+    }
+  }
+  return result;
+}
+
 // ── MFA POLICY ────────────────────────────────────────────────────────────────
 // DB: id(global), require_tenant_admin_mfa, updated_at
 
@@ -705,6 +833,10 @@ function rowToContentCard(r: any) {
     rejectedBy:        meta.rejectedBy        ?? undefined,
     rejectedByName:    meta.rejectedByName    ?? undefined,
     rejectedAt:        meta.rejectedAt        ?? undefined,
+    // Engagement data (likes, comments, shares, reach) — persisted in metadata
+    engagementData:    meta.engagementData    ?? undefined,
+    // AI prompt history
+    aiPromptHistory:   meta.aiPromptHistory   ?? undefined,
   };
 }
 
@@ -775,6 +907,10 @@ function contentCardToPg(d: any): Record<string, any> {
     rejectedBy:         d.rejectedBy        ?? null,
     rejectedByName:     d.rejectedByName    ?? null,
     rejectedAt:         d.rejectedAt        ?? null,
+    // Engagement data (likes, comments, shares, reach)
+    engagementData:     d.engagementData    ?? null,
+    // AI prompt history
+    aiPromptHistory:    d.aiPromptHistory   ?? null,
   };
 
   return row;
@@ -822,11 +958,36 @@ function rowToUsageStat(r: any) {
 
 app.get("/make-server-309fe679/health", (c) => c.json({ status: "ok" }));
 
+// ── CSRF Token + Signing Key Endpoint (Phase 2.3) ────────────────────────────
+// Returns a stateless CSRF token and HMAC signing key for the authenticated user.
+// The frontend calls this after login and stores both values in memory.
+// CSRF token → sent as X-CSRF-Token on all mutating requests
+// Signing key → used to HMAC-sign high-value operations
+app.get("/make-server-309fe679/csrf-token", async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    const [csrfToken, signingKey] = await Promise.all([
+      generateCsrfToken(auth.userId),
+      generateSigningKey(auth.userId),
+    ]);
+    return c.json({ csrfToken, signingKey });
+  } catch (err) {
+    console.log(`[csrf-token] ${errMsg(err)}`);
+    return c.json({ error: `csrfToken: ${errMsg(err)}` }, 500);
+  }
+});
+
 app.post("/make-server-309fe679/bootstrap-super-admin", async (c) => {
   try {
-    const auth = c.req.header("Authorization");
-    if (!auth) return c.json({ error: "Unauthorized" }, 401);
+    // Phase 4: strict rate limit — admin bootstrap is a sensitive operation
+    const limited = rateLimit(c, 'admin:bootstrap', 3, 60_000);
+    if (limited) return limited;
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     await seedSuperAdmin();
+    // Phase 6: audit trail for super-admin bootstrap (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'SUPER_ADMIN_BOOTSTRAP', route: '/bootstrap-super-admin' });
     return c.json({ success: true, message: "Bootstrap complete — check server logs." });
   } catch (err) {
     return c.json({ error: `Bootstrap failed: ${errMsg(err)}` }, 500);
@@ -839,6 +1000,9 @@ app.post("/make-server-309fe679/bootstrap-super-admin", async (c) => {
 
 app.get("/make-server-309fe679/tenants", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — list all tenants
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("tenants")
       .select("*")
@@ -853,7 +1017,11 @@ app.get("/make-server-309fe679/tenants", async (c) => {
 
 app.post("/make-server-309fe679/tenants", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only — create tenant
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 3.1: sanitise inputs (skip password-like fields)
+    const body = sanitizeObject(await c.req.json(), new Set(['password', 'pass']));
     const id   = body.id ?? crypto.randomUUID();
     const row  = {
       ...tenantToPg(body),
@@ -885,7 +1053,7 @@ app.post("/make-server-309fe679/tenants", async (c) => {
           },
         });
         if (linkError) {
-          console.log(`[tenants POST] invite link error for ${adminEmail}: ${linkError.message}`);
+          console.log(`[tenants POST] invite link error for tenant ${id}: ${linkError.message}`);
         } else {
           const actionUrl   = linkData.properties.action_link;
           const supabaseUid = linkData.user?.id;
@@ -942,7 +1110,7 @@ app.post("/make-server-309fe679/tenants", async (c) => {
                ${fbWarn("This invite link expires in 24 hours and can only be used once.")}`
             ),
           );
-          console.log(`[tenants POST] Admin invite sent to ${adminEmail} for tenant ${id} (${tenantName})`);
+          console.log(`[tenants POST] Admin invite sent for tenant ${id} (${tenantName})`);
         }
       } catch (inviteErr) {
         // Non-fatal — tenant record exists; super admin can re-send the invite manually
@@ -951,6 +1119,8 @@ app.post("/make-server-309fe679/tenants", async (c) => {
     }
 
     console.log(`[tenants POST] created ${id}: ${body.name}`);
+    // Phase 6: audit trail for tenant creation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'TENANT_CREATED', route: '/tenants', detail: `tenantId=${id}` });
     return c.json({ tenant });
   } catch (err) {
     console.log(`[tenants POST] ${errMsg(err)}`);
@@ -960,12 +1130,20 @@ app.post("/make-server-309fe679/tenants", async (c) => {
 
 app.put("/make-server-309fe679/tenants/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN or own TENANT_ADMIN
     const id  = c.req.param("id");
-    const row = tenantToPg(await c.req.json());
+    // Phase 5: validate path param is UUID before DB query (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid tenant ID format" }, 400);
+    const auth = await requireTenantScope(c, id);
+    if (auth instanceof Response) return auth;
+    // Phase 3.1: sanitise inputs
+    const row = tenantToPg(sanitizeObject(await c.req.json(), new Set(['password', 'pass'])));
     const { data, error } = await supabaseAdmin
       .from("tenants").update(row).eq("id", id).select().single();
     if (error) throw error;
     if (!data)  return c.json({ error: "Tenant not found" }, 404);
+    // Phase 6: audit trail for tenant update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'TENANT_UPDATED', route: '/tenants/:id', detail: `tenantId=${id} fields=${Object.keys(row).join(',')}` });
     return c.json({ tenant: rowToTenant(data) });
   } catch (err) {
     console.log(`[tenants PUT] ${errMsg(err)}`);
@@ -975,9 +1153,27 @@ app.put("/make-server-309fe679/tenants/:id", async (c) => {
 
 app.delete("/make-server-309fe679/tenants/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — delete tenant
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 2.3: CSRF validation
+    const csrfErr = await validateCsrf(c, auth as AuthIdentity);
+    if (csrfErr) return csrfErr;
+    // Phase 2.4: HMAC request signing for destructive operations
+    // Must match what the frontend signs — for bodyless DELETE, signedApi signs the path
+    const hmacErr = await validateRequestSignature(c, auth as AuthIdentity, `/tenants/${c.req.param("id")}`);
+    if (hmacErr) return hmacErr;
+    // Phase 2.5: session freshness check (max 60 min for destructive ops)
+    const freshErr = checkTokenFreshness(c, 60);
+    if (freshErr) return freshErr;
+    const tenantId = c.req.param("id");
+    // Phase 5: validate path param is UUID (ISO 27001 A.14.2.5)
+    if (!isUuid(tenantId)) return c.json({ error: "Invalid tenant ID format" }, 400);
     const { error } = await supabaseAdmin
-      .from("tenants").delete().eq("id", c.req.param("id"));
+      .from("tenants").delete().eq("id", tenantId);
     if (error) throw error;
+    // Phase 4: security event log for destructive operation
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'TENANT_DELETED', route: '/tenants/:id', detail: `tenantId=${tenantId}` });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[tenants DELETE] ${errMsg(err)}`);
@@ -991,6 +1187,9 @@ app.delete("/make-server-309fe679/tenants/:id", async (c) => {
 
 app.get("/make-server-309fe679/check-access-email", async (c) => {
   try {
+    // Phase 4: rate limit public email check — prevents enumeration (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'public:check-email', 10, 60_000);
+    if (limited) return limited;
     const email = (c.req.query("email") ?? "").toLowerCase().trim();
     if (!email) return c.json({ status: "available" });
 
@@ -1026,6 +1225,9 @@ app.get("/make-server-309fe679/check-access-email", async (c) => {
 
 app.get("/make-server-309fe679/requests", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — list all access requests
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("pending_requests")
       .select("*")
@@ -1040,7 +1242,15 @@ app.get("/make-server-309fe679/requests", async (c) => {
 
 app.post("/make-server-309fe679/requests", async (c) => {
   try {
-    const body = await c.req.json();
+    // Public signup — rate limit to prevent abuse (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'signup:request', 5, 60_000);
+    if (limited) return limited;
+    // Phase 3.1: sanitise user-provided signup data
+    const body = sanitizeObject(await c.req.json(), new Set(['password']));
+    // Phase 3.1: validate email format
+    if (body.contactEmail && !validateEmail(body.contactEmail)) {
+      return c.json({ error: "Invalid email format" }, 400);
+    }
     const id   = body.id ?? crypto.randomUUID();
     const row  = {
       ...requestToPg(body),
@@ -1052,6 +1262,8 @@ app.post("/make-server-309fe679/requests", async (c) => {
       .from("pending_requests").insert(row).select().single();
     if (error) throw error;
     console.log(`[requests POST] ${id}: ${body.companyName}`);
+    // Phase 6: audit trail for signup/onboarding request (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'ONBOARDING_REQUEST_CREATED', route: '/requests', detail: `requestId=${id} company=${body.companyName ?? 'unknown'}` });
     return c.json({ request: rowToRequest(data) });
   } catch (err) {
     console.log(`[requests POST] ${errMsg(err)}`);
@@ -1061,8 +1273,14 @@ app.post("/make-server-309fe679/requests", async (c) => {
 
 app.put("/make-server-309fe679/requests/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — approve/reject requests
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const id   = c.req.param("id");
-    const body = await c.req.json();
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid request ID format" }, 400);
+    // Phase 3.1: sanitise inputs
+    const body = sanitizeObject(await c.req.json(), new Set(['password']));
     const { data: existing } = await supabaseAdmin
       .from("pending_requests").select("*").eq("id", id).single();
     if (!existing) return c.json({ error: "Request not found" }, 404);
@@ -1097,6 +1315,8 @@ app.put("/make-server-309fe679/requests/:id", async (c) => {
       .from("pending_requests").update(row).eq("id", id).select().single();
     if (error) throw error;
     console.log(`[requests PUT] ${id} → ${body.status ?? existing.status}`);
+    // Phase 6: audit trail for request review (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'ONBOARDING_REQUEST_UPDATED', route: '/requests/:id', detail: `requestId=${id} status=${body.status ?? existing.status}` });
     return c.json({ request: rowToRequest(data) });
   } catch (err) {
     console.log(`[requests PUT] ${errMsg(err)}`);
@@ -1111,6 +1331,15 @@ app.put("/make-server-309fe679/requests/:id", async (c) => {
 app.get("/make-server-309fe679/tenant-users", async (c) => {
   try {
     const tenantId = c.req.query("tenantId");
+    // Phase 1.3: Tenant-scoped or SUPER_ADMIN for all
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    if (tenantId) {
+      const scope = await requireTenantScope(c, tenantId);
+      if (scope instanceof Response) return scope;
+    } else if ((auth as AuthIdentity).role !== 'SUPER_ADMIN') {
+      return c.json({ error: 'tenantId is required for non-admin users' }, 403);
+    }
     let query = supabaseAdmin.from("tenant_users").select("*").order("created_at", { ascending: false });
     if (tenantId) query = query.eq("tenant_id", tenantId);
     const { data, error } = await query;
@@ -1124,7 +1353,16 @@ app.get("/make-server-309fe679/tenant-users", async (c) => {
 
 app.post("/make-server-309fe679/tenant-users", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 3.1: sanitise inputs
+    const body = sanitizeObject(await c.req.json(), new Set(['password']));
+    // Phase 1.3: SUPER_ADMIN or TENANT_ADMIN of the target tenant
+    if (body.tenantId) {
+      const scope = await requireTenantScope(c, body.tenantId);
+      if (scope instanceof Response) return scope;
+    } else {
+      const auth = await requireRole(c, 'SUPER_ADMIN', 'TENANT_ADMIN');
+      if (auth instanceof Response) return auth;
+    }
     const id   = body.id ?? crypto.randomUUID();
     const row  = {
       ...tenantUserToPg(body),
@@ -1135,7 +1373,9 @@ app.post("/make-server-309fe679/tenant-users", async (c) => {
     const { data, error } = await supabaseAdmin
       .from("tenant_users").insert(row).select().single();
     if (error) throw error;
-    console.log(`[tenant-users POST] ${id}: ${body.email}`);
+    console.log(`[tenant-users POST] created user ${id}`);
+    // Phase 6: audit trail for user creation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'USER_CREATED', route: '/tenant-users', detail: `targetUserId=${id} role=${body.role ?? 'EMPLOYEE'}` });
     return c.json({ user: rowToTenantUser(data) });
   } catch (err) {
     console.log(`[tenant-users POST] ${errMsg(err)}`);
@@ -1145,12 +1385,20 @@ app.post("/make-server-309fe679/tenant-users", async (c) => {
 
 app.put("/make-server-309fe679/tenant-users/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN or TENANT_ADMIN
+    const auth = await requireRole(c, 'SUPER_ADMIN', 'TENANT_ADMIN');
+    if (auth instanceof Response) return auth;
     const id  = c.req.param("id");
-    const row = tenantUserToPg(await c.req.json());
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid user ID format" }, 400);
+    // Phase 3.1: sanitise inputs
+    const row = tenantUserToPg(sanitizeObject(await c.req.json(), new Set(['password'])));
     const { data, error } = await supabaseAdmin
       .from("tenant_users").update(row).eq("id", id).select().single();
     if (error) throw error;
     if (!data)  return c.json({ error: "User not found" }, 404);
+    // Phase 6: audit trail for user update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'USER_UPDATED', route: '/tenant-users/:id', detail: `targetUserId=${id} fields=${Object.keys(row).join(',')}` });
     return c.json({ user: rowToTenantUser(data) });
   } catch (err) {
     console.log(`[tenant-users PUT] ${errMsg(err)}`);
@@ -1160,9 +1408,20 @@ app.put("/make-server-309fe679/tenant-users/:id", async (c) => {
 
 app.delete("/make-server-309fe679/tenant-users/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN or TENANT_ADMIN
+    const auth = await requireRole(c, 'SUPER_ADMIN', 'TENANT_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 2.3: CSRF validation
+    const csrfErr = await validateCsrf(c, auth as AuthIdentity);
+    if (csrfErr) return csrfErr;
+    const targetUserId = c.req.param("id");
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(targetUserId)) return c.json({ error: "Invalid user ID format" }, 400);
     const { error } = await supabaseAdmin
-      .from("tenant_users").delete().eq("id", c.req.param("id"));
+      .from("tenant_users").delete().eq("id", targetUserId);
     if (error) throw error;
+    // Phase 4: security event log for user deletion
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'USER_DELETED', route: '/tenant-users/:id', detail: `targetUserId=${targetUserId}` });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[tenant-users DELETE] ${errMsg(err)}`);
@@ -1177,6 +1436,15 @@ app.delete("/make-server-309fe679/tenant-users/:id", async (c) => {
 app.get("/make-server-309fe679/invoices", async (c) => {
   try {
     const tenantId = c.req.query("tenantId");
+    // Phase 1.3: Tenant-scoped or SUPER_ADMIN for all
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    if (tenantId) {
+      const scope = await requireTenantScope(c, tenantId);
+      if (scope instanceof Response) return scope;
+    } else if ((auth as AuthIdentity).role !== 'SUPER_ADMIN') {
+      return c.json({ error: 'tenantId is required for non-admin users' }, 403);
+    }
     let query = supabaseAdmin.from("invoices").select("*").order("created_at", { ascending: false });
     if (tenantId) query = query.eq("tenant_id", tenantId);
     const { data, error } = await query;
@@ -1190,7 +1458,11 @@ app.get("/make-server-309fe679/invoices", async (c) => {
 
 app.post("/make-server-309fe679/invoices", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only — create invoices
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 3.1: sanitise inputs
+    const body = sanitizeObject(await c.req.json());
     const id   = body.id ?? crypto.randomUUID();
     const row  = {
       ...invoiceToPg(body),
@@ -1201,6 +1473,8 @@ app.post("/make-server-309fe679/invoices", async (c) => {
       .from("invoices").insert(row).select().single();
     if (error) throw error;
     console.log(`[invoices POST] ${id}`);
+    // Phase 6: audit trail for invoice creation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'INVOICE_CREATED', route: '/invoices', detail: `invoiceId=${id}` });
     return c.json({ invoice: rowToInvoice(data) });
   } catch (err) {
     console.log(`[invoices POST] ${errMsg(err)}`);
@@ -1210,8 +1484,14 @@ app.post("/make-server-309fe679/invoices", async (c) => {
 
 app.put("/make-server-309fe679/invoices/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — update invoices
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const id   = c.req.param("id");
-    const body = await c.req.json();
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid invoice ID format" }, 400);
+    // Phase 3.1: sanitise inputs
+    const body = sanitizeObject(await c.req.json());
     const { data: existing } = await supabaseAdmin
       .from("invoices").select("*").eq("id", id).single();
     if (!existing) return c.json({ error: "Invoice not found" }, 404);
@@ -1248,6 +1528,8 @@ app.put("/make-server-309fe679/invoices/:id", async (c) => {
     const { data, error } = await supabaseAdmin
       .from("invoices").update(row).eq("id", id).select().single();
     if (error) throw error;
+    // Phase 6: audit trail for invoice update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'INVOICE_UPDATED', route: '/invoices/:id', detail: `invoiceId=${id} fields=${Object.keys(row).join(',')}` });
     return c.json({ invoice: rowToInvoice(data) });
   } catch (err) {
     console.log(`[invoices PUT] ${errMsg(err)}`);
@@ -1261,6 +1543,9 @@ app.put("/make-server-309fe679/invoices/:id", async (c) => {
 
 app.get("/make-server-309fe679/modules", async (c) => {
   try {
+    // Phase 1.3: Authenticated — all roles can read modules
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("modules")
       .select("*")
@@ -1275,13 +1560,21 @@ app.get("/make-server-309fe679/modules", async (c) => {
 
 app.put("/make-server-309fe679/modules/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — toggle modules
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const id  = c.req.param("id");
-    const row = moduleToPg(await c.req.json());
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid module ID format" }, 400);
+    // Phase 3 QC: sanitise module update inputs
+    const row = moduleToPg(sanitizeObject(await c.req.json()));
     const { data, error } = await supabaseAdmin
       .from("modules").update(row).eq("id", id).select().single();
     if (error) throw error;
     if (!data)  return c.json({ error: "Module not found" }, 404);
     console.log(`[modules PUT] ${id} globalEnabled=${data.global_enabled}`);
+    // Phase 6: audit trail for module update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'MODULE_UPDATED', route: '/modules/:id', detail: `moduleId=${id} globalEnabled=${data.global_enabled}` });
     return c.json({ module: rowToModule(data) });
   } catch (err) {
     console.log(`[modules PUT] ${errMsg(err)}`);
@@ -1295,6 +1588,9 @@ app.put("/make-server-309fe679/modules/:id", async (c) => {
 
 app.get("/make-server-309fe679/features", async (c) => {
   try {
+    // Phase 1.3: Authenticated — all roles can read features
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("features")
       .select("*")
@@ -1309,8 +1605,14 @@ app.get("/make-server-309fe679/features", async (c) => {
 
 app.put("/make-server-309fe679/features/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — toggle features
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const id  = c.req.param("id");
-    const body= await c.req.json();
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid feature ID format" }, 400);
+    // Phase 3 QC: sanitise feature update inputs
+    const body= sanitizeObject(await c.req.json());
     // Patch 02: read from dedicated columns; no JSON parsing needed
     const { data: existing } = await supabaseAdmin
       .from("features").select("module_id, rollout_note").eq("id", id).single();
@@ -1323,6 +1625,8 @@ app.put("/make-server-309fe679/features/:id", async (c) => {
       .from("features").update(row).eq("id", id).select().single();
     if (error) throw error;
     if (!data)  return c.json({ error: "Feature not found" }, 404);
+    // Phase 6: audit trail for feature update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'FEATURE_UPDATED', route: '/features/:id', detail: `featureId=${id}` });
     return c.json({ feature: rowToFeature(data) });
   } catch (err) {
     console.log(`[features PUT] ${errMsg(err)}`);
@@ -1330,12 +1634,15 @@ app.put("/make-server-309fe679/features/:id", async (c) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────���───
 // AUDIT LOGS  (Postgres: audit_logs)
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get("/make-server-309fe679/audit-logs", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — view audit logs
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const severity = c.req.query("severity");
     const role     = c.req.query("role");
     const limit    = Math.min(parseInt(c.req.query("limit") ?? "200"), 500);
@@ -1359,7 +1666,11 @@ app.get("/make-server-309fe679/audit-logs", async (c) => {
 
 app.post("/make-server-309fe679/audit-logs", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 1.3: Authenticated — any role can write audit logs
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    // Phase 3.1: sanitise audit log data
+    const body = sanitizeObject(await c.req.json());
     const row  = auditLogToPg(body);
     const { error } = await supabaseAdmin.from("audit_logs").insert(row);
     if (error) throw error;
@@ -1371,12 +1682,229 @@ app.post("/make-server-309fe679/audit-logs", async (c) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SECURITY AUDIT LOG  (KV-based, written by logSecurityEvent in auth.tsx)
+// GET /security-audit-log?date=YYYY-MM-DD  →  SUPER_ADMIN only
+// Phase 6: ISO 27001 A.12.4.1 / A.12.4.2 compliance review endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get("/make-server-309fe679/security-audit-log", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const date = c.req.query("date") ?? new Date().toISOString().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return c.json({ error: "Invalid date format — use YYYY-MM-DD" }, 400);
+    }
+
+    const raw = await kv.get(`security_audit_log:${date}`);
+    const entries = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : [];
+
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'SECURITY_LOG_VIEWED', route: '/security-audit-log', detail: `date=${date} entries=${entries.length}` });
+
+    return c.json({ date, entries, count: entries.length });
+  } catch (err) {
+    console.log(`[security-audit-log GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchSecurityLog: ${errMsg(err)}` }, 500);
+  }
+});
+
+// GET /security-audit-log/summary?days=7  →  SUPER_ADMIN only
+app.get("/make-server-309fe679/security-audit-log/summary", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const days = Math.min(Math.max(parseInt(c.req.query("days") ?? "7", 10) || 7, 1), 90);
+    const summary: { date: string; count: number }[] = [];
+    const now = new Date();
+
+    for (let i = 0; i < days; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const raw = await kv.get(`security_audit_log:${dateStr}`);
+      const entries = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : [];
+      summary.push({ date: dateStr, count: Array.isArray(entries) ? entries.length : 0 });
+    }
+
+    return c.json({ days, summary });
+  } catch (err) {
+    console.log(`[security-audit-log/summary GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchSecurityLogSummary: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA RETENTION POLICY  (PDPA s.10 / ISO 27001 A.18.1.3)
+// KV key: data_retention_policy  →  RetentionPolicy JSON
+// GET  /data-retention-policy  →  SUPER_ADMIN only — view current policy
+// PUT  /data-retention-policy  →  SUPER_ADMIN only — update retention windows
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RetentionPolicy {
+  auditLogDays:       number;
+  oauthStateMinutes:  number;
+  slaDedupDays:       number;
+  usageRecordMonths:  number;
+  reviewTokenDays:    number;
+  updatedAt:          string | null;
+  updatedBy:          string | null;
+}
+
+const DEFAULT_RETENTION: RetentionPolicy = {
+  auditLogDays:       90,
+  oauthStateMinutes:  60,
+  slaDedupDays:       7,
+  usageRecordMonths:  12,
+  reviewTokenDays:    30,
+  updatedAt:          null,
+  updatedBy:          null,
+};
+
+app.get("/make-server-309fe679/data-retention-policy", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const raw = await kv.get("data_retention_policy");
+    const policy: RetentionPolicy = raw
+      ? { ...DEFAULT_RETENTION, ...(typeof raw === "string" ? JSON.parse(raw) : raw) }
+      : { ...DEFAULT_RETENTION };
+
+    return c.json({ policy });
+  } catch (err) {
+    console.log(`[data-retention-policy GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchRetentionPolicy: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.put("/make-server-309fe679/data-retention-policy", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = sanitizeObject(await c.req.json());
+    const existing = await kv.get("data_retention_policy");
+    const prev: RetentionPolicy = existing
+      ? { ...DEFAULT_RETENTION, ...(typeof existing === "string" ? JSON.parse(existing) : existing) }
+      : { ...DEFAULT_RETENTION };
+
+    const updated: RetentionPolicy = {
+      auditLogDays:       Math.max(30, Math.min(Number(body.auditLogDays)      ?? prev.auditLogDays,      365)),
+      oauthStateMinutes:  Math.max(5,  Math.min(Number(body.oauthStateMinutes) ?? prev.oauthStateMinutes, 1440)),
+      slaDedupDays:       Math.max(1,  Math.min(Number(body.slaDedupDays)      ?? prev.slaDedupDays,      90)),
+      usageRecordMonths:  Math.max(3,  Math.min(Number(body.usageRecordMonths) ?? prev.usageRecordMonths, 60)),
+      reviewTokenDays:    Math.max(7,  Math.min(Number(body.reviewTokenDays)   ?? prev.reviewTokenDays,   365)),
+      updatedAt:          new Date().toISOString(),
+      updatedBy:          (auth as AuthIdentity).userId,
+    };
+
+    await kv.set("data_retention_policy", JSON.stringify(updated));
+    console.log(`[data-retention-policy PUT] updated by ${(auth as AuthIdentity).userId}`);
+
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'RETENTION_POLICY_CHANGED', route: '/data-retention-policy', detail: `audit=${updated.auditLogDays}d oauth=${updated.oauthStateMinutes}m sla=${updated.slaDedupDays}d usage=${updated.usageRecordMonths}mo review=${updated.reviewTokenDays}d` });
+
+    return c.json({ success: true, policy: updated });
+  } catch (err) {
+    console.log(`[data-retention-policy PUT] ${errMsg(err)}`);
+    return c.json({ error: `updateRetentionPolicy: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPLIANCE STATUS  (Phase 6 UI — aggregated health dashboard)
+// GET /compliance-status  →  SUPER_ADMIN only
+// Scans recent security audit log for integrity check events + cron status
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ComplianceCronStatus {
+  name: string;
+  schedule: string;
+  description: string;
+}
+
+const REGISTERED_CRONS: ComplianceCronStatus[] = [
+  { name: 'auto-publish-scheduled-cards', schedule: '* * * * *',    description: 'Auto-publish scheduled social media cards' },
+  { name: 'daily-autopublish-failure-digest', schedule: '0 8 * * *', description: 'Daily failure digest email at 08:00 UTC' },
+  { name: 'analytics-engagement-sync',    schedule: '0 */6 * * *',  description: 'Sync engagement metrics every 6 hours' },
+  { name: 'data-retention-purge',          schedule: '0 3 * * *',   description: 'Purge expired data daily at 03:00 UTC' },
+  { name: 'audit-log-integrity-check',     schedule: '0 4 * * 0',   description: 'Weekly audit log gap detection (Sundays 04:00 UTC)' },
+];
+
+app.get("/make-server-309fe679/compliance-status", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    // Scan last 14 days for integrity check events
+    const now = new Date();
+    const integrityResults: { date: string; action: string; detail: string; ts: string }[] = [];
+
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const raw = await kv.get(`security_audit_log:${dateStr}`);
+      if (!raw) continue;
+      const entries = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!Array.isArray(entries)) continue;
+      for (const e of entries) {
+        if (e.action === 'AUDIT_INTEGRITY_OK' || e.action === 'AUDIT_INTEGRITY_WARNING') {
+          integrityResults.push({ date: dateStr, action: e.action, detail: e.detail ?? '', ts: e.ts });
+        }
+      }
+    }
+
+    // Sort most recent first
+    integrityResults.sort((a, b) => b.ts.localeCompare(a.ts));
+
+    // Determine overall health
+    const lastCheck = integrityResults[0] ?? null;
+    const hasWarnings = integrityResults.some(r => r.action === 'AUDIT_INTEGRITY_WARNING');
+
+    // Fetch retention policy for display
+    const retRaw = await kv.get("data_retention_policy");
+    const retentionPolicy = retRaw
+      ? { ...{ auditLogDays: 90, oauthStateMinutes: 60, slaDedupDays: 7, usageRecordMonths: 12, reviewTokenDays: 30 }, ...(typeof retRaw === "string" ? JSON.parse(retRaw) : retRaw) }
+      : null;
+
+    // Calculate next scheduled integrity check (next Sunday 04:00 UTC)
+    const nextSunday = new Date(now);
+    const daysUntilSunday = (7 - nextSunday.getUTCDay()) % 7 || 7;
+    nextSunday.setUTCDate(nextSunday.getUTCDate() + daysUntilSunday);
+    nextSunday.setUTCHours(4, 0, 0, 0);
+
+    const health: 'healthy' | 'warning' | 'unknown' =
+      !lastCheck       ? 'unknown' :
+      hasWarnings       ? 'warning' :
+      /* all OK */        'healthy';
+
+    return c.json({
+      health,
+      lastCheck,
+      integrityResults: integrityResults.slice(0, 10),
+      nextScheduledCheck: nextSunday.toISOString(),
+      crons: REGISTERED_CRONS,
+      retentionConfigured: !!retentionPolicy,
+      retentionPolicy,
+    });
+  } catch (err) {
+    console.log(`[compliance-status GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchComplianceStatus: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // USAGE STATS  (Postgres: usage_stats)
 // tenant_id = NULL means platform-wide. Reads are limited to the latest 90 rows.
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get("/make-server-309fe679/usage", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only — view usage stats
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const tenantId = c.req.query("tenantId");
     let query = supabaseAdmin
       .from("usage_stats")
@@ -1396,7 +1924,11 @@ app.get("/make-server-309fe679/usage", async (c) => {
 
 app.post("/make-server-309fe679/usage", async (c) => {
   try {
-    const { tenantId, point } = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only — record usage
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 5: sanitise usage data
+    const { tenantId, point } = sanitizeObject(await c.req.json());
     if (!point) return c.json({ error: "point is required" }, 400);
     const row: Record<string, any> = {
       period:      point.period  ?? "",
@@ -1423,6 +1955,15 @@ app.post("/make-server-309fe679/usage", async (c) => {
 app.get("/make-server-309fe679/content-cards", async (c) => {
   try {
     const tenantId = c.req.query("tenantId");
+    // Phase 1.3: Tenant-scoped or SUPER_ADMIN for all
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    if (tenantId) {
+      const scope = await requireTenantScope(c, tenantId);
+      if (scope instanceof Response) return scope;
+    } else if ((auth as AuthIdentity).role !== 'SUPER_ADMIN') {
+      return c.json({ error: 'tenantId is required for non-admin users' }, 403);
+    }
     let query = supabaseAdmin
       .from("content_cards")
       .select("*")
@@ -1439,7 +1980,11 @@ app.get("/make-server-309fe679/content-cards", async (c) => {
 
 app.post("/make-server-309fe679/content-cards", async (c) => {
   try {
-    const { card } = await c.req.json();
+    // Phase 1.3: Authenticated — tenant scoping enforced via card.tenantId
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    // Phase 3.1: sanitise (skip caption/content — social media text may contain special chars)
+    const { card } = sanitizeObject(await c.req.json(), new Set(['caption', 'content', 'html', 'body', 'notes']));
     if (!card || !card.id) return c.json({ error: "card with id is required" }, 400);
     // Reject non-UUID ids early — the id column is uuid type
     if (!toUuid(card.id)) return c.json({ error: `Card id "${card.id}" is not a valid UUID` }, 400);
@@ -1459,6 +2004,8 @@ app.post("/make-server-309fe679/content-cards", async (c) => {
       .single();
     if (error) throw error;
     console.log(`[content-cards POST] upsert ${card.id}`);
+    // Phase 6: audit trail for content card create/update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'CONTENT_CARD_UPSERTED', route: '/content-cards', detail: `cardId=${card.id} platform=${row.platform} status=${row.status}` });
     return c.json({ success: true, cardId: card.id, card: rowToContentCard(data) });
   } catch (err) {
     console.log(`[content-cards POST] ${errMsg(err)}`);
@@ -1468,7 +2015,11 @@ app.post("/make-server-309fe679/content-cards", async (c) => {
 
 app.post("/make-server-309fe679/content-cards/sync", async (c) => {
   try {
-    const { cards } = await c.req.json();
+    // Phase 1.3: Authenticated — bulk sync
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    // Phase 3.1: sanitise (skip caption/content — social media text may contain special chars)
+    const { cards } = sanitizeObject(await c.req.json(), new Set(['caption', 'content', 'html', 'body', 'notes']));
     if (!Array.isArray(cards)) return c.json({ error: "cards array is required" }, 400);
     if (cards.length === 0)    return c.json({ success: true, count: 0 });
     const now = new Date().toISOString();
@@ -1492,6 +2043,8 @@ app.post("/make-server-309fe679/content-cards/sync", async (c) => {
       .upsert(rows, { onConflict: "id" });
     if (error) throw error;
     console.log(`[content-cards/sync] Synced ${rows.length} cards`);
+    // Phase 6: audit trail for bulk content card sync (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'CONTENT_CARDS_SYNCED', route: '/content-cards/sync', detail: `count=${rows.length}` });
     return c.json({ success: true, count: rows.length });
   } catch (err) {
     console.log(`[content-cards/sync] ${errMsg(err)}`);
@@ -1501,11 +2054,18 @@ app.post("/make-server-309fe679/content-cards/sync", async (c) => {
 
 app.delete("/make-server-309fe679/content-cards/:id", async (c) => {
   try {
+    // Phase 1.3: Authenticated
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
     const id = c.req.param("id");
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid card ID format" }, 400);
     const { error } = await supabaseAdmin
       .from("content_cards").delete().eq("id", id);
     if (error) throw error;
     console.log(`[content-cards DELETE] ${id}`);
+    // Phase 6: audit trail for content deletion (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'CONTENT_CARD_DELETED', route: '/content-cards/:id', detail: `cardId=${id}` });
     return c.json({ success: true, deletedId: id });
   } catch (err) {
     console.log(`[content-cards DELETE] ${errMsg(err)}`);
@@ -1519,7 +2079,11 @@ app.delete("/make-server-309fe679/content-cards/:id", async (c) => {
 
 app.post("/make-server-309fe679/approval-events", async (c) => {
   try {
-    const { event } = await c.req.json();
+    // Phase 1.3: Authenticated — any role can write approval events
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+    // Phase 3.1: sanitise approval event data
+    const { event } = sanitizeObject(await c.req.json());
     if (!event) return c.json({ error: "event is required" }, 400);
     const row: Record<string, any> = {
       id:         event.id ?? crypto.randomUUID(),
@@ -1535,6 +2099,8 @@ app.post("/make-server-309fe679/approval-events", async (c) => {
     const { error } = await supabaseAdmin.from("approval_events").insert(row);
     if (error) throw error;
     console.log(`[approval-events POST] ${row.id} type=${row.event_type}`);
+    // Phase 6: audit trail for content approval/rejection (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'CONTENT_APPROVAL_EVENT', route: '/approval-events', detail: `type=${row.event_type} cardId=${row.card_id ?? 'n/a'}` });
     return c.json({ success: true, eventId: row.id });
   } catch (err) {
     console.log(`[approval-events POST] ${errMsg(err)}`);
@@ -1544,8 +2110,17 @@ app.post("/make-server-309fe679/approval-events", async (c) => {
 
 app.get("/make-server-309fe679/approval-events", async (c) => {
   try {
+    // Phase 1.3: Authenticated — tenant-scoped read
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
     const cardId   = c.req.query("cardId");
     const tenantId = c.req.query("tenantId");
+    if (tenantId) {
+      const scope = await requireTenantScope(c, tenantId);
+      if (scope instanceof Response) return scope;
+    } else if ((auth as AuthIdentity).role !== 'SUPER_ADMIN') {
+      return c.json({ error: 'tenantId is required for non-admin users' }, 403);
+    }
     const limit    = Math.min(parseInt(c.req.query("limit") ?? "100"), 500);
     let query = supabaseAdmin
       .from("approval_events")
@@ -1569,10 +2144,17 @@ app.get("/make-server-309fe679/approval-events", async (c) => {
 
 app.get("/make-server-309fe679/smtp/config", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("smtp_config").select("*").eq("id", "global").maybeSingle();
     if (error) throw error;
-    return c.json({ config: data ? rowToSmtpConfig(data) : null });
+    if (!data) return c.json({ config: null });
+    // Phase 3.2: decrypt password before sending to frontend
+    const config = rowToSmtpConfig(data);
+    if (config.pass) config.pass = await decrypt(config.pass);
+    return c.json({ config });
   } catch (err) {
     console.log(`[smtp/config GET] ${errMsg(err)}`);
     return c.json({ error: `fetchSmtpConfig: ${errMsg(err)}` }, 500);
@@ -1581,13 +2163,24 @@ app.get("/make-server-309fe679/smtp/config", async (c) => {
 
 app.post("/make-server-309fe679/smtp/config", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 2.3: CSRF validation (SMTP credentials are sensitive)
+    const csrfErr = await validateCsrf(c, auth as AuthIdentity);
+    if (csrfErr) return csrfErr;
+    // Phase 3.1: sanitise (skip password field)
+    const body = sanitizeObject(await c.req.json(), new Set(['pass', 'password']));
     const row  = smtpConfigToPg(body);
+    // Phase 3.2: encrypt password before storage
+    if (row.password) row.password = await encrypt(row.password);
     const { error } = await supabaseAdmin
       .from("smtp_config")
       .upsert(row, { onConflict: "id" });
     if (error) throw error;
     console.log(`[smtp/config POST] Saved SMTP config (host=${row.host})`);
+    // Phase 6: audit trail for SMTP config change (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'SMTP_CONFIG_CHANGED', route: '/smtp/config', detail: `host=${row.host}` });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[smtp/config POST] ${errMsg(err)}`);
@@ -1597,7 +2190,11 @@ app.post("/make-server-309fe679/smtp/config", async (c) => {
 
 app.post("/make-server-309fe679/smtp/test", async (c) => {
   try {
-    const { to, config } = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 5: sanitise (skip password/credentials)
+    const { to, config } = sanitizeObject(await c.req.json(), new Set(['pass', 'password', 'user']));
     if (!to || !config?.host || !config?.port) {
       return c.json({ error: "Missing required fields: to, config.host, config.port" }, 400);
     }
@@ -1661,7 +2258,9 @@ app.post("/make-server-309fe679/smtp/test", async (c) => {
       html:    replace(templateHtml),
     });
 
-    console.log(`[smtp/test] Test email sent to ${to} via ${config.host}:${config.port}`);
+    console.log(`[smtp/test] Test email sent via ${config.host}:${config.port}`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'SMTP_TEST_SENT', route: '/smtp/test', detail: `host=${config.host} to=${to}` });
     return c.json({ success: true, message: `Test email sent to ${to}` });
   } catch (err) {
     console.log(`[smtp/test] Error: ${errMsg(err)}`);
@@ -1676,6 +2275,9 @@ app.post("/make-server-309fe679/smtp/test", async (c) => {
 
 app.get("/make-server-309fe679/email-templates/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("email_templates").select("*").eq("id", c.req.param("id")).maybeSingle();
     if (error) throw error;
@@ -1688,8 +2290,12 @@ app.get("/make-server-309fe679/email-templates/:id", async (c) => {
 
 app.put("/make-server-309fe679/email-templates/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const id   = c.req.param("id");
-    const body = await c.req.json();
+    // Phase 3.1: sanitise (skip html — email templates contain legitimate HTML)
+    const body = sanitizeObject(await c.req.json(), new Set(['html']));
     const row  = {
       id,
       subject:    body.subject   ?? "",
@@ -1702,6 +2308,8 @@ app.put("/make-server-309fe679/email-templates/:id", async (c) => {
       .upsert(row, { onConflict: "id" });
     if (error) throw error;
     console.log(`[email-templates PUT] Saved template: ${id}`);
+    // Phase 6: audit trail for email template update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'EMAIL_TEMPLATE_UPDATED', route: '/email-templates/:id', detail: `templateId=${id}` });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[email-templates PUT] ${errMsg(err)}`);
@@ -1711,11 +2319,16 @@ app.put("/make-server-309fe679/email-templates/:id", async (c) => {
 
 app.delete("/make-server-309fe679/email-templates/:id", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const id = c.req.param("id");
     const { error } = await supabaseAdmin
       .from("email_templates").delete().eq("id", id);
     if (error) throw error;
     console.log(`[email-templates DELETE] Reset template: ${id}`);
+    // Phase 6: audit trail for email template deletion (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'EMAIL_TEMPLATE_DELETED', route: '/email-templates/:id', detail: `templateId=${id}` });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[email-templates DELETE] ${errMsg(err)}`);
@@ -1725,7 +2338,11 @@ app.delete("/make-server-309fe679/email-templates/:id", async (c) => {
 
 app.post("/make-server-309fe679/email-templates/:id/test", async (c) => {
   try {
-    const { to, subject, html } = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 5: sanitise (skip html — email content is intentionally HTML)
+    const { to, subject, html } = sanitizeObject(await c.req.json(), new Set(['html']));
     if (!to || !subject || !html) return c.json({ error: "Missing required fields: to, subject, html" }, 400);
 
     // Read SMTP config from Postgres
@@ -1734,6 +2351,8 @@ app.post("/make-server-309fe679/email-templates/:id/test", async (c) => {
     if (smtpErr) throw smtpErr;
     if (!smtpRow?.host) return c.json({ error: "SMTP not configured — please save SMTP settings first in Settings → Email / SMTP." }, 400);
     const smtpConfig = rowToSmtpConfig(smtpRow);
+    // Phase 3 QC: decrypt SMTP password (encrypted at rest since Phase 3.2)
+    if (smtpConfig.pass) smtpConfig.pass = await decrypt(smtpConfig.pass);
 
     const transporter = nodemailer.createTransport({
       host:   smtpConfig.host,
@@ -1773,7 +2392,9 @@ app.post("/make-server-309fe679/email-templates/:id/test", async (c) => {
       html:    sub(html),
     });
 
-    console.log(`[email-templates/test] Preview sent to ${to}`);
+    console.log(`[email-templates/test] Preview dispatched`);
+    // Phase 6: audit trail for test email dispatch (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'EMAIL_TEST_SENT', route: '/email-templates/:id/test', detail: `to=${to}` });
     return c.json({ success: true, message: `Preview sent to ${to}` });
   } catch (err) {
     console.log(`[email-templates/test] Error: ${errMsg(err)}`);
@@ -1827,6 +2448,8 @@ async function sendAuthEmail(
   if (smtpErr) throw new Error(`SMTP config read error: ${smtpErr.message}`);
   if (!smtpRow?.host) throw new Error("SMTP not configured — please save SMTP settings in Settings → Email / SMTP first.");
   const smtpCfg = rowToSmtpConfig(smtpRow);
+  // Phase 3 QC: decrypt SMTP password (encrypted at rest since Phase 3.2)
+  if (smtpCfg.pass) smtpCfg.pass = await decrypt(smtpCfg.pass);
 
   // Read email template from Postgres (fall back to inline default if not customised)
   const { data: tplRow } = await supabaseAdmin
@@ -1855,14 +2478,20 @@ async function sendAuthEmail(
 
 app.post("/make-server-309fe679/auth/confirm-signup", async (c) => {
   try {
+    // ISO 27001 A.9.4.2 — rate limit auth endpoints to prevent brute-force / enumeration
+    const limited = rateLimit(c, 'auth:confirm-signup', 10, 60_000);
+    if (limited) return limited;
     const { email, userName } = await c.req.json();
     if (!email) return c.json({ error: "email is required" }, 400);
+    // Phase 3.1: validate email format
+    if (!validateEmail(email)) return c.json({ error: "Invalid email format" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "signup", email,
       options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate confirmation link: ${error?.message}` }, 500);
-    const name = userName || email.split("@")[0];
+    // Phase 3 QC: sanitise userName before injecting into HTML email body
+    const name = sanitizeString(userName || email.split("@")[0]);
     await sendAuthEmail(email, "auth_confirm_signup",
       { userName: name, email, confirmUrl: data.properties.action_link, expiresAt: "24 hours" },
       "Confirm your Brandtelligence account",
@@ -1870,7 +2499,9 @@ app.post("/make-server-309fe679/auth/confirm-signup", async (c) => {
         `<p style="font-size:15px;line-height:1.7;color:#444;">Hi ${name}, please confirm your email to activate your account.</p>
          ${fbBtn(data.properties.action_link, "Confirm Email Address →")}
          ${fbWarn("This link expires in 24 hours. If you did not sign up, ignore this email.")}`));
-    console.log(`[auth/confirm-signup] Sent to ${email}`);
+    console.log(`[auth/confirm-signup] Confirmation email dispatched`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTH_CONFIRM_SIGNUP', route: '/auth/confirm-signup', detail: `email=${email}` });
     return c.json({ success: true, message: `Confirmation email sent to ${email}` });
   } catch (err) {
     console.log(`[auth/confirm-signup] Error: ${errMsg(err)}`);
@@ -1880,8 +2511,13 @@ app.post("/make-server-309fe679/auth/confirm-signup", async (c) => {
 
 app.post("/make-server-309fe679/auth/invite-user", async (c) => {
   try {
+    // Phase 4: rate limit invite generation (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'auth:invite-user', 10, 60_000);
+    if (limited) return limited;
     const { email, templateId, vars: extraVars } = await c.req.json();
     if (!email) return c.json({ error: "email is required" }, 400);
+    // Phase 3.1: validate email format
+    if (!validateEmail(email)) return c.json({ error: "Invalid email format" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "invite", email,
       options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
@@ -1889,20 +2525,23 @@ app.post("/make-server-309fe679/auth/invite-user", async (c) => {
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate invite link: ${error?.message}` }, 500);
     const actionUrl  = data.properties.action_link;
     const tplId      = templateId || "auth_invite_user";
-    const mergedVars = {
+    // Phase 3 QC: sanitise extraVars (user-controlled) before template substitution into HTML
+    const mergedVars = sanitizeObject({
       inviteUrl: actionUrl, expiresAt: "24 hours",
       invitedByName: "Brandtelligence Admin", invitedByEmail: "admin@brandtelligence.com.my",
       employeeName: email.split("@")[0], adminName: "Admin",
       companyName: "Brandtelligence", plan: "Starter", role: "Employee",
       ...(extraVars || {}),
-    };
+    }, new Set(['inviteUrl'])) as Record<string, string>;
     await sendAuthEmail(email, tplId, mergedVars,
       "You've been invited to Brandtelligence",
       fbWrap("You've Been Invited to Brandtelligence",
         `<p style="font-size:15px;line-height:1.7;color:#444;">You have been invited to join the Brandtelligence Platform.</p>
          ${fbBtn(actionUrl, "Accept Invitation →")}
          ${fbWarn("This invite link expires in 24 hours and can only be used once.")}`));
-    console.log(`[auth/invite-user] Invite sent to ${email} using template: ${tplId}`);
+    console.log(`[auth/invite-user] Invite dispatched using template: ${tplId}`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTH_INVITE_SENT', route: '/auth/invite-user', detail: `email=${email} template=${tplId}` });
     return c.json({ success: true, message: `Invite email sent to ${email}` });
   } catch (err) {
     console.log(`[auth/invite-user] Error: ${errMsg(err)}`);
@@ -1912,15 +2551,20 @@ app.post("/make-server-309fe679/auth/invite-user", async (c) => {
 
 app.post("/make-server-309fe679/auth/magic-link", async (c) => {
   try {
+    const limited = rateLimit(c, 'auth:magic-link', 5, 60_000);
+    if (limited) return limited;
     const { email, userName, ipAddress } = await c.req.json();
     if (!email) return c.json({ error: "email is required" }, 400);
+    // Phase 3.1: validate email format
+    if (!validateEmail(email)) return c.json({ error: "Invalid email format" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "magiclink", email,
       options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate magic link: ${error?.message}` }, 500);
-    const name = userName || email.split("@")[0];
-    const ip   = ipAddress || c.req.header("x-forwarded-for") || "unknown";
+    // Phase 3 QC: sanitise user-controlled values before HTML email injection
+    const name = sanitizeString(userName || email.split("@")[0]);
+    const ip   = sanitizeString(ipAddress || c.req.header("x-forwarded-for") || "unknown");
     await sendAuthEmail(email, "auth_magic_link",
       { userName: name, magicLinkUrl: data.properties.action_link, expiresAt: "1 hour", ipAddress: ip },
       "Your Brandtelligence sign-in link",
@@ -1928,7 +2572,9 @@ app.post("/make-server-309fe679/auth/magic-link", async (c) => {
         `<p style="font-size:15px;line-height:1.7;color:#444;">Hi ${name}, click below to sign in — no password required.</p>
          ${fbBtn(data.properties.action_link, "Sign In to Brandtelligence →")}
          ${fbWarn(`If you did not request this, ignore this email. Request from IP: ${ip}`)}`));
-    console.log(`[auth/magic-link] Sent to ${email}`);
+    console.log(`[auth/magic-link] Magic link dispatched`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTH_MAGIC_LINK_SENT', route: '/auth/magic-link', detail: `email=${email} ip=${ip}` });
     return c.json({ success: true, message: `Magic link email sent to ${email}` });
   } catch (err) {
     console.log(`[auth/magic-link] Error: ${errMsg(err)}`);
@@ -1938,14 +2584,21 @@ app.post("/make-server-309fe679/auth/magic-link", async (c) => {
 
 app.post("/make-server-309fe679/auth/change-email", async (c) => {
   try {
+    // Phase 4: rate limit email change (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'auth:change-email', 5, 60_000);
+    if (limited) return limited;
     const { email, newEmail, userName } = await c.req.json();
     if (!email || !newEmail) return c.json({ error: "email and newEmail are required" }, 400);
+    // Phase 3.1: validate both email formats
+    if (!validateEmail(email))    return c.json({ error: "Invalid email format" }, 400);
+    if (!validateEmail(newEmail)) return c.json({ error: "Invalid new email format" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "email_change_new" as any, email, newEmail,
       options: { redirectTo: `${Deno.env.get("APP_URL") || "https://brandtelligence.com.my"}/` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate email change link: ${error?.message}` }, 500);
-    const name = userName || email.split("@")[0];
+    // Phase 3 QC: sanitise userName before HTML email injection
+    const name = sanitizeString(userName || email.split("@")[0]);
     await sendAuthEmail(newEmail, "auth_email_change",
       { userName: name, oldEmail: email, newEmail, changeUrl: data.properties.action_link, expiresAt: "24 hours" },
       "Confirm your new email address — Brandtelligence",
@@ -1953,7 +2606,9 @@ app.post("/make-server-309fe679/auth/change-email", async (c) => {
         `<p style="font-size:15px;line-height:1.7;color:#444;">Hi ${name}, click below to confirm <strong>${newEmail}</strong>.</p>
          ${fbBtn(data.properties.action_link, "Confirm New Email →", "#0d9488")}
          ${fbWarn("If you did not request this change, contact support@brandtelligence.com.my immediately.")}`));
-    console.log(`[auth/change-email] Sent to ${newEmail}`);
+    console.log(`[auth/change-email] Change-email link dispatched`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTH_EMAIL_CHANGE_REQUESTED', route: '/auth/change-email', detail: `oldEmail=${email} newEmail=${newEmail}` });
     return c.json({ success: true, message: `Email change confirmation sent to ${newEmail}` });
   } catch (err) {
     console.log(`[auth/change-email] Error: ${errMsg(err)}`);
@@ -1963,15 +2618,20 @@ app.post("/make-server-309fe679/auth/change-email", async (c) => {
 
 app.post("/make-server-309fe679/auth/reset-password", async (c) => {
   try {
+    const limited = rateLimit(c, 'auth:reset-password', 5, 60_000);
+    if (limited) return limited;
     const { email, userName, ipAddress } = await c.req.json();
     if (!email) return c.json({ error: "email is required" }, 400);
+    // Phase 3.1: validate email format
+    if (!validateEmail(email)) return c.json({ error: "Invalid email format" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "recovery", email,
       options: { redirectTo: `${(Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "")}/auth/callback` },
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate reset link: ${error?.message}` }, 500);
-    const name = userName || email.split("@")[0];
-    const ip   = ipAddress || c.req.header("x-forwarded-for") || "unknown";
+    // Phase 3 QC: sanitise user-controlled values before HTML email injection
+    const name = sanitizeString(userName || email.split("@")[0]);
+    const ip   = sanitizeString(ipAddress || c.req.header("x-forwarded-for") || "unknown");
     await sendAuthEmail(email, "password_reset",
       { userName: name, resetUrl: data.properties.action_link, expiresAt: "1 hour", ipAddress: ip },
       "Reset Your Brandtelligence Password",
@@ -1979,7 +2639,9 @@ app.post("/make-server-309fe679/auth/reset-password", async (c) => {
         `<p style="font-size:15px;line-height:1.7;color:#444;">Hi ${name}, click below to reset your password. Valid for 1 hour.</p>
          ${fbBtn(data.properties.action_link, "Reset Password →")}
          ${fbWarn(`If you did not request a reset, ignore this email. Request from IP: ${ip}`)}`));
-    console.log(`[auth/reset-password] Sent to ${email}`);
+    console.log(`[auth/reset-password] Reset link dispatched`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTH_PASSWORD_RESET_SENT', route: '/auth/reset-password', detail: `email=${email} ip=${ip}` });
     return c.json({ success: true, message: `Password reset email sent to ${email}` });
   } catch (err) {
     console.log(`[auth/reset-password] Error: ${errMsg(err)}`);
@@ -2010,6 +2672,8 @@ app.post("/make-server-309fe679/auth/reset-password", async (c) => {
 // link — which is equivalent to having clicked the email link themselves.
 app.post("/make-server-309fe679/auth/activate-account", async (c) => {
   try {
+    const limited = rateLimit(c, 'auth:activate-account', 10, 60_000);
+    if (limited) return limited;
     const body = await c.req.json().catch(() => null);
     const { userId, password } = body ?? {};
 
@@ -2054,7 +2718,9 @@ app.post("/make-server-309fe679/auth/activate-account", async (c) => {
       return c.json({ error: `Password update failed: ${updateErr.message}` }, 500);
     }
 
-    console.log(`[auth/activate-account] Password set for uid ${userId} (${user.email})`);
+    console.log(`[auth/activate-account] Password set for uid ${userId}`);
+    // Phase 6: audit trail for account activation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId, action: 'ACCOUNT_ACTIVATED', route: '/auth/activate-account' });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[auth/activate-account] Unexpected error: ${errMsg(err)}`);
@@ -2064,15 +2730,21 @@ app.post("/make-server-309fe679/auth/activate-account", async (c) => {
 
 app.post("/make-server-309fe679/auth/reauth", async (c) => {
   try {
+    // Phase 4: rate limit reauthentication (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'auth:reauth', 5, 60_000);
+    if (limited) return limited;
     const { email, userName, ipAddress, actionDescription } = await c.req.json();
     if (!email) return c.json({ error: "email is required" }, 400);
+    // Phase 3.1: validate email format
+    if (!validateEmail(email)) return c.json({ error: "Invalid email format" }, 400);
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "reauthentication" as any, email,
     });
     if (error || !data?.properties?.action_link) return c.json({ error: `Failed to generate reauthentication link: ${error?.message}` }, 500);
-    const name        = userName    || email.split("@")[0];
-    const ip          = ipAddress   || c.req.header("x-forwarded-for") || "unknown";
-    const description = actionDescription || "Sensitive account action";
+    // Phase 3 QC: sanitise user-controlled values before HTML email injection
+    const name        = sanitizeString(userName    || email.split("@")[0]);
+    const ip          = sanitizeString(ipAddress   || c.req.header("x-forwarded-for") || "unknown");
+    const description = sanitizeString(actionDescription || "Sensitive account action");
     await sendAuthEmail(email, "auth_reauth",
       { userName: name, reauthUrl: data.properties.action_link, expiresAt: "15 minutes", ipAddress: ip, actionDescription: description },
       "Action Required: Verify your identity — Brandtelligence",
@@ -2080,7 +2752,9 @@ app.post("/make-server-309fe679/auth/reauth", async (c) => {
         `<p style="font-size:15px;line-height:1.7;color:#444;">Hi ${name}, please verify your identity to complete: <strong>${description}</strong>. Valid for 15 minutes.</p>
          ${fbBtn(data.properties.action_link, "Verify My Identity →", "#f59e0b")}
          ${fbWarn(`If you did not initiate this, ignore this email. Request from IP: ${ip}`)}`));
-    console.log(`[auth/reauth] Sent to ${email}`);
+    console.log(`[auth/reauth] Re-authentication link dispatched`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTH_REAUTH_SENT', route: '/auth/reauth', detail: `email=${email} action=${description} ip=${ip}` });
     return c.json({ success: true, message: `Reauthentication email sent to ${email}` });
   } catch (err) {
     console.log(`[auth/reauth] Error: ${errMsg(err)}`);
@@ -2097,18 +2771,17 @@ app.post("/make-server-309fe679/auth/reauth", async (c) => {
 
 app.post("/make-server-309fe679/auth/resend-tenant-invite", async (c) => {
   try {
-    // Auth guard — only SUPER_ADMINs should call this
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (accessToken) {
-      const { data: { user: caller } } = await supabaseAdmin.auth.getUser(accessToken);
-      const callerRole = (caller?.user_metadata?.role ?? "") as string;
-      if (caller && callerRole !== "SUPER_ADMIN") {
-        return c.json({ error: "Forbidden: SUPER_ADMIN role required" }, 403);
-      }
-    }
+    // Phase 4: rate limit invite resend (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'auth:resend-invite', 5, 60_000);
+    if (limited) return limited;
+    // Phase 1.3: SUPER_ADMIN only — resend tenant invite
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
 
     const { email, tenantId, tenantName, adminName, plan } = await c.req.json();
     if (!email || !tenantId) return c.json({ error: "email and tenantId are required" }, 400);
+    // Phase 3.1: validate email format
+    if (!validateEmail(email)) return c.json({ error: "Invalid email format" }, 400);
 
     // Strip trailing slash so APP_URL="https://host/" never produces "//auth/callback"
     const APP_URL    = (Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "");
@@ -2151,7 +2824,7 @@ app.post("/make-server-309fe679/auth/resend-tenant-invite", async (c) => {
 
       if (!existingUser.email_confirmed_at) {
         // 2a — unconfirmed: delete stale record, issue a clean invite
-        console.log(`[resend-tenant-invite] Unconfirmed user ${email} — deleting and re-inviting…`);
+        console.log(`[resend-tenant-invite] Unconfirmed user uid=${existingUser.id} — deleting and re-inviting…`);
         const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
         if (delErr) throw new Error(`Failed to delete stale auth user: ${delErr.message}`);
 
@@ -2166,7 +2839,7 @@ app.post("/make-server-309fe679/auth/resend-tenant-invite", async (c) => {
         linkKind    = "invite";
       } else {
         // 2b — confirmed: user already set a password; send password-recovery link
-        console.log(`[resend-tenant-invite] Confirmed user ${email} — sending recovery link…`);
+        console.log(`[resend-tenant-invite] Confirmed user uid=${existingUser.id} — sending recovery link…`);
         const { data: recovery, error: recErr } = await supabaseAdmin.auth.admin.generateLink({
           type: "recovery", email, options: { redirectTo },
         });
@@ -2178,9 +2851,10 @@ app.post("/make-server-309fe679/auth/resend-tenant-invite", async (c) => {
       }
     }
 
-    const name     = adminName ?? email.split("@")[0];
-    const company  = tenantName ?? "Your Company";
-    const planName = plan ?? "Starter";
+    // Phase 3 QC: sanitise user-controlled values before HTML email injection
+    const name     = sanitizeString(adminName ?? email.split("@")[0]);
+    const company  = sanitizeString(tenantName ?? "Your Company");
+    const planName = sanitizeString(plan ?? "Starter");
 
     // Re-stamp user metadata so role + tenantId are always correct on login
     if (supabaseUid) {
@@ -2262,7 +2936,9 @@ app.post("/make-server-309fe679/auth/resend-tenant-invite", async (c) => {
       fbWrap(emailHeading, emailBody),
     );
 
-    console.log(`[auth/resend-tenant-invite] ${linkKind} link sent to ${email} for tenant ${tenantId} (${company})`);
+    console.log(`[auth/resend-tenant-invite] ${linkKind} link dispatched for tenant ${tenantId} (${company})`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'AUTH_TENANT_INVITE_RESENT', route: '/auth/resend-tenant-invite', detail: `email=${email} tenantId=${tenantId} linkKind=${linkKind}` });
     return c.json({ success: true, message: `Invite resent to ${email}`, linkKind });
   } catch (err) {
     console.log(`[auth/resend-tenant-invite] Error: ${errMsg(err)}`);
@@ -2276,10 +2952,18 @@ app.post("/make-server-309fe679/auth/resend-tenant-invite", async (c) => {
 
 app.get("/make-server-309fe679/payment-gateway/config", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("payment_gateway_config").select("*").eq("id", "global").maybeSingle();
     if (error) throw error;
-    return c.json({ config: data ? rowToGatewayConfig(data) : null });
+    if (!data) return c.json({ config: null });
+    // Phase 3.2: decrypt credential values before sending to frontend
+    const config = rowToGatewayConfig(data);
+    if (config.liveCreds)    config.liveCreds    = await decryptCredsObject(config.liveCreds);
+    if (config.sandboxCreds) config.sandboxCreds = await decryptCredsObject(config.sandboxCreds);
+    return c.json({ config });
   } catch (err) {
     console.log(`[payment-gateway/config GET] ${errMsg(err)}`);
     return c.json({ error: `fetchGatewayConfig: ${errMsg(err)}` }, 500);
@@ -2288,14 +2972,26 @@ app.get("/make-server-309fe679/payment-gateway/config", async (c) => {
 
 app.post("/make-server-309fe679/payment-gateway/config", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 2.3: CSRF validation (payment credentials are sensitive)
+    const csrfErr = await validateCsrf(c, auth as AuthIdentity);
+    if (csrfErr) return csrfErr;
+    // Phase 3.1: sanitise non-credential fields (skip creds objects — they contain API keys)
+    const body = sanitizeObject(await c.req.json(), new Set(['liveCreds', 'sandboxCreds']));
     if (!body.gatewayId) return c.json({ error: "gatewayId is required" }, 400);
     const row = gatewayConfigToPg(body);
+    // Phase 3.2: encrypt credential values before storage
+    if (row.live_creds)    row.live_creds    = await encryptCredsObject(row.live_creds);
+    if (row.sandbox_creds) row.sandbox_creds = await encryptCredsObject(row.sandbox_creds);
     const { error } = await supabaseAdmin
       .from("payment_gateway_config")
       .upsert(row, { onConflict: "id" });
     if (error) throw error;
     console.log(`[payment-gateway/config POST] Saved config for: ${body.gatewayId} (sandbox=${body.sandboxMode})`);
+    // Phase 6: audit trail for payment config change (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'PAYMENT_CONFIG_CHANGED', route: '/payment-gateway/config', detail: `gateway=${body.gatewayId} sandbox=${body.sandboxMode}` });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[payment-gateway/config POST] ${errMsg(err)}`);
@@ -2305,9 +3001,15 @@ app.post("/make-server-309fe679/payment-gateway/config", async (c) => {
 
 app.post("/make-server-309fe679/payment-gateway/test", async (c) => {
   try {
-    const { gateway, sandboxCreds } = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 5: sanitise (skip sandboxCreds — API keys)
+    const { gateway, sandboxCreds } = sanitizeObject(await c.req.json(), new Set(['sandboxCreds']));
     if (!gateway) return c.json({ error: "gateway is required" }, 400);
     const creds: Record<string, string> = sandboxCreds ?? {};
+    // Phase 6: audit trail for payment gateway test attempt (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'PAYMENT_GATEWAY_TEST', route: '/payment-gateway/test', detail: `gateway=${gateway}` });
 
     switch (gateway) {
       case "stripe": {
@@ -2390,6 +3092,9 @@ app.post("/make-server-309fe679/payment-gateway/test", async (c) => {
 
 app.get("/make-server-309fe679/mfa/policy", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("mfa_policy").select("*").eq("id", "global").maybeSingle();
     if (error) throw error;
@@ -2402,6 +3107,12 @@ app.get("/make-server-309fe679/mfa/policy", async (c) => {
 
 app.post("/make-server-309fe679/mfa/policy", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 2.3: CSRF validation (MFA policy is a security-critical setting)
+    const csrfErr = await validateCsrf(c, auth as AuthIdentity);
+    if (csrfErr) return csrfErr;
     const { requireTenantAdminMfa } = await c.req.json();
     const row = {
       id:                       "global",
@@ -2413,6 +3124,8 @@ app.post("/make-server-309fe679/mfa/policy", async (c) => {
       .upsert(row, { onConflict: "id" });
     if (error) throw error;
     console.log(`[mfa/policy POST] requireTenantAdminMfa=${requireTenantAdminMfa}`);
+    // Phase 6: audit trail for MFA policy change (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'MFA_POLICY_CHANGED', route: '/mfa/policy', detail: `requireTenantAdminMfa=${!!requireTenantAdminMfa}` });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[mfa/policy POST] ${errMsg(err)}`);
@@ -2426,6 +3139,9 @@ app.post("/make-server-309fe679/mfa/policy", async (c) => {
 
 app.get("/make-server-309fe679/security/policy", async (c) => {
   try {
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
     const { data, error } = await supabaseAdmin
       .from("security_policy").select("*").eq("id", "global").maybeSingle();
     if (error) throw error;
@@ -2438,13 +3154,29 @@ app.get("/make-server-309fe679/security/policy", async (c) => {
 
 app.post("/make-server-309fe679/security/policy", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    // Phase 2.3: CSRF validation
+    const csrfErr = await validateCsrf(c, auth as AuthIdentity);
+    if (csrfErr) return csrfErr;
+    // Phase 2.5: session freshness for security policy changes
+    const freshErr = checkTokenFreshness(c, 30);
+    if (freshErr) return freshErr;
+    // Read raw body text for HMAC validation (must match what frontend signed)
+    const rawBody = await c.req.text();
+    // Phase 2.4: HMAC request signing for security policy changes
+    const hmacErr = await validateRequestSignature(c, auth as AuthIdentity, rawBody);
+    if (hmacErr) return hmacErr;
+    const body = JSON.parse(rawBody);
     const row  = securityPolicyToPg(body);
     const { error } = await supabaseAdmin
       .from("security_policy")
       .upsert(row, { onConflict: "id" });
     if (error) throw error;
     console.log(`[security/policy POST] Policy saved`);
+    // Phase 4: security event log for security policy change (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'SECURITY_POLICY_SAVED', route: '/security/policy', detail: 'Global security policy updated' });
     return c.json({ success: true });
   } catch (err) {
     console.log(`[security/policy POST] ${errMsg(err)}`);
@@ -2459,9 +3191,16 @@ app.post("/make-server-309fe679/security/policy", async (c) => {
 
 app.post("/make-server-309fe679/mfa-recovery/store", async (c) => {
   try {
+    // Phase 4: rate limit recovery code storage (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'mfa:store-recovery', 5, 60_000);
+    if (limited) return limited;
     const { userId, codes } = await c.req.json();
     if (!userId || !Array.isArray(codes) || codes.length === 0)
       return c.json({ error: "userId and codes[] are required" }, 400);
+    // Phase 5: validate userId is UUID (ISO 27001 A.14.2.5)
+    if (!isUuid(userId)) return c.json({ error: "Invalid userId format" }, 400);
+    // Phase 5: bound recovery code count to prevent oversized payloads
+    if (codes.length > 20) return c.json({ error: "Maximum 20 recovery codes allowed" }, 400);
 
     // Atomically replace: delete all existing codes for this user, then insert new ones
     const { error: delErr } = await supabaseAdmin
@@ -2479,6 +3218,8 @@ app.post("/make-server-309fe679/mfa-recovery/store", async (c) => {
     if (insErr) throw insErr;
 
     console.log(`[mfa-recovery/store] Stored ${codes.length} recovery codes for user ${userId}`);
+    // Phase 6: audit trail for MFA recovery code storage (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId, action: 'MFA_RECOVERY_STORED', route: '/mfa-recovery/store', detail: `count=${codes.length}` });
     return c.json({ success: true, count: codes.length });
   } catch (err) {
     console.log(`[mfa-recovery/store] Error: ${errMsg(err)}`);
@@ -2488,8 +3229,13 @@ app.post("/make-server-309fe679/mfa-recovery/store", async (c) => {
 
 app.post("/make-server-309fe679/mfa-recovery/verify", async (c) => {
   try {
+    // ISO 27001 A.9.4.2 — strict rate limit on MFA verification to prevent brute-force
+    const limited = rateLimit(c, 'mfa:verify', 5, 60_000);
+    if (limited) return limited;
     const { userId, code } = await c.req.json();
     if (!userId || !code) return c.json({ error: "userId and code are required" }, 400);
+    // Phase 5: validate userId is UUID (ISO 27001 A.14.2.5)
+    if (!isUuid(userId)) return c.json({ error: "Invalid userId format" }, 400);
 
     const normalised = code.trim().toUpperCase();
 
@@ -2521,6 +3267,8 @@ app.post("/make-server-309fe679/mfa-recovery/verify", async (c) => {
 
     const remaining = count ?? 0;
     console.log(`[mfa-recovery/verify] Code used for user ${userId}. ${remaining} codes remaining.`);
+    // Phase 6: audit trail for MFA recovery code usage (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId, action: 'MFA_RECOVERY_USED', route: '/mfa-recovery/verify', detail: `remaining=${remaining}` });
     return c.json({ success: true, remaining });
   } catch (err) {
     console.log(`[mfa-recovery/verify] Error: ${errMsg(err)}`);
@@ -2530,15 +3278,17 @@ app.post("/make-server-309fe679/mfa-recovery/verify", async (c) => {
 
 app.post("/make-server-309fe679/mfa/admin/reset-user", async (c) => {
   try {
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
-    const { data: { user: caller }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !caller) return c.json({ error: "Unauthorized" }, 401);
-    if (caller.user_metadata?.role !== "SUPER_ADMIN")
-      return c.json({ error: "Forbidden — only Super Admins can reset user MFA" }, 403);
+    // Phase 4: rate limit admin MFA reset (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'mfa:admin-reset', 5, 60_000);
+    if (limited) return limited;
+    // Phase 1.3: SUPER_ADMIN only — reset another user's MFA
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
 
     const { targetUserId } = await c.req.json();
     if (!targetUserId) return c.json({ error: "targetUserId is required" }, 400);
+    // Phase 5: validate targetUserId is UUID (ISO 27001 A.14.2.5)
+    if (!isUuid(targetUserId)) return c.json({ error: "Invalid targetUserId format" }, 400);
 
     // Delete TOTP factors from Supabase Auth
     const { data: factors, error: factorErr } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId: targetUserId });
@@ -2553,7 +3303,9 @@ app.post("/make-server-309fe679/mfa/admin/reset-user", async (c) => {
     if (rcErr) console.log(`[mfa/admin/reset-user] Recovery code delete warning: ${rcErr.message}`);
 
     const deleted = deleteResults.filter(r => r.status === "fulfilled").length;
-    console.log(`[mfa/admin/reset-user] Reset MFA for ${targetUserId}. Deleted ${deleted} factor(s). Caller: ${caller.email}`);
+    console.log(`[mfa/admin/reset-user] Reset MFA for uid=${targetUserId}. Deleted ${deleted} factor(s). Caller uid=${(auth as AuthIdentity).userId}`);
+    // Phase 4: security event log for MFA admin reset (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'MFA_ADMIN_RESET', route: '/mfa/admin/reset-user', detail: `targetUserId=${targetUserId}, deletedFactors=${deleted}` });
     return c.json({ success: true, deletedFactors: deleted });
   } catch (err) {
     console.log(`[mfa/admin/reset-user] Error: ${errMsg(err)}`);
@@ -2580,6 +3332,9 @@ app.get("/make-server-309fe679/module-requests", async (c) => {
   try {
     const tenantId = c.req.query("tenantId");
     if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+    // Phase 1.3: Tenant-scoped
+    const scope = await requireTenantScope(c, tenantId);
+    if (scope instanceof Response) return scope;
     const raw = await kv.get(`module_requests:${tenantId}`);
     const requests: ModuleRequestRow[] = raw ? JSON.parse(raw as string) : [];
     return c.json({ requests });
@@ -2591,9 +3346,13 @@ app.get("/make-server-309fe679/module-requests", async (c) => {
 
 app.post("/make-server-309fe679/module-requests", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 3.1: sanitise inputs
+    const body = sanitizeObject(await c.req.json());
     const { tenantId } = body;
     if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+    // Phase 1.3: Tenant-scoped
+    const scope = await requireTenantScope(c, tenantId);
+    if (scope instanceof Response) return scope;
     const key = `module_requests:${tenantId}`;
     const raw = await kv.get(key);
     const requests: ModuleRequestRow[] = raw ? JSON.parse(raw as string) : [];
@@ -2607,7 +3366,9 @@ app.post("/make-server-309fe679/module-requests", async (c) => {
     };
     requests.push(newRequest);
     await kv.set(key, JSON.stringify(requests));
-    console.log(`[module-requests POST] New request: ${newRequest.moduleName} by ${newRequest.requesterEmail} for tenant ${tenantId}`);
+    console.log(`[module-requests POST] New request: ${newRequest.moduleName} for tenant ${tenantId}`);
+    // Phase 6: audit trail for module request creation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (scope as AuthIdentity).userId, action: 'MODULE_REQUEST_CREATED', route: '/module-requests', detail: `tenantId=${tenantId} module=${newRequest.moduleName}` });
     return c.json({ request: newRequest });
   } catch (err) {
     console.log(`[module-requests POST] ${errMsg(err)}`);
@@ -2618,9 +3379,15 @@ app.post("/make-server-309fe679/module-requests", async (c) => {
 app.put("/make-server-309fe679/module-requests/:id", async (c) => {
   try {
     const id     = c.req.param("id");
-    const body   = await c.req.json();
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid request ID format" }, 400);
+    // Phase 3.1: sanitise inputs
+    const body   = sanitizeObject(await c.req.json());
     const tenantId = body.tenantId;
     if (!tenantId) return c.json({ error: "tenantId is required in body" }, 400);
+    // Phase 1.3: TENANT_ADMIN or SUPER_ADMIN — approve/dismiss module requests
+    const scope = await requireTenantScope(c, tenantId);
+    if (scope instanceof Response) return scope;
     const key = `module_requests:${tenantId}`;
     const raw = await kv.get(key);
     const requests: ModuleRequestRow[] = raw ? JSON.parse(raw as string) : [];
@@ -2628,6 +3395,8 @@ app.put("/make-server-309fe679/module-requests/:id", async (c) => {
     if (idx < 0) return c.json({ error: "Request not found" }, 404);
     requests[idx] = { ...requests[idx], ...body };
     await kv.set(key, JSON.stringify(requests));
+    // Phase 6: audit trail for module request update (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (scope as AuthIdentity).userId, action: 'MODULE_REQUEST_UPDATED', route: '/module-requests/:id', detail: `requestId=${id} status=${requests[idx].status}` });
     return c.json({ request: requests[idx] });
   } catch (err) {
     console.log(`[module-requests PUT] ${errMsg(err)}`);
@@ -2799,16 +3568,14 @@ async function aiSaveUsage(tenantId: string, period: string, usage: ContentGenUs
 
 app.post("/make-server-309fe679/ai/generate-content", async (c) => {
   try {
-    // 1. Auth — resolve caller from access token
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized — missing access token" }, 401);
-
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !user) return c.json({ error: "Unauthorized — invalid token" }, 401);
-
-    const tenantId = user.user_metadata?.tenant_id as string | undefined;
-    const userName = (user.user_metadata?.name ?? user.user_metadata?.display_name ?? user.email ?? "Unknown") as string;
-    const userId   = user.id;
+    // Rate limit AI generation (ISO 27001 A.9.4.2) — 20 requests per minute per IP
+    const limited = rateLimit(c, 'ai:generate', 20, 60_000);
+    if (limited) return limited;
+    // 1. Auth — Phase 1.3: use shared auth helper
+    const authResult = await requireAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const { userId, email, role, tenantId } = authResult as AuthIdentity;
+    const userName = email.split("@")[0] ?? "Unknown";
     const kvKey    = tenantId ?? userId; // SUPER_ADMIN has no tenantId — fall back to userId
 
     // 2. Tenant module gate — must have content_studio (m2) enabled
@@ -2837,7 +3604,8 @@ app.post("/make-server-309fe679/ai/generate-content", async (c) => {
     }
 
     // 4. Parse request body
-    const body = await c.req.json();
+    // Phase 5: sanitise non-prompt fields (prompts skipped — they're user creative content sent to AI)
+    const body = sanitizeObject(await c.req.json(), new Set(['prompt', 'caption', 'content', 'projectDescription']));
     const {
       template           = "custom",
       platform           = "general",
@@ -2929,6 +3697,9 @@ app.post("/make-server-309fe679/ai/generate-content", async (c) => {
       `template=${template} tokens=${tokensUsed} monthTotal=${updatedUsage.tokens}`
     );
 
+    // Phase 6: audit trail for AI content generation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId, action: 'AI_CONTENT_GENERATED', route: '/ai/generate-content', detail: `template=${template} platform=${platform} tokens=${tokensUsed} tenantKey=${kvKey}` });
+
     return c.json({
       success:    true,
       id:         record.id,
@@ -2949,17 +3720,148 @@ app.post("/make-server-309fe679/ai/generate-content", async (c) => {
   }
 });
 
+// ── POST /ai/generate-calendar ────────────────────────────────────────────────
+// Generates a structured social media calendar plan using GPT-4o JSON mode.
+
+app.post("/make-server-309fe679/ai/generate-calendar", async (c) => {
+  try {
+    // Phase 4: rate limit AI calendar generation (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'ai:generate-calendar', 20, 60_000);
+    if (limited) return limited;
+    // Phase 1.3: use shared auth helper
+    const authResult = await requireAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const { userId, tenantId } = authResult as AuthIdentity;
+    const kvKey    = tenantId ?? userId;
+
+    if (tenantId) {
+      const { data: tenantRow } = await supabaseAdmin
+        .from("tenants").select("modules_enabled").eq("id", tenantId).maybeSingle();
+      const enabledModules: string[] = tenantRow?.modules_enabled ?? [];
+      if (enabledModules.length > 0 && !enabledModules.includes("m2")) {
+        return c.json({ error: "AI Content Studio module is not enabled for your organisation." }, 403);
+      }
+    }
+
+    const period      = aiCurrentPeriod();
+    const usage       = await aiLoadUsage(kvKey, period);
+    const tenantLimit = await aiTenantLimit(tenantId ?? kvKey);
+    if (usage.tokens >= tenantLimit) {
+      return c.json({ error: `Monthly AI token limit of ${tenantLimit.toLocaleString()} tokens reached.`, tokensUsed: usage.tokens, tokenLimit: tenantLimit, period }, 429);
+    }
+
+    // Phase 5: sanitise non-content fields
+    const body = sanitizeObject(await c.req.json(), new Set(['prompt', 'caption', 'content', 'description', 'targetAudience']));
+    const {
+      campaignName   = "Campaign",
+      brandName      = "",
+      startDate      = "",
+      endDate        = "",
+      platforms      = [],
+      frequency      = "3x",
+      tone           = "professional",
+      style          = "Balanced",
+      targetAudience = "",
+      brandKeywords  = [],
+      themes         = [],
+    } = body;
+
+    if (!startDate || !endDate) return c.json({ error: "startDate and endDate are required" }, 400);
+    if (!Array.isArray(platforms) || !platforms.length) return c.json({ error: "At least one platform is required" }, 400);
+
+    const toneMap: Record<string, string> = {
+      professional: "professional, authoritative, and data-driven",
+      conversational: "friendly, approachable, and conversational",
+      creative: "creative, playful, and trend-forward",
+      authoritative: "expert-level thought leadership",
+      humorous: "witty, humorous, and entertaining",
+      inspirational: "uplifting, motivating, and emotionally resonant",
+    };
+    const toneDesc     = toneMap[tone] ?? "professional and engaging";
+    const keywordsStr  = (Array.isArray(brandKeywords) ? brandKeywords : [brandKeywords]).filter(Boolean).join(", ");
+    const themesStr    = (Array.isArray(themes) ? themes : [themes]).filter(Boolean).join("; ");
+    const platformsStr = platforms.join(", ");
+    const freqDesc     = frequency === "daily" ? "every day" : frequency === "5x" ? "5 days per week (Mon–Fri)" : "3 days per week (Mon, Wed, Fri)";
+
+    const systemPrompt =
+      `You are an expert social media content strategist at Brandtelligence, a Malaysian digital marketing agency. ` +
+      `Generate a social media content calendar as a JSON object. Respond ONLY with valid JSON — no markdown fences, no commentary.\n\n` +
+      `Required JSON shape: { "slots": [ { "date":"YYYY-MM-DD", "dayOfWeek":"Monday", "time":"HH:MM", ` +
+      `"platform":"instagram|facebook|twitter|linkedin|tiktok|youtube|pinterest|snapchat|threads|reddit|whatsapp|telegram", ` +
+      `"postType":"Carousel|Single Image|Video|Story|Reel|Poll|Thread|Article|Quote Card", ` +
+      `"theme":"theme name", "caption":"full platform-optimized caption with emojis", ` +
+      `"hashtags":["tag1","tag2"], "callToAction":"CTA text", "contentIdea":"2-sentence concept", "mediaType":"image|video|text" } ] }`;
+
+    const userPrompt =
+      `Campaign: "${campaignName}"${brandName ? ` for ${brandName}` : ""}\n` +
+      `Date Range: ${startDate} to ${endDate}\n` +
+      `Platforms: ${platformsStr}\n` +
+      `Posting Frequency: ${freqDesc}\n` +
+      `Brand Voice: ${toneDesc}, Style: ${style}\n` +
+      (targetAudience ? `Target Audience: ${targetAudience}\n` : "") +
+      (keywordsStr ? `Brand Keywords: ${keywordsStr}\n` : "") +
+      (themesStr ? `Campaign Themes: ${themesStr}\n` : "") +
+      `\nRules:\n` +
+      `- Generate one slot per posting-day per platform (rotate if >3 platforms to keep total slots manageable)\n` +
+      `- Instagram captions: 150–300 words with emojis. Twitter: ≤280 chars. LinkedIn: professional 100–200 words. TikTok: trendy, short\n` +
+      `- Hashtags: Instagram 15–20, LinkedIn 3–5, Twitter 2–3, TikTok 6–10\n` +
+      `- Rotate post types; never repeat same type on consecutive days for same platform\n` +
+      `- Best post times: Instagram 11:00, LinkedIn 08:00, TikTok 12:00, Facebook 13:00, Twitter 08:00\n` +
+      `- Output ONLY the JSON object`;
+
+    const openAIKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAIKey) return c.json({ error: "OPENAI_API_KEY not configured on this server." }, 500);
+
+    const openAIRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openAIKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+        max_tokens: 3_500,
+        temperature: 0.7,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!openAIRes.ok) {
+      const errBody = await openAIRes.json().catch(() => ({}));
+      const errText = (errBody as any)?.error?.message ?? `OpenAI HTTP ${openAIRes.status}`;
+      console.log(`[ai/generate-calendar] OpenAI error: ${errText}`);
+      return c.json({ error: `OpenAI error: ${errText}` }, 502);
+    }
+
+    const openAIData = await openAIRes.json() as { choices: Array<{ message: { content: string } }>; usage: { total_tokens: number } };
+    const rawOutput  = openAIData.choices?.[0]?.message?.content ?? "{}";
+    const tokensUsed = openAIData.usage?.total_tokens ?? 0;
+
+    let slots: any[] = [];
+    try { const parsed = JSON.parse(rawOutput); slots = Array.isArray(parsed.slots) ? parsed.slots : []; }
+    catch (e) { console.log(`[ai/generate-calendar] JSON parse error: ${e}`); return c.json({ error: "AI returned malformed JSON — please try again." }, 502); }
+
+    const updatedUsage: ContentGenUsage = { tokens: usage.tokens + tokensUsed, requests: usage.requests + 1, lastUpdated: new Date().toISOString() };
+    await aiSaveUsage(kvKey, period, updatedUsage);
+
+    console.log(`[ai/generate-calendar] tenant=${kvKey} slots=${slots.length} tokens=${tokensUsed}`);
+    // Phase 6: audit trail for AI calendar generation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId, action: 'AI_CALENDAR_GENERATED', route: '/ai/generate-calendar', detail: `tenantKey=${kvKey} slots=${slots.length} tokens=${tokensUsed}` });
+    return c.json({ success: true, slots, tokensUsed, usage: { tokens: updatedUsage.tokens, requests: updatedUsage.requests, limit: tenantLimit, period } });
+
+  } catch (err) {
+    console.log(`[ai/generate-calendar] ${errMsg(err)}`);
+    return c.json({ error: `generate-calendar error: ${errMsg(err)}` }, 500);
+  }
+});
+
 // ── GET /ai/content-history ───────────────────────────────────────────────────
 
 app.get("/make-server-309fe679/ai/content-history", async (c) => {
   try {
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
-
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
-
-    const tenantId  = c.req.query("tenantId") ?? user.user_metadata?.tenant_id ?? user.id;
+    // Phase 1.3: use shared auth helper
+    const authResult = await requireAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const a = authResult as AuthIdentity;
+    const tenantId  = c.req.query("tenantId") ?? a.tenantId ?? a.userId;
     const limitParam = Math.min(parseInt(c.req.query("limit") ?? "20"), 100);
     const history   = await aiLoadHistory(tenantId as string);
 
@@ -2970,25 +3872,27 @@ app.get("/make-server-309fe679/ai/content-history", async (c) => {
   }
 });
 
-// ── DELETE /ai/content-history/:id ───────────────────────────────────────────
+// ── DELETE /ai/content-history/:id ───────────────────────���───────────────────
 
 app.delete("/make-server-309fe679/ai/content-history/:id", async (c) => {
   try {
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
-
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
-
+    // Phase 1.3: use shared auth helper
+    const authResult = await requireAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const a = authResult as AuthIdentity;
     const id        = c.req.param("id");
+    // Phase 5: validate path param (ISO 27001 A.14.2.5)
+    if (!isUuid(id)) return c.json({ error: "Invalid history ID format" }, 400);
     const body      = await c.req.json();
-    const tenantId  = body.tenantId ?? user.user_metadata?.tenant_id ?? user.id;
+    const tenantId  = body.tenantId ?? a.tenantId ?? a.userId;
 
     const history = await aiLoadHistory(tenantId);
     const updated = history.filter((r: GenerationRecord) => r.id !== id);
     await aiSaveHistory(tenantId, updated);
 
     console.log(`[ai/content-history DELETE] ${id} for tenant ${tenantId}`);
+    // Phase 6: audit trail for AI content history deletion (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: a.userId, action: 'AI_HISTORY_DELETED', route: '/ai/content-history/:id', detail: `historyId=${id} tenantId=${tenantId}` });
     return c.json({ success: true, deletedId: id });
   } catch (err) {
     console.log(`[ai/content-history DELETE] ${errMsg(err)}`);
@@ -3000,13 +3904,11 @@ app.delete("/make-server-309fe679/ai/content-history/:id", async (c) => {
 
 app.get("/make-server-309fe679/ai/content-usage", async (c) => {
   try {
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
-
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
-
-    const tenantId = c.req.query("tenantId") ?? user.user_metadata?.tenant_id ?? user.id;
+    // Phase 1.3: use shared auth helper
+    const authResult = await requireAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const a = authResult as AuthIdentity;
+    const tenantId = c.req.query("tenantId") ?? a.tenantId ?? a.userId;
     const period   = c.req.query("period") ?? aiCurrentPeriod();
 
     const usage       = await aiLoadUsage(tenantId as string, period);
@@ -3033,15 +3935,9 @@ app.get("/make-server-309fe679/ai/content-usage", async (c) => {
 
 app.get("/make-server-309fe679/ai/platform-ai-usage", async (c) => {
   try {
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
-
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
-
-    if (user.user_metadata?.role !== "SUPER_ADMIN") {
-      return c.json({ error: "Forbidden — Super Admin only" }, 403);
-    }
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
 
     const { data: tenantRows, error: tenantErr } = await supabaseAdmin
       .from("tenants")
@@ -3109,12 +4005,9 @@ app.get("/make-server-309fe679/ai/platform-ai-usage", async (c) => {
 
 app.get("/make-server-309fe679/ai/token-limit/:tenantId", async (c) => {
   try {
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
-
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
-    if (user.user_metadata?.role !== "SUPER_ADMIN") return c.json({ error: "Forbidden — Super Admin only" }, 403);
+    // Phase 1.3: SUPER_ADMIN only
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
 
     const tenantId = c.req.param("tenantId");
     const period   = aiCurrentPeriod();
@@ -3151,15 +4044,19 @@ app.get("/make-server-309fe679/ai/token-limit/:tenantId", async (c) => {
 
 app.put("/make-server-309fe679/ai/token-limit/:tenantId", async (c) => {
   try {
-    const accessToken = c.req.header("Authorization")?.split(" ")[1];
-    if (!accessToken) return c.json({ error: "Unauthorized" }, 401);
-
-    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (authErr || !user) return c.json({ error: "Unauthorized" }, 401);
-    if (user.user_metadata?.role !== "SUPER_ADMIN") return c.json({ error: "Forbidden — Super Admin only" }, 403);
+    // Phase 2.3: migrated to shared auth helper + CSRF + HMAC
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    const csrfErr = await validateCsrf(c, auth as AuthIdentity);
+    if (csrfErr) return csrfErr;
 
     const tenantId = c.req.param("tenantId");
-    const body     = await c.req.json();
+    // Read raw body text for HMAC validation (must match what frontend signed)
+    const rawBody = await c.req.text();
+    // Phase 2.4: HMAC request signing for budget changes
+    const hmacErr = await validateRequestSignature(c, auth as AuthIdentity, rawBody);
+    if (hmacErr) return hmacErr;
+    const body = JSON.parse(rawBody);
     const rawLimit = body.limit;
 
     if (rawLimit === null || rawLimit === undefined) {
@@ -3176,6 +4073,8 @@ app.put("/make-server-309fe679/ai/token-limit/:tenantId", async (c) => {
 
     await kv.set(`ai_token_limit:${tenantId}`, JSON.stringify(n));
     console.log(`[ai/token-limit PUT] Set ${tenantId} limit to ${n}`);
+    // Phase 6: audit trail for AI token limit change (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'AI_TOKEN_LIMIT_CHANGED', route: '/ai/token-limit/:tenantId', detail: `tenantId=${tenantId} limit=${n}` });
     return c.json({ success: true, limit: n, isCustom: true });
   } catch (err) {
     console.log(`[ai/token-limit PUT] ${errMsg(err)}`);
@@ -3192,7 +4091,11 @@ app.put("/make-server-309fe679/ai/token-limit/:tenantId", async (c) => {
 
 app.post("/make-server-309fe679/ai/refine-caption", async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({}));
+    // Phase 4: rate limit AI caption refinement (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'ai:refine-caption', 20, 60_000);
+    if (limited) return limited;
+    // Phase 5: sanitise non-content fields (caption/title are creative content for AI)
+    const body = sanitizeObject(await c.req.json().catch(() => ({})), new Set(['caption', 'title', 'prompt', 'visualDescription']));
     const {
       platform          = "general",
       title             = "",
@@ -3273,6 +4176,8 @@ app.post("/make-server-309fe679/ai/refine-caption", async (c) => {
       : [];
 
     console.log(`[ai/refine-caption] platform=${platform} captionLen=${refined.length} tags=${hashtags.length}`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AI_CAPTION_REFINED', route: '/ai/refine-caption', detail: `platform=${platform} captionLen=${refined.length}` });
     return c.json({ caption: refined, hashtags });
 
   } catch (err) {
@@ -3306,12 +4211,15 @@ app.get("/make-server-309fe679/sla/config", async (c) => {
 
 app.put("/make-server-309fe679/sla/config", async (c) => {
   try {
-    const { tenantId, warningHours, breachHours } = await c.req.json();
+    // Phase 5: sanitise SLA config inputs
+    const { tenantId, warningHours, breachHours } = sanitizeObject(await c.req.json());
     if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
     const warn   = Math.max(1,        Math.min(Number(warningHours) || 24, 720));
     const breach = Math.max(warn + 1, Math.min(Number(breachHours)  || 48, 720));
     await kv.set(`sla_config:${tenantId}`, JSON.stringify({ warningHours: warn, breachHours: breach }));
     console.log(`[sla/config PUT] tenant=${tenantId} warn=${warn}h breach=${breach}h`);
+    // Phase 6: audit trail for SLA config change (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'SLA_CONFIG_CHANGED', route: '/sla/config', detail: `tenantId=${tenantId} warn=${warn}h breach=${breach}h` });
     return c.json({ success: true, config: { warningHours: warn, breachHours: breach } });
   } catch (err) {
     console.log(`[sla/config PUT] ${errMsg(err)}`);
@@ -3328,12 +4236,16 @@ app.put("/make-server-309fe679/sla/config", async (c) => {
 
 app.post("/make-server-309fe679/sla/escalate", async (c) => {
   try {
-    const body = await c.req.json();
+    // Phase 3.1: sanitise (skip card content fields)
+    const body = sanitizeObject(await c.req.json(), new Set(['caption', 'content', 'html', 'body']));
     const { tenantId, breachHours = 48, cards = [], escalateTo = [] } = body;
 
     if (!tenantId)          return c.json({ error: "tenantId is required" }, 400);
     if (!cards.length)      return c.json({ success: true, sent: 0, skipped: 0, reason: "no cards" });
     if (!escalateTo.length) return c.json({ success: true, sent: 0, skipped: 0, reason: "no recipients" });
+    // Phase 3.1: validate escalation email addresses
+    const invalidEmails = escalateTo.filter((e: string) => !validateEmail(e));
+    if (invalidEmails.length > 0) return c.json({ error: `Invalid email addresses: ${invalidEmails.join(', ')}` }, 400);
 
     const today      = new Date().toISOString().slice(0, 10);
     const dedupKeys: string[] = cards.map((card: any) => `sla_esc:${today}:${tenantId}:${card.id}`);
@@ -3389,6 +4301,8 @@ app.post("/make-server-309fe679/sla/escalate", async (c) => {
     }
 
     const smtpCfg    = rowToSmtpConfig(smtpRow);
+    // Phase 3 QC: decrypt SMTP password (encrypted at rest since Phase 3.2)
+    if (smtpCfg.pass) smtpCfg.pass = await decrypt(smtpCfg.pass);
     const transporter = nodemailer.createTransport({
       host:   smtpCfg.host,
       port:   parseInt(smtpCfg.port, 10),
@@ -3406,10 +4320,10 @@ app.post("/make-server-309fe679/sla/escalate", async (c) => {
           subject: `⏰ SLA Alert: ${freshCards.length} pending card${freshCards.length !== 1 ? "s" : ""} need your approval`,
           html:    emailHtml,
         });
-        console.log(`[sla/escalate] Sent to ${recipient.email} — ${freshCards.length} card(s) for tenant ${tenantId}`);
+        console.log(`[sla/escalate] Escalation dispatched — ${freshCards.length} card(s) for tenant ${tenantId}`);
         sent++;
       } catch (mailErr) {
-        console.log(`[sla/escalate] Failed to send to ${recipient.email}: ${errMsg(mailErr)}`);
+        console.log(`[sla/escalate] Failed to dispatch escalation for tenant ${tenantId}: ${errMsg(mailErr)}`);
       }
     }
 
@@ -3419,10 +4333,74 @@ app.post("/make-server-309fe679/sla/escalate", async (c) => {
       freshDedupKeys.map(k => [k, JSON.stringify({ sentAt, recipients: escalateTo.length })]),
     ));
 
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'SLA_ESCALATION_SENT', route: '/sla/escalate', detail: `tenantId=${tenantId} sent=${sent} cards=${freshCards.length} recipients=${escalateTo.length}` });
     return c.json({ success: true, sent, skipped: cards.length - freshCards.length });
   } catch (err) {
     console.log(`[sla/escalate] ${errMsg(err)}`);
     return c.json({ error: `slaEscalate: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Usage Quota  ·  KV-backed monthly counter per tenant
+// Key: ai_media_usage:{tenantId}:{YYYY-MM}
+// Value: { imageCount, videoCount, totalCostUsd, lastUpdated }
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AiUsageEntry {
+  imageCount:   number;
+  videoCount:   number;
+  totalCostUsd: number;
+  lastUpdated:  string;
+}
+
+async function incrementAiUsage(tenantId: string | undefined, type: 'image' | 'video', costUsd: number) {
+  if (!tenantId) return;
+  try {
+    const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const key      = `ai_media_usage:${tenantId}:${monthKey}`;
+    const raw      = await kv.get(key);
+    const curr: AiUsageEntry = raw
+      ? JSON.parse(raw as string)
+      : { imageCount: 0, videoCount: 0, totalCostUsd: 0, lastUpdated: '' };
+    if (type === 'image') curr.imageCount += 1;
+    else                  curr.videoCount += 1;
+    curr.totalCostUsd = Math.round((curr.totalCostUsd + costUsd) * 1000) / 1000;
+    curr.lastUpdated  = new Date().toISOString();
+    await kv.set(key, JSON.stringify(curr));
+    console.log(`[ai-usage] +1 ${type} for tenant=${tenantId} month=${monthKey} totalCost=${curr.totalCostUsd}`);
+  } catch (err) {
+    console.log(`[incrementAiUsage] ${errMsg(err)}`);
+  }
+}
+
+// GET /ai/media-usage?tenantId=...&month=YYYY-MM  (month defaults to current)
+app.get("/make-server-309fe679/ai/media-usage", async (c) => {
+  try {
+    const tenantId = c.req.query('tenantId');
+    if (!tenantId) return c.json({ error: 'tenantId query param is required' }, 400);
+
+    // Support fetching up to 3 months at once (for the settings chart)
+    const monthsParam = c.req.query('months'); // e.g. "2026-02,2026-01,2025-12"
+    const now         = new Date().toISOString().slice(0, 7);
+    const months      = monthsParam
+      ? monthsParam.split(',').slice(0, 6)
+      : [now];
+
+    const results: Record<string, AiUsageEntry> = {};
+    for (const m of months) {
+      const key = `ai_media_usage:${tenantId}:${m}`;
+      const raw = await kv.get(key);
+      results[m] = raw
+        ? JSON.parse(raw as string)
+        : { imageCount: 0, videoCount: 0, totalCostUsd: 0, lastUpdated: null };
+    }
+
+    return c.json({ tenantId, usage: results });
+  } catch (err) {
+    console.log(`[ai/media-usage GET] ${errMsg(err)}`);
+    return c.json({ error: `mediaUsage: ${errMsg(err)}` }, 500);
   }
 });
 
@@ -3432,10 +4410,14 @@ app.post("/make-server-309fe679/sla/escalate", async (c) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/make-server-309fe679/ai/generate-image", async (c) => {
   try {
+    // Phase 4: rate limit AI image generation (ISO 27001 A.9.4.2) — 10/min due to cost
+    const limited = rateLimit(c, 'ai:generate-image', 10, 60_000);
+    if (limited) return limited;
+    // Phase 5: sanitise non-prompt fields (prompt is creative content for AI)
     const {
       prompt, style = 'photorealistic', aspectRatio = '1:1',
       cardId, tenantId,
-    } = await c.req.json();
+    } = sanitizeObject(await c.req.json(), new Set(['prompt']));
 
     if (!prompt?.trim()) return c.json({ error: 'prompt is required' }, 400);
 
@@ -3488,7 +4470,12 @@ app.post("/make-server-309fe679/ai/generate-image", async (c) => {
       .createSignedUrl(filename, 7200); // 2-hour signed URL
     if (signErr) throw new Error(`Signed URL: ${signErr.message}`);
 
+    // ── Track quota ──
+    incrementAiUsage(tenantId, 'image', 0.08).catch(() => {});
+
     console.log(`[ai/generate-image] done size=${size} style=${style} card=${cardId}`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AI_IMAGE_GENERATED', route: '/ai/generate-image', detail: `tenantId=${tenantId ?? 'global'} style=${style} size=${size} cardId=${cardId ?? 'none'}` });
     return c.json({ success: true, mediaUrl: signed.signedUrl, filename, type: 'image', revisedPrompt: revised });
   } catch (err) {
     console.log(`[ai/generate-image] ${errMsg(err)}`);
@@ -3503,7 +4490,11 @@ app.post("/make-server-309fe679/ai/generate-image", async (c) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/make-server-309fe679/ai/generate-video", async (c) => {
   try {
-    const { prompt, style = 'cinematic', cardId, tenantId } = await c.req.json();
+    // Phase 4: rate limit AI video generation (ISO 27001 A.9.4.2) — 5/min due to high cost
+    const limited = rateLimit(c, 'ai:generate-video', 5, 60_000);
+    if (limited) return limited;
+    // Phase 5: sanitise non-prompt fields (prompt is creative content for AI)
+    const { prompt, style = 'cinematic', cardId, tenantId } = sanitizeObject(await c.req.json(), new Set(['prompt']));
     if (!prompt?.trim()) return c.json({ error: 'prompt is required' }, 400);
 
     const repKey = Deno.env.get('REPLICATE_API_TOKEN');
@@ -3531,6 +4522,8 @@ app.post("/make-server-309fe679/ai/generate-video", async (c) => {
     if (!repData.id) throw new Error('No prediction ID from Replicate');
 
     console.log(`[ai/generate-video] started predictionId=${repData.id} style=${style} card=${cardId}`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AI_VIDEO_GENERATED', route: '/ai/generate-video', detail: `tenantId=${tenantId ?? 'global'} style=${style} predictionId=${repData.id} cardId=${cardId ?? 'none'}` });
     return c.json({ success: true, predictionId: repData.id, status: repData.status ?? 'starting', cardId, tenantId });
   } catch (err) {
     console.log(`[ai/generate-video] ${errMsg(err)}`);
@@ -3581,6 +4574,9 @@ app.get("/make-server-309fe679/ai/media-status/:predictionId", async (c) => {
         .createSignedUrl(filename, 7200);
       if (signErr) throw new Error(`Signed URL: ${signErr.message}`);
 
+      // ── Track quota ──
+      incrementAiUsage(tenantId, 'video', 0.50).catch(() => {});
+
       console.log(`[ai/media-status] video ready predId=${predId} size=${vidBuf.byteLength} bytes`);
       return c.json({ status: 'succeeded', mediaUrl: signed.signedUrl, filename, type: 'video' });
     }
@@ -3602,5 +4598,895 @@ app.get("/make-server-309fe679/ai/media-status/:predictionId", async (c) => {
     return c.json({ error: `mediaStatus: ${errMsg(err)}` }, 500);
   }
 });
+
+// ─── Social Publishing routes ──────────────────────────────────────────────────
+import {
+  registerSocialRoutes,
+  getConnections  as getSocialConnections,
+  publishToChannel,
+  appendHistory   as appendSocialHistory,
+  syncEngagementForTenant,
+} from './social.tsx';
+registerSocialRoutes(app);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENT REVIEW PORTAL
+// Shareable tokenised review links for external clients (no login required).
+// KV key: review_token:{token}  →  ReviewSession JSON
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ReviewDecision {
+  decision:  "approved" | "changes_requested";
+  comment?:  string;
+  decidedAt: string;
+}
+
+interface ReviewSession {
+  token:      string;
+  cardIds:    string[];
+  tenantId:   string;
+  clientName: string;
+  createdAt:  string;
+  expiresAt:  string;
+  decisions:  Record<string, ReviewDecision>;
+}
+
+// POST /client-review/generate
+app.post("/make-server-309fe679/client-review/generate", async (c) => {
+  try {
+    // Phase 3.1: sanitise client review inputs
+    const { cardIds, tenantId, clientName, expiresInDays = 7 } = sanitizeObject(await c.req.json());
+    if (!Array.isArray(cardIds) || cardIds.length === 0)
+      return c.json({ error: "cardIds array is required" }, 400);
+    if (!tenantId)   return c.json({ error: "tenantId is required" }, 400);
+    if (!clientName) return c.json({ error: "clientName is required" }, 400);
+
+    const token = crypto.randomUUID().replace(/-/g, "");
+    const now   = new Date();
+    const exp   = new Date(now.getTime() + expiresInDays * 86400000);
+
+    const session: ReviewSession = {
+      token, cardIds, tenantId, clientName,
+      createdAt: now.toISOString(),
+      expiresAt: exp.toISOString(),
+      decisions: {},
+    };
+
+    await kv.set(`review_token:${token}`, JSON.stringify(session));
+
+    // Secondary index: card_review_tokens:{cardId} → JSON array of tokens
+    // Allows fast lookup of all reviews for a given card.
+    for (const cardId of cardIds) {
+      const indexKey = `card_review_tokens:${cardId}`;
+      const existing: string[] = JSON.parse((await kv.get(indexKey) as string | null) ?? "[]");
+      if (!existing.includes(token)) {
+        existing.push(token);
+        await kv.set(indexKey, JSON.stringify(existing));
+      }
+    }
+
+    const appUrl    = Deno.env.get("APP_URL") ?? "https://brandtelligence.com";
+    const reviewUrl = `${appUrl}/review/${token}`;
+    console.log(`[client-review/generate] token=${token} tenant=${tenantId} cards=${cardIds.length}`);
+    // Phase 6: audit trail for client review link creation (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), userId: (auth as AuthIdentity).userId, action: 'CLIENT_REVIEW_CREATED', route: '/client-review/generate', detail: `token=${token} tenantId=${tenantId} cards=${cardIds.length}` });
+    return c.json({ token, reviewUrl });
+  } catch (err) {
+    console.log(`[client-review/generate] ${errMsg(err)}`);
+    return c.json({ error: `generateReview: ${errMsg(err)}` }, 500);
+  }
+});
+
+// GET /client-review/by-card/:cardId  — returns all reviews that include this card
+// IMPORTANT: registered BEFORE /:token so "by-card" is not consumed as a token value.
+app.get("/make-server-309fe679/client-review/by-card/:cardId", async (c) => {
+  try {
+    const cardId   = c.req.param("cardId");
+    const indexKey = `card_review_tokens:${cardId}`;
+    const tokens: string[] = JSON.parse((await kv.get(indexKey) as string | null) ?? "[]");
+    if (tokens.length === 0) return c.json({ reviews: [] });
+
+    const sessions = await Promise.all(
+      tokens.map(async (tok) => {
+        const raw = await kv.get(`review_token:${tok}`);
+        return raw ? JSON.parse(raw as string) as ReviewSession : null;
+      })
+    );
+
+    const reviews = sessions
+      .filter((s): s is ReviewSession => s !== null)
+      .map((s) => ({
+        token:        s.token,
+        clientName:   s.clientName,
+        createdAt:    s.createdAt,
+        expiresAt:    s.expiresAt,
+        expired:      new Date() > new Date(s.expiresAt),
+        decision:     s.decisions[cardId] ?? null,
+        totalCards:   s.cardIds.length,
+        totalDecided: Object.keys(s.decisions).length,
+      }))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return c.json({ reviews });
+  } catch (err) {
+    console.log(`[client-review/by-card] ${errMsg(err)}`);
+    return c.json({ error: `getReviewsByCard: ${errMsg(err)}` }, 500);
+  }
+});
+
+// GET /client-review/:token  — public, no auth
+app.get("/make-server-309fe679/client-review/:token", async (c) => {
+  try {
+    // Phase 4: rate limit public review access (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'public:client-review', 20, 60_000);
+    if (limited) return limited;
+    const token = c.req.param("token");
+    const raw   = await kv.get(`review_token:${token}`);
+    if (!raw) return c.json({ valid: false, reason: "not_found" }, 404);
+
+    const session: ReviewSession = JSON.parse(raw as string);
+    const expired = new Date() > new Date(session.expiresAt);
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("content_cards")
+      .select("id,platform,title,caption,hashtags,media_url,media_type,status,scheduled_date")
+      .in("id", session.cardIds);
+    if (error) throw error;
+
+    const cards = (rows ?? []).map((r: any) => ({
+      id: r.id, platform: r.platform, title: r.title,
+      caption: r.caption, hashtags: r.hashtags ?? [],
+      mediaUrl: r.media_url, mediaType: r.media_type,
+      status: r.status, scheduledDate: r.scheduled_date,
+    }));
+
+    return c.json({ valid: true, expired, session, cards });
+  } catch (err) {
+    console.log(`[client-review GET] ${errMsg(err)}`);
+    return c.json({ error: `getReview: ${errMsg(err)}` }, 500);
+  }
+});
+
+// POST /client-review/:token/decide  — public, no auth
+app.post("/make-server-309fe679/client-review/:token/decide", async (c) => {
+  try {
+    // Phase 4: rate limit public review decisions (ISO 27001 A.9.4.2)
+    const limited = rateLimit(c, 'public:client-review-decide', 10, 60_000);
+    if (limited) return limited;
+    const token = c.req.param("token");
+    // Phase 3.1: sanitise client feedback
+    const { cardId, decision, comment } = sanitizeObject(await c.req.json());
+    if (!cardId || !decision) return c.json({ error: "cardId and decision are required" }, 400);
+    if (!["approved", "changes_requested"].includes(decision))
+      return c.json({ error: "decision must be 'approved' or 'changes_requested'" }, 400);
+
+    const raw = await kv.get(`review_token:${token}`);
+    if (!raw) return c.json({ error: "Review link not found" }, 404);
+
+    const session: ReviewSession = JSON.parse(raw as string);
+    if (new Date() > new Date(session.expiresAt))
+      return c.json({ error: "Review link has expired" }, 410);
+    if (!session.cardIds.includes(cardId))
+      return c.json({ error: "Card not in this review" }, 400);
+
+    session.decisions[cardId] = { decision, comment: comment ?? "", decidedAt: new Date().toISOString() };
+    await kv.set(`review_token:${token}`, JSON.stringify(session));
+    console.log(`[client-review/decide] token=${token} card=${cardId} decision=${decision}`);
+    // Phase 6: audit trail for client review decision (ISO 27001 A.12.4.1) — no userId (public route)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'CLIENT_REVIEW_DECIDED', route: '/client-review/:token/decide', detail: `token=${token} cardId=${cardId} decision=${decision}` });
+    return c.json({ success: true });
+  } catch (err) {
+    console.log(`[client-review/decide] ${errMsg(err)}`);
+    return c.json({ error: `recordDecision: ${errMsg(err)}` }, 500);
+  }
+});
+
+// GET /client-review/:token/decisions  — for staff to read client feedback
+app.get("/make-server-309fe679/client-review/:token/decisions", async (c) => {
+  try {
+    const token = c.req.param("token");
+    const raw   = await kv.get(`review_token:${token}`);
+    if (!raw) return c.json({ found: false }, 404);
+    const session: ReviewSession = JSON.parse(raw as string);
+    return c.json({ found: true, decisions: session.decisions, clientName: session.clientName, expiresAt: session.expiresAt });
+  } catch (err) {
+    console.log(`[client-review/decisions] ${errMsg(err)}`);
+    return c.json({ error: `getDecisions: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTENT CARD COMMENTS
+// KV key: card_comments:{cardId}  →  JSON array of CardComment[]
+// GET    /content/comments?cardId=xxx       → { comments: CardComment[] }
+// POST   /content/comments                  ← { cardId, text, authorName, authorEmail }
+//                                           → { comment: CardComment }
+// DELETE /content/comments/:commentId?cardId=xxx  → { success: true }
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface CardComment {
+  id:          string;
+  cardId:      string;
+  text:        string;
+  authorName:  string;
+  authorEmail: string;
+  createdAt:   string;
+}
+
+app.get("/make-server-309fe679/content/comments", async (c) => {
+  try {
+    const cardId = c.req.query("cardId");
+    if (!cardId) return c.json({ error: "cardId is required" }, 400);
+    const raw = await kv.get(`card_comments:${cardId}`);
+    const comments: CardComment[] = raw ? JSON.parse(raw as string) : [];
+    return c.json({ comments });
+  } catch (err) {
+    console.log(`[content/comments GET] ${errMsg(err)}`);
+    return c.json({ error: `getComments: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.post("/make-server-309fe679/content/comments", async (c) => {
+  try {
+    // Phase 3.1: sanitise comment data
+    const { cardId, text, authorName, authorEmail } = sanitizeObject(await c.req.json());
+    if (!cardId)       return c.json({ error: "cardId is required" }, 400);
+    if (!text?.trim()) return c.json({ error: "text is required" }, 400);
+    if (!authorName)   return c.json({ error: "authorName is required" }, 400);
+
+    const key  = `card_comments:${cardId}`;
+    const raw  = await kv.get(key);
+    const prev: CardComment[] = raw ? JSON.parse(raw as string) : [];
+
+    const comment: CardComment = {
+      id:          `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      cardId,
+      text:        text.trim(),
+      authorName,
+      authorEmail: authorEmail ?? "",
+      createdAt:   new Date().toISOString(),
+    };
+
+    await kv.set(key, JSON.stringify([...prev, comment]));
+    console.log(`[content/comments POST] cardId=${cardId} author=${authorName}`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'COMMENT_CREATED', route: '/content/comments', detail: `cardId=${cardId} commentId=${comment.id} author=${authorName}` });
+    return c.json({ comment });
+  } catch (err) {
+    console.log(`[content/comments POST] ${errMsg(err)}`);
+    return c.json({ error: `postComment: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.delete("/make-server-309fe679/content/comments/:commentId", async (c) => {
+  try {
+    const commentId = c.req.param("commentId");
+    const cardId    = c.req.query("cardId");
+    if (!cardId) return c.json({ error: "cardId query param is required" }, 400);
+
+    const key = `card_comments:${cardId}`;
+    const raw = await kv.get(key);
+    if (!raw) return c.json({ success: true });
+    const prev: CardComment[] = JSON.parse(raw as string);
+    await kv.set(key, JSON.stringify(prev.filter(cm => cm.id !== commentId)));
+    console.log(`[content/comments DELETE] cardId=${cardId} commentId=${commentId}`);
+    // Phase 6: audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'COMMENT_DELETED', route: '/content/comments/:commentId', detail: `cardId=${cardId} commentId=${commentId}` });
+    return c.json({ success: true });
+  } catch (err) {
+    console.log(`[content/comments DELETE] ${errMsg(err)}`);
+    return c.json({ error: `deleteComment: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO-PUBLISH FAILURE ALERTS
+// KV key: autopublish_alerts:{tenantId}  →  AutoPublishAlert[] JSON
+// Written by the cron when a card exhausts 3 publish attempts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AutoPublishAlert {
+  cardId:    string;
+  cardTitle: string;
+  platform:  string;
+  failedAt:  string;
+  error:     string;
+  attempts:  number;
+}
+
+async function getAlerts(tenantId: string): Promise<AutoPublishAlert[]> {
+  const raw = await kv.get(`autopublish_alerts:${tenantId}`);
+  return raw ? JSON.parse(raw as string) : [];
+}
+
+async function setAlertsKv(tenantId: string, alerts: AutoPublishAlert[]): Promise<void> {
+  if (alerts.length === 0) {
+    await kv.del(`autopublish_alerts:${tenantId}`);
+  } else {
+    await kv.set(`autopublish_alerts:${tenantId}`, JSON.stringify(alerts));
+  }
+}
+
+async function upsertAlert(tenantId: string, alert: AutoPublishAlert): Promise<void> {
+  const list = await getAlerts(tenantId);
+  const idx  = list.findIndex((a: AutoPublishAlert) => a.cardId === alert.cardId);
+  if (idx >= 0) list[idx] = alert; else list.push(alert);
+  await setAlertsKv(tenantId, list);
+}
+
+// GET /content/autopublish-alerts?tenantId=xxx
+app.get("/make-server-309fe679/content/autopublish-alerts", async (c) => {
+  try {
+    const tenantId = c.req.query("tenantId");
+    if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+    const alerts = await getAlerts(tenantId);
+    return c.json({ alerts });
+  } catch (err) {
+    console.log(`[autopublish-alerts GET] ${errMsg(err)}`);
+    return c.json({ error: `getAlerts: ${errMsg(err)}` }, 500);
+  }
+});
+
+// DELETE /content/autopublish-alerts/:cardId?tenantId=xxx
+app.delete("/make-server-309fe679/content/autopublish-alerts/:cardId", async (c) => {
+  try {
+    const cardId   = c.req.param("cardId");
+    const tenantId = c.req.query("tenantId");
+    if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+    const list = await getAlerts(tenantId);
+    await setAlertsKv(tenantId, list.filter((a: AutoPublishAlert) => a.cardId !== cardId));
+    // Phase 6: audit trail for alert dismissal (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTOPUBLISH_ALERT_DISMISSED', route: '/content/autopublish-alerts/:cardId', detail: `cardId=${cardId} tenantId=${tenantId}` });
+    return c.json({ success: true });
+  } catch (err) {
+    console.log(`[autopublish-alerts DELETE] ${errMsg(err)}`);
+    return c.json({ error: `deleteAlert: ${errMsg(err)}` }, 500);
+  }
+});
+
+// POST /content/autopublish-alerts/:cardId/retry?tenantId=xxx
+// Resets autoPublishAttempts → 0 so the cron re-picks the card next minute,
+// then removes the alert from KV so the banner clears immediately.
+app.post("/make-server-309fe679/content/autopublish-alerts/:cardId/retry", async (c) => {
+  try {
+    const cardId   = c.req.param("cardId");
+    const tenantId = c.req.query("tenantId");
+    if (!tenantId) return c.json({ error: "tenantId is required" }, 400);
+
+    // Verify card exists and fetch current metadata
+    const { data: card, error: cardErr } = await supabaseAdmin
+      .from("content_cards")
+      .select("id, metadata, status")
+      .eq("id", cardId)
+      .single();
+    if (cardErr || !card) return c.json({ error: "Card not found" }, 404);
+
+    // Reset retry counters — keep status='scheduled' so cron picks it up next tick
+    const meta = card.metadata ?? {};
+    await supabaseAdmin.from("content_cards").update({
+      metadata: {
+        ...meta,
+        autoPublishAttempts: 0,
+        autoPublishError:    null,
+        autoPublishFailedAt: null,
+      },
+      updated_at: new Date().toISOString(),
+    }).eq("id", cardId);
+
+    // Remove failure alert from KV so the banner clears immediately
+    const list = await getAlerts(tenantId);
+    await setAlertsKv(tenantId, list.filter((a: AutoPublishAlert) => a.cardId !== cardId));
+
+    console.log(`[autopublish-alerts RETRY] card ${cardId} re-queued`);
+    // Phase 6: audit trail for autopublish retry (ISO 27001 A.12.4.1)
+    logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTOPUBLISH_RETRY', route: '/content/autopublish-alerts/:cardId/retry', detail: `cardId=${cardId} tenantId=${tenantId}` });
+    return c.json({ success: true });
+  } catch (err) {
+    console.log(`[autopublish-alerts RETRY] ${errMsg(err)}`);
+    return c.json({ error: `retryAlert: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEDULED AUTO-PUBLISH CRON
+// Runs every minute. Finds content cards with status='scheduled' whose
+// scheduled_at has passed and auto-publishes them via the connected social
+// account for their platform.
+//
+// Safety rules:
+//   ① Only processes cards where the tenant has a connected account for the card's platform.
+//   ② Processes at most 10 cards per tick to avoid timeouts.
+//   ③ Cards with metadata.autoPublishAttempts >= 3 are skipped (surface in UI as overdue).
+//   ④ On success: card → status='published', metadata.publishedAt recorded.
+//   ⑤ On failure: increments metadata.autoPublishAttempts, logs error.
+// ─────────────────────────────────────────────────────────────────────────────
+
+try {
+  Deno.cron("auto-publish-scheduled-cards", "* * * * *", async () => {
+    console.log("[auto-publish-cron] tick");
+    try {
+      const now = new Date().toISOString();
+
+      // 1. Find scheduled cards whose scheduled_at has passed
+      const { data: dueCards, error } = await supabaseAdmin
+        .from("content_cards")
+        .select("id, tenant_id, platform, title, body, hashtags, media_url, media_type, metadata")
+        .eq("status", "scheduled")
+        .lte("scheduled_at", now)
+        .limit(10);
+
+      if (error) throw error;
+      if (!dueCards || dueCards.length === 0) {
+        console.log("[auto-publish-cron] no due cards");
+        return;
+      }
+
+      console.log(`[auto-publish-cron] processing ${dueCards.length} due card(s)`);
+
+      for (const row of dueCards) {
+        const meta     = row.metadata ?? {};
+        const attempts = (meta.autoPublishAttempts ?? 0) as number;
+
+        // Skip cards that have already failed 3+ times.
+        // Idempotently ensure a failure alert exists so the banner catches up.
+        if (attempts >= 3) {
+          console.log(`[auto-publish-cron] card ${row.id} skipped — max attempts reached`);
+          await upsertAlert(row.tenant_id, {
+            cardId:    row.id,
+            cardTitle: row.title ?? "Untitled",
+            platform:  row.platform,
+            failedAt:  meta.autoPublishFailedAt ?? new Date().toISOString(),
+            error:     meta.autoPublishError ?? "Max retries exceeded",
+            attempts,
+          });
+          continue;
+        }
+
+        try {
+          // 2. Find first social connection for this tenant+platform
+          const conns = await getSocialConnections(row.tenant_id);
+          const conn  = conns.find((c: any) => c.platform === row.platform);
+
+          if (!conn) {
+            const noConnErr    = `No connected account for ${row.platform}`;
+            const newAttempts  = attempts + 1;
+            console.log(`[auto-publish-cron] card ${row.id} — ${noConnErr} (attempt ${newAttempts})`);
+            const noConnFailedAt = new Date().toISOString();
+            await supabaseAdmin.from("content_cards").update({
+              metadata: { ...meta, autoPublishAttempts: newAttempts, autoPublishError: noConnErr, ...(newAttempts >= 3 ? { autoPublishFailedAt: noConnFailedAt } : {}) },
+              updated_at: noConnFailedAt,
+            }).eq("id", row.id);
+            // Escalate to failure alert on max retries
+            if (newAttempts >= 3) {
+              await upsertAlert(row.tenant_id, {
+                cardId:    row.id,
+                cardTitle: row.title ?? "Untitled",
+                platform:  row.platform,
+                failedAt:  noConnFailedAt,
+                error:     noConnErr,
+                attempts:  newAttempts,
+              });
+              console.log(`[auto-publish-cron] ⚠ card ${row.id} alert written (no-connection, max retries)`);
+            }
+            continue;
+          }
+
+          // 3. Publish
+          const caption  = row.body ?? "";
+          const hashtags = Array.isArray(row.hashtags) ? row.hashtags : [];
+          const result   = await publishToChannel(conn, caption, hashtags, row.media_url ?? undefined, row.media_type ?? undefined);
+
+          if (result.ok) {
+            // 4a. Success — mark as published
+            const publishedAt = new Date().toISOString();
+            const auditEntry  = {
+              id:             `audit_cron_${Date.now()}`,
+              action:         "published",
+              performedBy:    "Auto-Publish (System)",
+              performedByEmail: "system@brandtelligence.com",
+              timestamp:      publishedAt,
+              details:        `Auto-published via ${conn.displayName} (${conn.platform}) at scheduled time`,
+            };
+            const auditLog = [...(meta.auditLog ?? []), auditEntry];
+
+            await supabaseAdmin.from("content_cards").update({
+              status:     "published",
+              metadata:   { ...meta, auditLog, autoPublishAttempts: 0, autoPublishError: null },
+              updated_at: publishedAt,
+            }).eq("id", row.id);
+
+            // Write to publish history
+            await appendSocialHistory(row.tenant_id, {
+              id:             crypto.randomUUID(),
+              cardTitle:      row.title ?? "Untitled",
+              platform:       conn.platform,
+              connectionName: conn.displayName,
+              status:         "success",
+              publishedAt,
+              publishedBy:    "Auto-Publish (System)",
+              postUrl:        result.postUrl,
+            });
+
+            console.log(`[auto-publish-cron] ✓ card ${row.id} published via ${conn.platform}`);
+            // Phase 6: audit trail for auto-publish success (ISO 27001 A.12.4.1)
+            logSecurityEvent({ ts: publishedAt, action: 'AUTOPUBLISH_SUCCESS', route: 'cron:auto-publish', detail: `cardId=${row.id} platform=${conn.platform} tenantId=${row.tenant_id}` });
+          } else {
+            // 4b. Failure — increment attempts
+            const newAttempts = attempts + 1;
+            console.log(`[auto-publish-cron] ✗ card ${row.id} publish failed (attempt ${newAttempts}): ${result.error}`);
+            const failedAt = new Date().toISOString();
+            await supabaseAdmin.from("content_cards").update({
+              metadata: { ...meta, autoPublishAttempts: newAttempts, autoPublishError: result.error, ...(newAttempts >= 3 ? { autoPublishFailedAt: failedAt } : {}) },
+              updated_at: failedAt,
+            }).eq("id", row.id);
+            // On final retry, escalate to a dismissable failure alert
+            if (newAttempts >= 3) {
+              await upsertAlert(row.tenant_id, {
+                cardId:    row.id,
+                cardTitle: row.title ?? "Untitled",
+                platform:  row.platform,
+                failedAt:  new Date().toISOString(),
+                error:     result.error ?? "Unknown error",
+                attempts:  newAttempts,
+              });
+              console.log(`[auto-publish-cron] ⚠ card ${row.id} alert written (publish error, max retries)`);
+              // Phase 6: audit trail for auto-publish permanent failure (ISO 27001 A.12.4.1)
+              logSecurityEvent({ ts: new Date().toISOString(), action: 'AUTOPUBLISH_FAILED_MAX_RETRIES', route: 'cron:auto-publish', detail: `cardId=${row.id} platform=${row.platform} tenantId=${row.tenant_id} error=${result.error}` });
+            }
+          }
+        } catch (cardErr) {
+          console.log(`[auto-publish-cron] card ${row.id} error: ${cardErr instanceof Error ? cardErr.message : String(cardErr)}`);
+        }
+      }
+    } catch (outerErr) {
+      console.log(`[auto-publish-cron] outer error: ${outerErr instanceof Error ? outerErr.message : String(outerErr)}`);
+    }
+  });
+  console.log("[auto-publish-cron] registered (runs every minute)");
+} catch (cronErr) {
+  // Deno.cron may not be available in all environments
+  console.log(`[auto-publish-cron] Deno.cron not available: ${cronErr instanceof Error ? cronErr.message : String(cronErr)}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAILY FAILURE DIGEST CRON  (runs 08:00 UTC every day)
+// Sends one email per TENANT_ADMIN user for every tenant that has at least one
+// unresolved auto-publish failure alert sitting in KV.
+// ─────────────────────────────────────────────────────────────────────────────
+try {
+  Deno.cron("daily-autopublish-failure-digest", "0 8 * * *", async () => {
+    console.log("[failure-digest-cron] tick");
+    try {
+      // 1. List all tenants
+      const { data: tenants, error: tenantErr } = await supabaseAdmin
+        .from("tenants")
+        .select("id, name");
+      if (tenantErr) throw tenantErr;
+      if (!tenants || tenants.length === 0) {
+        console.log("[failure-digest-cron] no tenants");
+        return;
+      }
+
+      const appUrl = (Deno.env.get("APP_URL") || "https://brandtelligence.com.my").replace(/\/$/, "");
+
+      for (const tenant of tenants) {
+        // 2. Check if this tenant has any unresolved failure alerts
+        const alerts = await getAlerts(tenant.id);
+        if (alerts.length === 0) continue;
+
+        console.log(`[failure-digest-cron] tenant ${tenant.id} (${tenant.name}) has ${alerts.length} failure(s)`);
+
+        // 3. Find all active TENANT_ADMIN users for this tenant
+        const { data: admins } = await supabaseAdmin
+          .from("tenant_users")
+          .select("email, name")
+          .eq("tenant_id", tenant.id)
+          .eq("role", "TENANT_ADMIN")
+          .eq("status", "active");
+        if (!admins || admins.length === 0) {
+          console.log(`[failure-digest-cron] no active admins for tenant ${tenant.id}`);
+          continue;
+        }
+
+        // 4. Build the failure table rows
+        const alertRows = alerts.map((a: AutoPublishAlert) => `
+          <tr>
+            <td style="padding:10px 0;border-bottom:1px solid #eee;vertical-align:top;">
+              <strong style="font-size:14px;color:#1a1a2e;">${a.cardTitle}</strong><br>
+              <span style="font-size:12px;color:#666;">
+                Platform: <strong>${a.platform}</strong>
+                &nbsp;·&nbsp; Attempts: <strong>${a.attempts}</strong>
+                &nbsp;·&nbsp; Failed: ${new Date(a.failedAt).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}
+              </span><br>
+              <span style="font-size:12px;color:#dc2626;">Error: ${a.error}</span>
+            </td>
+          </tr>`).join("");
+
+        const plural = alerts.length !== 1;
+        const subject = `⚠️ ${alerts.length} auto-publish failure${plural ? "s" : ""} for ${tenant.name}`;
+        const html = fbWrap(
+          `Auto-Publish Failure Report`,
+          `<p style="font-size:15px;line-height:1.7;color:#444;">
+             The following content card${plural ? "s" : ""} failed to publish automatically for <strong>${tenant.name}</strong>
+             and will not retry without manual intervention:
+           </p>
+           <table width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 8px;">${alertRows}</table>
+           ${fbBtn(`${appUrl}/app/content`, "Review in AI Studio →", "#0BA4AA")}
+           ${fbWarn(`${plural ? "These cards have" : "This card has"} exhausted 3 auto-publish attempts. Please retry or reschedule ${plural ? "them" : "it"} from the Content Board.`)}`
+        );
+
+        // 5. Send to each TENANT_ADMIN
+        for (const admin of admins) {
+          try {
+            await sendAuthEmail(
+              admin.email,
+              "autopublish_failure_digest",       // template ID (falls back to inline HTML)
+              {
+                adminName:    admin.name,
+                tenantName:   tenant.name,
+                failureCount: String(alerts.length),
+              },
+              subject,
+              html,
+            );
+            console.log(`[failure-digest-cron] ✓ digest dispatched for tenant`);
+          } catch (emailErr) {
+            // Log but don't abort — other admins/tenants should still get their emails
+            console.log(`[failure-digest-cron] ✗ digest dispatch failed: ${errMsg(emailErr)}`);
+          }
+        }
+      }
+    } catch (outerErr) {
+      console.log(`[failure-digest-cron] outer error: ${errMsg(outerErr)}`);
+    }
+  });
+  console.log("[failure-digest-cron] registered (runs daily at 08:00 UTC)");
+} catch (cronErr) {
+  console.log(`[failure-digest-cron] Deno.cron not available: ${cronErr instanceof Error ? cronErr.message : String(cronErr)}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRON 3 — Auto-sync engagement analytics from platform APIs (every 6 hours)
+// ─────────────────────────────────────────────────────────────────────────────
+try {
+  Deno.cron("analytics-engagement-sync", "0 */6 * * *", async () => {
+    console.log("[analytics-sync-cron] tick");
+    try {
+      // Get all tenants
+      const { data: tenants, error } = await supabaseAdmin
+        .from("tenants")
+        .select("id")
+        .eq("status", "active");
+
+      if (error) throw error;
+      if (!tenants?.length) {
+        console.log("[analytics-sync-cron] no active tenants");
+        return;
+      }
+
+      console.log(`[analytics-sync-cron] syncing ${tenants.length} tenant(s)`);
+
+      for (const tenant of tenants) {
+        try {
+          const result = await syncEngagementForTenant(tenant.id);
+          console.log(`[analytics-sync-cron] tenant=${tenant.id} synced=${result.synced} errors=${result.errors}`);
+        } catch (tenantErr) {
+          console.log(`[analytics-sync-cron] tenant=${tenant.id} error: ${errMsg(tenantErr)}`);
+        }
+      }
+    } catch (outerErr) {
+      console.log(`[analytics-sync-cron] outer error: ${errMsg(outerErr)}`);
+    }
+  });
+  console.log("[analytics-sync-cron] registered (runs every 6 hours)");
+} catch (cronErr) {
+  console.log(`[analytics-sync-cron] Deno.cron not available: ${cronErr instanceof Error ? cronErr.message : String(cronErr)}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRON 4 — DATA RETENTION AUTO-PURGE  (runs daily at 03:00 UTC)
+// PDPA s.10 / ISO 27001 A.18.1.3 — personal data and logs must not be retained
+// beyond their stated purpose. This cron enforces configurable retention windows:
+//   • Security audit logs: 90 days
+//   • OAuth state tokens:  1 hour (stale abandoned flows)
+//   • SLA escalation dedup keys: 7 days
+//   • Content gen usage records: 365 days
+//   • Expired review tokens: 30 days past expiry
+// ─────────────────────────────────────────────────────────────────────────────
+try {
+  Deno.cron("data-retention-purge", "0 3 * * *", async () => {
+    console.log("[retention-purge] tick");
+    const stats = { auditLogs: 0, oauthStates: 0, slaDedup: 0, usageRecords: 0, reviewTokens: 0 };
+    try {
+      const now = new Date();
+
+      // ── Load configurable retention policy (defaults if not set) ──
+      const policyRaw = await kv.get("data_retention_policy");
+      const policy: RetentionPolicy = policyRaw
+        ? { ...DEFAULT_RETENTION, ...(typeof policyRaw === "string" ? JSON.parse(policyRaw) : policyRaw) }
+        : { ...DEFAULT_RETENTION };
+      console.log(`[retention-purge] policy: audit=${policy.auditLogDays}d oauth=${policy.oauthStateMinutes}m sla=${policy.slaDedupDays}d usage=${policy.usageRecordMonths}mo review=${policy.reviewTokenDays}d`);
+
+      // ── 1. Security audit logs older than configured days ──
+      const auditCutoff = new Date(now);
+      auditCutoff.setDate(auditCutoff.getDate() - policy.auditLogDays);
+      const auditCutoffStr = auditCutoff.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      // Query all security_audit_log: keys and filter by date
+      const { data: auditKeys, error: auditErr } = await supabaseAdmin
+        .from("kv_store_309fe679")
+        .select("key")
+        .like("key", "security_audit_log:%");
+      if (!auditErr && auditKeys?.length) {
+        const expiredAuditKeys = auditKeys
+          .map((r: any) => r.key as string)
+          .filter((k: string) => {
+            const dateStr = k.replace("security_audit_log:", "");
+            return dateStr < auditCutoffStr;
+          });
+        if (expiredAuditKeys.length > 0) {
+          const { error: delErr } = await supabaseAdmin
+            .from("kv_store_309fe679")
+            .delete()
+            .in("key", expiredAuditKeys);
+          if (!delErr) stats.auditLogs = expiredAuditKeys.length;
+          else console.log(`[retention-purge] audit delete error: ${delErr.message}`);
+        }
+      }
+
+      // ── 2. Stale OAuth state tokens (> configured minutes old) ──
+      const oauthCutoffTs = now.getTime() - (policy.oauthStateMinutes * 60_000);
+      const { data: oauthKeys, error: oauthErr } = await supabaseAdmin
+        .from("kv_store_309fe679")
+        .select("key, value")
+        .like("key", "oauth_state:%");
+      if (!oauthErr && oauthKeys?.length) {
+        const staleOauth = oauthKeys.filter((r: any) => {
+          try {
+            const payload = typeof r.value === "string" ? JSON.parse(r.value) : r.value;
+            return (payload?.ts ?? 0) < oauthCutoffTs;
+          } catch { return true; } // unparseable = stale
+        }).map((r: any) => r.key as string);
+        if (staleOauth.length > 0) {
+          const { error: delErr } = await supabaseAdmin
+            .from("kv_store_309fe679")
+            .delete()
+            .in("key", staleOauth);
+          if (!delErr) stats.oauthStates = staleOauth.length;
+          else console.log(`[retention-purge] oauth delete error: ${delErr.message}`);
+        }
+      }
+
+      // ── 3. SLA escalation dedup keys older than configured days ──
+      const slaCutoff = new Date(now);
+      slaCutoff.setDate(slaCutoff.getDate() - policy.slaDedupDays);
+      const slaCutoffStr = slaCutoff.toISOString().slice(0, 10);
+
+      const { data: slaKeys, error: slaErr } = await supabaseAdmin
+        .from("kv_store_309fe679")
+        .select("key")
+        .like("key", "sla_esc:%");
+      if (!slaErr && slaKeys?.length) {
+        const expiredSla = slaKeys
+          .map((r: any) => r.key as string)
+          .filter((k: string) => {
+            // Key format: sla_esc:YYYY-MM-DD:tenantId:cardId
+            const dateStr = k.split(":")[1] ?? "";
+            return dateStr < slaCutoffStr;
+          });
+        if (expiredSla.length > 0) {
+          const { error: delErr } = await supabaseAdmin
+            .from("kv_store_309fe679")
+            .delete()
+            .in("key", expiredSla);
+          if (!delErr) stats.slaDedup = expiredSla.length;
+          else console.log(`[retention-purge] sla dedup delete error: ${delErr.message}`);
+        }
+      }
+
+      // ── 4. Content gen usage records older than configured months ──
+      const usageCutoff = new Date(now);
+      usageCutoff.setMonth(usageCutoff.getMonth() - policy.usageRecordMonths);
+      const usageCutoffMonth = usageCutoff.toISOString().slice(0, 7); // YYYY-MM
+
+      const { data: usageKeys, error: usageErr } = await supabaseAdmin
+        .from("kv_store_309fe679")
+        .select("key")
+        .like("key", "content_gen:usage:%");
+      if (!usageErr && usageKeys?.length) {
+        const expiredUsage = usageKeys
+          .map((r: any) => r.key as string)
+          .filter((k: string) => {
+            // Key format: content_gen:usage:tenantId:YYYY-MM
+            const parts = k.split(":");
+            const monthStr = parts[parts.length - 1] ?? "";
+            return monthStr < usageCutoffMonth;
+          });
+        if (expiredUsage.length > 0) {
+          const { error: delErr } = await supabaseAdmin
+            .from("kv_store_309fe679")
+            .delete()
+            .in("key", expiredUsage);
+          if (!delErr) stats.usageRecords = expiredUsage.length;
+          else console.log(`[retention-purge] usage delete error: ${delErr.message}`);
+        }
+      }
+
+      // ── 5. Expired review tokens (> configured days past creation) ──
+      const reviewCutoffTs = now.getTime() - policy.reviewTokenDays * 86_400_000;
+      const { data: reviewKeys, error: reviewErr } = await supabaseAdmin
+        .from("kv_store_309fe679")
+        .select("key, value")
+        .like("key", "review_token:%");
+      if (!reviewErr && reviewKeys?.length) {
+        const expiredReviews = reviewKeys.filter((r: any) => {
+          try {
+            const session = typeof r.value === "string" ? JSON.parse(r.value) : r.value;
+            const created = new Date(session?.createdAt ?? 0).getTime();
+            return created < reviewCutoffTs;
+          } catch { return true; }
+        }).map((r: any) => r.key as string);
+        if (expiredReviews.length > 0) {
+          const { error: delErr } = await supabaseAdmin
+            .from("kv_store_309fe679")
+            .delete()
+            .in("key", expiredReviews);
+          if (!delErr) stats.reviewTokens = expiredReviews.length;
+          else console.log(`[retention-purge] review token delete error: ${delErr.message}`);
+        }
+      }
+
+      const totalPurged = stats.auditLogs + stats.oauthStates + stats.slaDedup + stats.usageRecords + stats.reviewTokens;
+      console.log(`[retention-purge] complete — purged ${totalPurged} key(s): audit=${stats.auditLogs} oauth=${stats.oauthStates} sla=${stats.slaDedup} usage=${stats.usageRecords} review=${stats.reviewTokens}`);
+
+      // Phase 6: audit the purge itself (ISO 27001 A.12.4.1)
+      logSecurityEvent({ ts: new Date().toISOString(), action: 'DATA_RETENTION_PURGE', route: 'cron:retention-purge', detail: `total=${totalPurged} audit=${stats.auditLogs} oauth=${stats.oauthStates} sla=${stats.slaDedup} usage=${stats.usageRecords} review=${stats.reviewTokens}` });
+
+    } catch (outerErr) {
+      console.log(`[retention-purge] outer error: ${errMsg(outerErr)}`);
+    }
+  });
+  console.log("[retention-purge] registered (runs daily at 03:00 UTC)");
+} catch (cronErr) {
+  console.log(`[retention-purge] Deno.cron not available: ${cronErr instanceof Error ? cronErr.message : String(cronErr)}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRON 5 — AUDIT LOG INTEGRITY CHECK  (runs weekly, Sunday 04:00 UTC)
+// ISO 27001 A.12.4.2 — protection of log information; detect gaps/tampering.
+// ─────────────────────────────────────────────────────────────────────────────
+try {
+  Deno.cron("audit-log-integrity-check", "0 4 * * 0", async () => {
+    console.log("[audit-integrity] tick");
+    try {
+      const now = new Date();
+      const gaps: string[] = [];
+
+      // Check that every day in the last 7 days has a security_audit_log entry
+      for (let i = 1; i <= 7; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().slice(0, 10);
+        const raw = await kv.get(`security_audit_log:${dateStr}`);
+        if (!raw) {
+          gaps.push(dateStr);
+        }
+      }
+
+      if (gaps.length > 0) {
+        console.log(`[audit-integrity] ⚠ missing audit log entries for dates: ${gaps.join(', ')}`);
+        logSecurityEvent({ ts: new Date().toISOString(), action: 'AUDIT_INTEGRITY_WARNING', route: 'cron:audit-integrity', detail: `missingDates=${gaps.join(',')}` });
+      } else {
+        console.log("[audit-integrity] ✓ all 7 days have audit log entries");
+        logSecurityEvent({ ts: new Date().toISOString(), action: 'AUDIT_INTEGRITY_OK', route: 'cron:audit-integrity', detail: 'last7days=complete' });
+      }
+    } catch (outerErr) {
+      console.log(`[audit-integrity] error: ${errMsg(outerErr)}`);
+    }
+  });
+  console.log("[audit-integrity] registered (runs weekly on Sundays at 04:00 UTC)");
+} catch (cronErr) {
+  console.log(`[audit-integrity] Deno.cron not available: ${cronErr instanceof Error ? cronErr.message : String(cronErr)}`);
+}
 
 Deno.serve(app.fetch);

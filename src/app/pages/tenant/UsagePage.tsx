@@ -34,7 +34,6 @@ import {
 } from '../../utils/apiClient';
 import { TenantAIBudgetCard } from '../../components/saas/TenantAIBudgetCard';
 import { IS_PRODUCTION } from '../../config/appConfig';
-import { supabase } from '../../utils/supabaseClient';
 
 // ─── AI data types ────────────────────────────────────────────────────────────
 
@@ -178,7 +177,7 @@ export function TenantUsagePage() {
       try {
         if (!IS_PRODUCTION) {
           // Demo mode — load per-tenant budget (respects custom limits set by Super Admin in Step 9)
-          const mockBudget = await fetchTenantAIBudget(tid, '');
+          const mockBudget = await fetchTenantAIBudget(tid);
           setBudget(mockBudget);
           setAiTrend(buildMockTrend());
           setAiTeam(MOCK_AI_TEAM);
@@ -186,17 +185,13 @@ export function TenantUsagePage() {
           return;
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) return;
-
         const months = getLastNMonths(6);
 
         const [budgetData, history, ...monthlyUsages] = await Promise.all([
-          fetchTenantAIBudget(tid, token),
-          fetchContentHistory(tid, token, 100),
+          fetchTenantAIBudget(tid),
+          fetchContentHistory(tid, 100),
           ...months.map(m =>
-            fetchContentGenUsage(tid, token, m).catch(() => ({ tokens: 0, requests: 0, limit: 100_000, period: m }))
+            fetchContentGenUsage(tid, m).catch(() => ({ tokens: 0, requests: 0, limit: 100_000, period: m }))
           ),
         ]);
 

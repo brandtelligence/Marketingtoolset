@@ -30,8 +30,7 @@ import {
   fetchUsageData, fetchTenants, fetchPlatformAIUsage,
   type UsageDataPoint, type PlatformAIUsageResult, type TenantAIUsageSummary,
 } from '../../utils/apiClient';
-import { IS_PRODUCTION } from '../../config/appConfig';
-import { supabase } from '../../utils/supabaseClient';
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -253,13 +252,7 @@ export function UsagePage() {
       setAiLoading(true);
       setAiError(null);
       try {
-        let token: string | null = null;
-        if (IS_PRODUCTION) {
-          const { data: { session } } = await supabase.auth.getSession();
-          token = session?.access_token ?? null;
-          if (!token) { setAiError('No session token — please sign in again.'); return; }
-        }
-        const result = await fetchPlatformAIUsage(token ?? '');
+        const result = await fetchPlatformAIUsage();
         setAiData(result);
       } catch (err: any) {
         console.error('[SuperUsagePage] AI data load error:', err);

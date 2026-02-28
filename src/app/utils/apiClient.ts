@@ -14,7 +14,8 @@
  */
 
 import { IS_PRODUCTION } from '../config/appConfig';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders, signRequest } from './authHeaders';
 import type {
   Tenant, PendingRequest, TenantUser, Invoice,
   AuditLog, Module, Feature, UsageDataPoint, ModuleRequest,
@@ -31,10 +32,37 @@ import {
 // ─── Server base ──────────────────────────────────────────────────────────────
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
-const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 
 async function api<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res  = await fetch(`${SERVER}${path}`, { headers: H, ...opts });
+  // Include CSRF token on any mutating request (POST/PUT/DELETE/PATCH).
+  // GET requests omit Content-Type to avoid unnecessary CORS preflight.
+  const isMutating = !!opts?.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(opts.method);
+  const headers = await getAuthHeaders(isMutating);
+  const res  = await fetch(`${SERVER}${path}`, { headers, ...opts });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: ${path}`);
+  return json as T;
+}
+
+/**
+ * Phase 2.4: Signed API call for high-value operations.
+ * Adds HMAC-SHA256 request signature headers (X-Request-Signature, X-Request-Timestamp)
+ * on top of the standard auth + CSRF headers.
+ *
+ * Used for: DELETE tenants, security policy changes, AI budget limit changes.
+ */
+async function signedApi<T>(path: string, opts?: RequestInit): Promise<T> {
+  // Signed operations are always mutating — include CSRF + Content-Type
+  const headers = await getAuthHeaders(true);
+
+  // Sign the request body (or the path for bodyless requests like DELETE)
+  const bodyStr = typeof opts?.body === 'string' ? opts.body : path;
+  const sigHeaders = await signRequest(bodyStr);
+  if (sigHeaders) {
+    Object.assign(headers, sigHeaders);
+  }
+
+  const res  = await fetch(`${SERVER}${path}`, { headers, ...opts });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: ${path}`);
   return json as T;
@@ -75,7 +103,8 @@ export async function deleteTenant(id: string): Promise<void> {
     if (i >= 0) MOCK_TENANTS.splice(i, 1);
     return;
   }
-  await api(`/tenants/${id}`, { method: 'DELETE' });
+  // Phase 2.4: HMAC-signed destructive operation
+  await signedApi(`/tenants/${id}`, { method: 'DELETE' });
 }
 
 // ─── Pending Requests ─────────────────────────────────────────────────────────
@@ -147,6 +176,7 @@ export async function deleteTenantUser(id: string): Promise<void> {
     if (i >= 0) MOCK_TENANT_USERS.splice(i, 1);
     return;
   }
+  // Phase 2.3: CSRF-protected (via getAuthHeaders), no HMAC needed for this route
   await api(`/tenant-users/${id}`, { method: 'DELETE' });
 }
 
@@ -291,9 +321,8 @@ export async function updateModuleRequest(id: string, patch: { status: ModuleReq
 
 // ─── AI Content Generation ────────────────────────────────────────────────────
 //
-// These functions require the caller to pass the user's Supabase access_token
-// so the server can verify identity and resolve the tenantId server-side.
-// Always obtain it via: supabase.auth.getSession() → session.access_token
+// Phase 2.1: all AI functions now use the centralised getAuthHeaders() utility
+// (which includes automatic token refresh). Callers no longer pass accessToken.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface GenerationRecord {
@@ -337,64 +366,42 @@ export interface GenerateContentResult {
   usage:      ContentGenUsageSummary;
 }
 
-// Helper: build auth header using the user's access token
-function authHeader(accessToken: string): HeadersInit {
-  return { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` };
-}
-
 export async function generateContent(
   params: GenerateContentParams,
-  accessToken: string,
 ): Promise<GenerateContentResult> {
-  const res  = await fetch(`${SERVER}/ai/generate-content`, {
-    method:  'POST',
-    headers: authHeader(accessToken),
-    body:    JSON.stringify(params),
+  return api<GenerateContentResult>('/ai/generate-content', {
+    method: 'POST',
+    body:   JSON.stringify(params),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/generate-content`);
-  return json as GenerateContentResult;
 }
 
 export async function fetchContentHistory(
   tenantId: string,
-  accessToken: string,
   limit = 20,
 ): Promise<GenerationRecord[]> {
-  const res  = await fetch(`${SERVER}/ai/content-history?tenantId=${encodeURIComponent(tenantId)}&limit=${limit}`, {
-    headers: authHeader(accessToken),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/content-history`);
-  return (json.history ?? []) as GenerationRecord[];
+  const { history } = await api<{ history: GenerationRecord[] }>(
+    `/ai/content-history?tenantId=${encodeURIComponent(tenantId)}&limit=${limit}`,
+  );
+  return history ?? [];
 }
 
 export async function deleteContentHistory(
   id: string,
   tenantId: string,
-  accessToken: string,
 ): Promise<void> {
-  const res  = await fetch(`${SERVER}/ai/content-history/${id}`, {
-    method:  'DELETE',
-    headers: authHeader(accessToken),
-    body:    JSON.stringify({ tenantId }),
+  await api(`/ai/content-history/${id}`, {
+    method: 'DELETE',
+    body:   JSON.stringify({ tenantId }),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: delete /ai/content-history`);
 }
 
 export async function fetchContentGenUsage(
   tenantId: string,
-  accessToken: string,
   period?: string,
 ): Promise<ContentGenUsageSummary> {
-  const qs   = `tenantId=${encodeURIComponent(tenantId)}${period ? `&period=${period}` : ''}`;
-  const res  = await fetch(`${SERVER}/ai/content-usage?${qs}`, {
-    headers: authHeader(accessToken),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/content-usage`);
-  return json.usage as ContentGenUsageSummary;
+  const qs = `tenantId=${encodeURIComponent(tenantId)}${period ? `&period=${period}` : ''}`;
+  const { usage } = await api<{ usage: ContentGenUsageSummary }>(`/ai/content-usage?${qs}`);
+  return usage;
 }
 
 // ─── Platform-wide AI Usage (Super Admin) ────────────────────────────────────
@@ -467,14 +474,9 @@ function buildMockPlatformAI(): PlatformAIUsageResult {
   return { tenants, periods, platformTotal, limit: 100_000 };
 }
 
-export async function fetchPlatformAIUsage(accessToken: string): Promise<PlatformAIUsageResult> {
+export async function fetchPlatformAIUsage(): Promise<PlatformAIUsageResult> {
   if (!IS_PRODUCTION) return buildMockPlatformAI();
-  const res  = await fetch(`${SERVER}/ai/platform-ai-usage`, {
-    headers: authHeader(accessToken),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/platform-ai-usage`);
-  return json as PlatformAIUsageResult;
+  return api<PlatformAIUsageResult>('/ai/platform-ai-usage');
 }
 
 // ─── Per-tenant AI token budget (Super Admin) ─────────────────────────────────
@@ -491,7 +493,6 @@ const DEMO_BUDGETS: Record<string, Partial<TenantAIBudget>> = {
 
 export async function fetchTenantAIBudget(
   tenantId: string,
-  accessToken: string,
 ): Promise<TenantAIBudget> {
   if (!IS_PRODUCTION) {
     const d = DEMO_BUDGETS[tenantId];
@@ -504,18 +505,12 @@ export async function fetchTenantAIBudget(
       requests:     d?.requests     ?? 0,
     };
   }
-  const res  = await fetch(`${SERVER}/ai/token-limit/${encodeURIComponent(tenantId)}`, {
-    headers: authHeader(accessToken),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: /ai/token-limit`);
-  return json as TenantAIBudget;
+  return api<TenantAIBudget>(`/ai/token-limit/${encodeURIComponent(tenantId)}`);
 }
 
 export async function updateTenantAILimit(
   tenantId: string,
   limit: number | null,
-  accessToken: string,
 ): Promise<void> {
   if (!IS_PRODUCTION) {
     const d = DEMO_BUDGETS[tenantId] ?? {};
@@ -529,13 +524,11 @@ export async function updateTenantAILimit(
     DEMO_BUDGETS[tenantId] = d;
     return;
   }
-  const res  = await fetch(`${SERVER}/ai/token-limit/${encodeURIComponent(tenantId)}`, {
-    method:  'PUT',
-    headers: authHeader(accessToken),
-    body:    JSON.stringify({ limit }),
+  // Phase 2.4: HMAC-signed budget change
+  await signedApi(`/ai/token-limit/${encodeURIComponent(tenantId)}`, {
+    method: 'PUT',
+    body:   JSON.stringify({ limit }),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Server error ${res.status}: PUT /ai/token-limit`);
 }
 
 // ─── Re-export types so pages import from here, not from mockSaasData ─────────
@@ -553,7 +546,152 @@ export interface EmailCheckResult {
 }
 export async function checkAccessEmail(email: string): Promise<EmailCheckResult> {
   const encoded = encodeURIComponent(email.toLowerCase().trim());
-  const res  = await fetch(`${SERVER}/check-access-email?email=${encoded}`, { headers: H });
+  const headers = await getAuthHeaders(false); // GET request — no JSON body
+  const res  = await fetch(`${SERVER}/check-access-email?email=${encoded}`, { headers });
   const json = await res.json();
   return json as EmailCheckResult;
+}
+
+// ─── Security Audit Log (Phase 6 — ISO 27001 A.12.4.1) ───────────────────────
+
+export interface SecurityAuditEntry {
+  ts:        string;
+  userId?:   string;
+  action:    string;
+  route:     string;
+  ip?:       string;
+  detail?:   string;
+}
+
+export interface SecurityAuditDaySummary {
+  date:  string;
+  count: number;
+}
+
+/** Fetch security audit entries for a specific date. */
+export async function fetchSecurityAuditLog(date: string): Promise<{ date: string; entries: SecurityAuditEntry[]; count: number }> {
+  if (!IS_PRODUCTION) {
+    // Demo mode — generate plausible mock entries
+    const actions = ['AUTH_SUCCESS', 'AUTH_FAIL', 'ROLE_DENIED', 'RATE_LIMITED', 'CSRF_INVALID', 'TENANT_MISMATCH', 'SECURITY_LOG_VIEWED'];
+    const routes = ['/auth/login', '/tenants', '/audit-logs', '/mfa/policy', '/security/policy', '/smtp/config', '/data-retention-policy'];
+    const entries: SecurityAuditEntry[] = Array.from({ length: 12 }, (_, i) => ({
+      ts:     new Date(new Date(date).getTime() + i * 3_600_000 + Math.random() * 3_600_000).toISOString(),
+      userId: `usr-${String(i % 5 + 1).padStart(3, '0')}`,
+      action: actions[i % actions.length],
+      route:  routes[i % routes.length],
+      ip:     `103.16.72.${10 + i}`,
+      detail: i % 3 === 0 ? 'role=EMPLOYEE required=SUPER_ADMIN' : undefined,
+    }));
+    return { date, entries, count: entries.length };
+  }
+  return api<{ date: string; entries: SecurityAuditEntry[]; count: number }>(`/security-audit-log?date=${date}`);
+}
+
+/** Fetch security audit log summary (event count per day for N days). */
+export async function fetchSecurityAuditSummary(days = 7): Promise<{ days: number; summary: SecurityAuditDaySummary[] }> {
+  if (!IS_PRODUCTION) {
+    const summary: SecurityAuditDaySummary[] = [];
+    const now = new Date();
+    for (let i = 0; i < days; i++) {
+      const d = new Date(now); d.setDate(d.getDate() - i);
+      summary.push({ date: d.toISOString().slice(0, 10), count: Math.floor(Math.random() * 45) + 5 });
+    }
+    return { days, summary };
+  }
+  return api<{ days: number; summary: SecurityAuditDaySummary[] }>(`/security-audit-log/summary?days=${days}`);
+}
+
+// ─── Data Retention Policy (Phase 6 — PDPA s.10 / ISO 27001 A.18.1.3) ────────
+
+export interface RetentionPolicy {
+  auditLogDays:       number;
+  oauthStateMinutes:  number;
+  slaDedupDays:       number;
+  usageRecordMonths:  number;
+  reviewTokenDays:    number;
+  updatedAt:          string | null;
+  updatedBy:          string | null;
+}
+
+const DEFAULT_RETENTION: RetentionPolicy = {
+  auditLogDays: 90, oauthStateMinutes: 60, slaDedupDays: 7,
+  usageRecordMonths: 12, reviewTokenDays: 30, updatedAt: null, updatedBy: null,
+};
+
+export async function fetchRetentionPolicy(): Promise<RetentionPolicy> {
+  if (!IS_PRODUCTION) return { ...DEFAULT_RETENTION };
+  const { policy } = await api<{ policy: RetentionPolicy }>('/data-retention-policy');
+  return policy;
+}
+
+export async function updateRetentionPolicy(patch: Partial<RetentionPolicy>): Promise<RetentionPolicy> {
+  if (!IS_PRODUCTION) {
+    return { ...DEFAULT_RETENTION, ...patch, updatedAt: new Date().toISOString(), updatedBy: 'demo-user' };
+  }
+  const { policy } = await api<{ success: boolean; policy: RetentionPolicy }>('/data-retention-policy', {
+    method: 'PUT', body: JSON.stringify(patch),
+  });
+  return policy;
+}
+
+// ─── Compliance Status (Phase 6 — aggregated health dashboard) ────────────────
+
+export interface IntegrityCheckResult {
+  date:   string;
+  action: string;
+  detail: string;
+  ts:     string;
+}
+
+export interface ComplianceCron {
+  name:        string;
+  schedule:    string;
+  description: string;
+}
+
+export interface ComplianceStatus {
+  health:              'healthy' | 'warning' | 'unknown';
+  lastCheck:           IntegrityCheckResult | null;
+  integrityResults:    IntegrityCheckResult[];
+  nextScheduledCheck:  string;
+  crons:               ComplianceCron[];
+  retentionConfigured: boolean;
+  retentionPolicy:     RetentionPolicy | null;
+}
+
+export async function fetchComplianceStatus(): Promise<ComplianceStatus> {
+  if (!IS_PRODUCTION) {
+    // Demo mode — generate plausible mock data
+    const now = new Date();
+    const lastSunday = new Date(now);
+    lastSunday.setDate(lastSunday.getDate() - lastSunday.getDay());
+    lastSunday.setHours(4, 0, 0, 0);
+    const nextSunday = new Date(lastSunday);
+    nextSunday.setDate(nextSunday.getDate() + 7);
+
+    return {
+      health: 'healthy',
+      lastCheck: {
+        date: lastSunday.toISOString().slice(0, 10),
+        action: 'AUDIT_INTEGRITY_OK',
+        detail: 'last7days=complete',
+        ts: lastSunday.toISOString(),
+      },
+      integrityResults: [
+        { date: lastSunday.toISOString().slice(0, 10), action: 'AUDIT_INTEGRITY_OK', detail: 'last7days=complete', ts: lastSunday.toISOString() },
+        { date: new Date(lastSunday.getTime() - 7 * 86400000).toISOString().slice(0, 10), action: 'AUDIT_INTEGRITY_OK', detail: 'last7days=complete', ts: new Date(lastSunday.getTime() - 7 * 86400000).toISOString() },
+      ],
+      nextScheduledCheck: nextSunday.toISOString(),
+      crons: [
+        { name: 'auto-publish-scheduled-cards', schedule: '* * * * *', description: 'Auto-publish scheduled social media cards' },
+        { name: 'daily-autopublish-failure-digest', schedule: '0 8 * * *', description: 'Daily failure digest email at 08:00 UTC' },
+        { name: 'analytics-engagement-sync', schedule: '0 */6 * * *', description: 'Sync engagement metrics every 6 hours' },
+        { name: 'data-retention-purge', schedule: '0 3 * * *', description: 'Purge expired data daily at 03:00 UTC' },
+        { name: 'audit-log-integrity-check', schedule: '0 4 * * 0', description: 'Weekly audit log gap detection (Sundays 04:00 UTC)' },
+      ],
+      retentionConfigured: false,
+      retentionPolicy: null,
+    };
+  }
+  return api<ComplianceStatus>('/compliance-status');
 }

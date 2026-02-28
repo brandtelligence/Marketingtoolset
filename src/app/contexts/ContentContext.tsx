@@ -1,7 +1,10 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { socialMediaCalendar } from '../data/socialMediaCalendar';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { IS_DEMO_MODE } from '../config/appConfig';
+import { getAuthHeaders } from '../utils/authHeaders';
+import { useAuth } from '../components/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +90,20 @@ export interface ContentCard {
 
   // Engagement metrics (published cards only — manually logged by staff)
   engagementData?: EngagementData;
+
+  // AI Media Generator — prompt history (last 5 entries, newest first)
+  aiPromptHistory?: AiPromptHistoryEntry[];
+}
+
+// ─── AI Prompt History ────────────────────────────────────────────────────────
+
+export interface AiPromptHistoryEntry {
+  id:          string;
+  prompt:      string;
+  tab:         'image' | 'video';
+  style:       string;
+  aspectRatio: string;
+  generatedAt: string; // ISO string
 }
 
 // ─── Approval Event (for real-time notifications) ─────────────────────────────
@@ -142,11 +159,14 @@ function deterministicUuid(seed: string): string {
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
 async function apiFetch(path: string, options: RequestInit = {}) {
+  // Only set Content-Type: application/json when there's a body (POST/PUT/PATCH).
+  // Omitting it on GET avoids triggering an unnecessary CORS preflight.
+  const hasBody = !!options.body;
+  const authHeaders = await getAuthHeaders(hasBody);
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
+      ...authHeaders,
       ...(options.headers || {}),
     },
   });
@@ -474,46 +494,77 @@ interface ContentContextType {
   recentEvents: ApprovalEvent[];
   isLoading: boolean;
   isSynced: boolean;
+  /** Re-fetch all cards from the server (e.g. after an analytics sync). */
+  refreshCards: () => Promise<void>;
 }
 
 const ContentContext = createContext<ContentContextType | undefined>(undefined);
 
 export function ContentProvider({ children }: { children: ReactNode }) {
-  const [cards, setCards] = useState<ContentCard[]>(mockCards);
+  // Demo mode: start with mock cards in memory (no server sync).
+  // Production mode: start empty, load exclusively from Supabase.
+  const [cards, setCards] = useState<ContentCard[]>(IS_DEMO_MODE ? mockCards : []);
   const [recentEvents, setRecentEvents] = useState<ApprovalEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSynced, setIsSynced] = useState(false);
+  const [isSynced, setIsSynced] = useState(IS_DEMO_MODE);
   const initialLoadDone = useRef(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Load cards from Supabase on mount ──
+  // Auth state — needed so we only fetch from Supabase once the user is
+  // authenticated (unauthenticated requests would 401 and cause CORS / fetch errors).
+  const { user, sessionLoading } = useAuth();
+
+  // ── Load cards from Supabase when auth resolves ──
   useEffect(() => {
+    // Demo mode: mock cards are already in state — skip server fetch entirely.
+    if (IS_DEMO_MODE) {
+      if (isLoading) {
+        setIsLoading(false);
+        console.log(`[ContentContext] Demo mode — using ${mockCards.length} local mock cards (nothing pushed to Supabase)`);
+      }
+      return;
+    }
+
+    // Wait until the auth provider has resolved its session state.
+    if (sessionLoading) return;
+
+    // No authenticated user → stay empty (don't fire an unauthenticated fetch
+    // that would 401 and potentially fail at the CORS preflight level).
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Guard against duplicate fetches on re-renders.
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
 
+    // Production mode: fetch from server, never seed mock data.
+    // Pass tenantId so the server can scope the query (required for non-SUPER_ADMIN).
+    const tenantParam = user.tenantId ? `?tenantId=${encodeURIComponent(user.tenantId)}` : '';
     (async () => {
       try {
-        const data = await apiFetch('/content-cards');
+        const data = await apiFetch(`/content-cards${tenantParam}`);
         if (data.initialized && data.cards && data.cards.length > 0) {
-          // Server has data — use it
           const deserialized = data.cards.map(deserializeCard);
           setCards(deserialized);
           setIsSynced(true);
           console.log(`[ContentContext] Loaded ${deserialized.length} cards from Supabase`);
         } else {
-          // No data on server — seed with mock data
-          console.log('[ContentContext] No server data found, seeding with mock data...');
-          await syncAllCards(mockCards);
+          // Server has no data — start with empty board (production: no mock seeding)
+          console.log('[ContentContext] No server data found — starting with empty board');
+          setCards([]);
           setIsSynced(true);
         }
       } catch (error) {
-        console.error('[ContentContext] Failed to load from Supabase, using local data:', error);
-        // Continue with local mock data
+        console.error('[ContentContext] Failed to load from Supabase:', error);
+        // Production: remain with empty array — do NOT fall back to mock data
+        setCards([]);
       } finally {
         setIsLoading(false);
       }
     })();
-  }, []);
+  }, [user, sessionLoading]);
 
   // ── Sync helpers ──
   const syncAllCards = async (cardsToSync: ContentCard[]) => {
@@ -640,10 +691,42 @@ export function ContentProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ── Re-fetch cards from the server ──
+  const refreshCards = useCallback(async () => {
+    // Demo mode: no server to refresh from — keep local mock cards
+    if (IS_DEMO_MODE) {
+      console.log('[ContentContext] Demo mode — refreshCards is a no-op');
+      return;
+    }
+
+    // Guard: don't fetch if no authenticated user
+    if (!user) {
+      console.log('[ContentContext] refreshCards skipped — no authenticated user');
+      return;
+    }
+
+    try {
+      const tenantParam = user.tenantId ? `?tenantId=${encodeURIComponent(user.tenantId)}` : '';
+      const data = await apiFetch(`/content-cards${tenantParam}`);
+      if (data.initialized && data.cards && data.cards.length > 0) {
+        const deserialized = data.cards.map(deserializeCard);
+        setCards(deserialized);
+        setIsSynced(true);
+        console.log(`[ContentContext] Refreshed ${deserialized.length} cards from Supabase`);
+      } else {
+        // Server has no data — keep current state, don't seed mock data
+        console.log('[ContentContext] No server data on refresh — keeping current cards');
+      }
+    } catch (error) {
+      console.error('[ContentContext] Failed to refresh from Supabase:', error);
+    }
+  }, [user]);
+
   return (
     <ContentContext.Provider value={{
       cards, getCardsByProject, addCard, addCards, updateCard, deleteCard,
       addAuditEntry, logApprovalEvent, recentEvents, isLoading, isSynced,
+      refreshCards,
     }}>
       {children}
     </ContentContext.Provider>
@@ -667,6 +750,7 @@ export function useContent(): ContentContextType {
       recentEvents: [],
       isLoading: false,
       isSynced: false,
+      refreshCards: () => Promise.resolve(),
     };
   }
   return ctx;

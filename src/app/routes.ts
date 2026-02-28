@@ -15,6 +15,9 @@ import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 // ── Template Showcase ────────────────────────────────────────────────────────
 import { TemplateShowcase } from "./pages/TemplateShowcase";
 
+// ── Client Review Portal (public, no auth) ───────────────────────────────────
+import { ClientReviewPage } from "./pages/ClientReviewPage";
+
 // ── Super Admin dashboard ───────────────────────────────────────────────────
 import { SuperLayout } from "./pages/super/SuperLayout";
 import { RequestsPage } from "./pages/super/RequestsPage";
@@ -42,6 +45,8 @@ import { TenantSettingsPage } from "./pages/tenant/SettingsPage";
 import { EmployeeProfilePage }  from "./pages/employee/ProfilePage";
 import { EmployeeModulesPage }  from "./pages/employee/EmployeeModulesPage";
 import { ContentGenPage }       from "./pages/employee/ContentGenPage";
+import { SocialPublishPage }    from "./pages/employee/SocialPublishPage";
+import { CampaignPlannerPage }  from "./pages/employee/CampaignPlannerPage";
 
 // ── Public marketing website (now at root /*) ───────────────────────────────
 import { WebLayout }           from "./pages/web/WebLayout";
@@ -97,6 +102,7 @@ export const router = createBrowserRouter([
   { path: "/request-access",   Component: RequestAccessPage  },
   { path: "/mfa-enroll",       Component: MFAEnrollPage      },
   { path: "/template-showcase",Component: TemplateShowcase   },
+  { path: "/review/:token",    Component: ClientReviewPage   },
 
   // Safety net: /app/login was the old invite redirectTo — bounce to /login
   { path: "/app/login",        loader: () => redirect("/login") },
@@ -112,6 +118,8 @@ export const router = createBrowserRouter([
       { path: "profile",             Component: EmployeeProfilePage },
       { path: "modules",             Component: EmployeeModulesPage },
       { path: "content",             Component: ContentGenPage      },
+      { path: "publish",             Component: SocialPublishPage   },
+      { path: "campaign",            Component: CampaignPlannerPage },
     ],
   },
 

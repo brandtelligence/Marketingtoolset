@@ -21,10 +21,16 @@ import {
   type ContentStatus,
   type AuditEntry,
   type EngagementData,
+  type AiPromptHistoryEntry,
 } from '../../contexts/ContentContext';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId } from '/utils/supabase/info';
+import { getAuthHeaders } from '../../utils/authHeaders';
 import { AIMediaGenerator, type GeneratedMedia } from './AIMediaGenerator';
+import { CardCommentThread } from './CardCommentThread';
+import { ClientFeedbackPanel } from './ClientFeedbackPanel';
+import { ShareForReviewDialog } from './ShareForReviewDialog';
+import { PublishModal } from '../publishing/PublishModal';
 import {
   getSlaHoursElapsed,
   getSlaStartTime, formatSlaAge,
@@ -838,23 +844,46 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
   const [revertReason, setRevertReason] = useState('');
 
   // ── AI Media Generator ────────────────────────────────────────────────────
-  const [showAIGenerator, setShowAIGenerator] = useState(false);
+  const [showAIGenerator,  setShowAIGenerator]  = useState(false);
+
+  // ── Publish Modal ─────────────────────────────────────────────────────────
+  const [showPublishModal, setShowPublishModal] = useState(false);
+
+  // ── Share for Client Review ───────────────────────────────────────────────
+  const [showShareReview,  setShowShareReview]  = useState(false);
 
   const handleAIMediaAttach = (media: GeneratedMedia) => {
+    // Build prompt history entry if we have prompt metadata
+    const promptEntry: AiPromptHistoryEntry | undefined = media.promptUsed
+      ? {
+          id:          `ph_${Date.now()}`,
+          prompt:      media.promptUsed,
+          tab:         media.type as 'image' | 'video',
+          style:       media.styleUsed ?? '',
+          aspectRatio: media.aspectRatioUsed ?? '1:1',
+          generatedAt: new Date().toISOString(),
+        }
+      : undefined;
+
     const updated: ContentCardType = {
       ...card,
-      mediaUrl:       media.url,
-      mediaType:      media.type as 'image' | 'video',
-      mediaFileName:  media.filename,
-      lastEditedBy:   userName,
-      lastEditedAt:   new Date(),
+      mediaUrl:      media.url,
+      mediaType:     media.type as 'image' | 'video',
+      mediaFileName: media.filename,
+      lastEditedBy:  userName,
+      lastEditedAt:  new Date(),
+      // Prepend to history, keep most recent 5
+      aiPromptHistory: promptEntry
+        ? [promptEntry, ...(card.aiPromptHistory ?? []).slice(0, 4)]
+        : card.aiPromptHistory,
     };
+
     const entry: Omit<AuditEntry, 'id'> = {
       action:           'media_uploaded',
       performedBy:      userName,
       performedByEmail: userEmail,
       timestamp:        new Date(),
-      details:          `AI-generated ${media.type} attached via AI Media Generator`,
+      details:          `AI-generated ${media.type} attached via AI Media Generator${media.styleUsed ? ` (${media.styleUsed} · ${media.aspectRatioUsed})` : ''}`,
     };
     updated.auditLog = [...card.auditLog, { ...entry, id: `audit_${Date.now()}` }];
     setCard(updated);
@@ -889,10 +918,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
         `https://${projectId}.supabase.co/functions/v1/make-server-309fe679/ai/refine-caption`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`,
-          },
+          headers: await getAuthHeaders(true),
           body: JSON.stringify({
             platform:         card.platform,
             title:            editTitle || card.title,
@@ -1812,6 +1838,36 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
               </motion.button>
             )}
 
+            {/* ── Publish to Social Channels ── */}
+            {(card.status === 'approved' || card.status === 'scheduled') && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowPublishModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all border
+                  bg-gradient-to-r from-teal-500/25 to-sky-500/25 hover:from-teal-500/40 hover:to-sky-500/40
+                  border-teal-400/35 hover:border-teal-400/55 text-teal-200 hover:text-white shadow-sm"
+              >
+                <Send className="w-4 h-4" />
+                Publish to Socials
+              </motion.button>
+            )}
+
+            {/* Share for Client Review — available for any non-draft card */}
+            {card.status !== 'draft' && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowShareReview(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all border
+                  bg-[#F47A20]/10 hover:bg-[#F47A20]/20 border-[#F47A20]/30 hover:border-[#F47A20]/50
+                  text-[#F47A20] hover:text-white shadow-sm"
+              >
+                <Eye className="w-4 h-4" />
+                Share for Client Review
+              </motion.button>
+            )}
+
             {/* Revert to draft */}
             {(card.status === 'rejected' || card.status === 'pending_approval') && (
               <button
@@ -2051,6 +2107,12 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
             )}
           </div>
 
+          {/* ── Comment Thread ── */}
+          <CardCommentThread cardId={card.id} />
+
+          {/* ── Client Feedback Panel ── */}
+          <ClientFeedbackPanel cardId={card.id} />
+
           {/* ── Audit Trail ── */}
           <div>
             <button
@@ -2116,8 +2178,27 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
     {showAIGenerator && (
       <AIMediaGenerator
         card={card}
+        promptHistory={card.aiPromptHistory}
         onAttach={handleAIMediaAttach}
         onClose={() => setShowAIGenerator(false)}
+      />
+    )}
+
+    {/* ── Publish Modal ─────────────────────────────────────────────────── */}
+    {showPublishModal && (
+      <PublishModal
+        card={card}
+        tenantId={(card as any).tenantId ?? user?.tenantId ?? ''}
+        onClose={() => setShowPublishModal(false)}
+      />
+    )}
+
+    {/* ── Share for Client Review ────────────────────────────────────── */}
+    {showShareReview && (
+      <ShareForReviewDialog
+        cards={[card]}
+        tenantId={(card as any).tenantId ?? user?.tenantId ?? ''}
+        onClose={() => setShowShareReview(false)}
       />
     )}
   </>

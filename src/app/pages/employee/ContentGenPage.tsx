@@ -12,7 +12,7 @@
  *   RIGHT  Output display → Copy / Save-as-Card / Regenerate → Saved Assets → History
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router';
 import {
@@ -25,7 +25,7 @@ import {
 import { useAuth } from '../../components/AuthContext';
 import { BackgroundLayout } from '../../components/BackgroundLayout';
 import { EmployeeNav } from '../../components/EmployeeNav';
-import { supabase } from '../../utils/supabaseClient';
+import { getAccessToken } from '../../utils/authHeaders';
 import { IS_PRODUCTION } from '../../config/appConfig';
 import { toast } from 'sonner';
 import {
@@ -901,13 +901,6 @@ export function ContentGenPage() {
   // ── Persist saved assets whenever they change ─────────────────────────────
   useEffect(() => { persistSavedAssets(savedAssets); }, [savedAssets]);
 
-  // ── Get access token ──────────────────────────────────────────────────────
-  const getToken = useCallback(async (): Promise<string | null> => {
-    if (!IS_PRODUCTION) return null;
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
-  }, []);
-
   const tenantKey = user?.tenantId ?? user?.supabaseUid ?? 'demo';
 
   // ── Load history + usage on mount ────────────────────────────────────────
@@ -916,11 +909,11 @@ export function ContentGenPage() {
     (async () => {
       setLoadingHistory(true);
       try {
-        const token = await getToken();
+        const token = await getAccessToken();
         if (!token) return;
         const [hist, use] = await Promise.all([
-          fetchContentHistory(tenantKey, token, 20),
-          fetchContentGenUsage(tenantKey, token),
+          fetchContentHistory(tenantKey, 20),
+          fetchContentGenUsage(tenantKey),
         ]);
         setHistory(hist);
         setUsage(use);
@@ -930,7 +923,7 @@ export function ContentGenPage() {
         setLoadingHistory(false);
       }
     })();
-  }, [tenantKey, getToken]);
+  }, [tenantKey]);
 
   // ── Field helpers ─────────────────────────────────────────────────────────
   const setField = (fieldId: string, value: string) => {
@@ -964,9 +957,9 @@ export function ContentGenPage() {
 
     try {
       if (IS_PRODUCTION) {
-        const token = await getToken();
+        const token = await getAccessToken();
         if (!token) { toast.error('Session expired — please sign in again'); setIsGenerating(false); return; }
-        const result = await generateContent({ template, platform, tone, prompt: finalPrompt }, token);
+        const result = await generateContent({ template, platform, tone, prompt: finalPrompt });
         setOutput(result.output);
         setLastTokens(result.tokensUsed);
         setLastModel(result.model);
@@ -1084,8 +1077,7 @@ export function ContentGenPage() {
   const handleDeleteHistory = async (id: string) => {
     try {
       if (IS_PRODUCTION) {
-        const token = await getToken();
-        if (token) await deleteContentHistory(id, tenantKey, token);
+        await deleteContentHistory(id, tenantKey);
       }
       setHistory(prev => prev.filter(r => r.id !== id));
       if (activeHistoryId === id) { setActiveHistoryId(null); setOutput(''); }
