@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../AuthContext';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -151,6 +152,7 @@ export function ConnectAccountDrawer({
   tenantId, existingConnection, preselectedPlatform, onSaved, onClose,
 }: ConnectAccountDrawerProps) {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
 
   const [selectedPlatform, setSelectedPlatform] = useState<SocialPlatform | null>(
     existingConnection?.platform ?? preselectedPlatform ?? null,
@@ -317,7 +319,7 @@ export function ConnectAccountDrawer({
         {/* Drawer */}
         <motion.div
           className="relative w-full max-w-lg h-full flex flex-col overflow-hidden shadow-2xl"
-          style={{ background: 'linear-gradient(160deg, rgba(15,12,30,0.99) 0%, rgba(10,8,22,0.99) 100%)', borderLeft: '1px solid rgba(255,255,255,0.09)' }}
+          style={{ background: isDark ? 'linear-gradient(160deg, rgba(15,12,30,0.99) 0%, rgba(10,8,22,0.99) 100%)' : 'linear-gradient(160deg, rgba(255,255,255,0.99) 0%, rgba(248,249,252,0.99) 100%)', borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.1)'}` }}
           initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
           transition={{ type: 'spring', stiffness: 340, damping: 30 }}
         >

@@ -34,6 +34,10 @@
 .web-light .text-white\/15       { color: rgb(14 13 28 / 0.22); }
 .web-light .text-white\/10       { color: rgb(14 13 28 / 0.16); }
 
+/* ── Hover text ───────────────────────────────────────────────────────────── */
+.web-light .hover\:text-white:hover       { color: #0e0d1c; }
+.web-light .hover\:text-white\/80:hover   { color: rgb(14 13 28 / 0.84); }
+
 /* ── Card / surface backgrounds ───────────────────────────────────────────── */
 .web-light .bg-white\/\[0\.015\] { background-color: #f0f1f8; }
 .web-light .bg-white\/\[0\.03\]  { background-color: rgba(255 255 255 / 0.95); }
@@ -49,6 +53,7 @@
 
 /* Hover bg utilities */
 .web-light .hover\:bg-white\/8:hover         { background-color: rgba(0 0 0 / 0.06); }
+.web-light .hover\:bg-white\/\[0\.05\]:hover { background-color: rgba(0 0 0 / 0.04); }
 .web-light .hover\:bg-white\/\[0\.07\]:hover { background-color: rgba(0 0 0 / 0.05); }
 .web-light .hover\:bg-white\/\[0\.08\]:hover { background-color: rgba(0 0 0 / 0.06); }
 .web-light .hover\:bg-white\/10:hover        { background-color: rgba(0 0 0 / 0.07); }
@@ -139,3 +144,29 @@
 /* These use the page background colour to create a "cut-out" border effect.  */
 .web-light .border-\[\#06070f\] { border-color: #f8f9fc; }
 .web-light .border-\[\#06070f\]\/50 { border-color: rgba(248 249 252 / 0.50); }
+
+/* ── Select option dark backgrounds ──────────────────────────────────────── */
+.web-light .bg-\[\#111\]   { background-color: #ffffff; }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EXCEPTIONS: Preserve text-white on colored backgrounds
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Brand-coloured backgrounds — same element compound selectors */
+.web-light .bg-bt-teal.text-white,
+.web-light .bg-bt-orange.text-white,
+.web-light .bg-bt-purple.text-white { color: #ffffff; }
+
+/* Children of brand-coloured containers */
+.web-light .bg-bt-teal .text-white,
+.web-light .bg-bt-orange .text-white,
+.web-light .bg-bt-purple .text-white { color: #ffffff; }
+
+/* Elements with inline background/gradient styles (CTA buttons) */
+.web-light .text-white[style*="background"] { color: #ffffff; }
+.web-light .text-white[style*="gradient"]   { color: #ffffff; }
+
+/* Gradient backgrounds */
+.web-light [class*="bg-gradient"] .text-white { color: #ffffff; }
+.web-light [class*="bg-gradient"].text-white  { color: #ffffff; }
+.web-light [class*="from-"].text-white        { color: #ffffff; }

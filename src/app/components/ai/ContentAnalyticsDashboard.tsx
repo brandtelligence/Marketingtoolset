@@ -23,6 +23,7 @@ import { getAuthHeaders } from '../../utils/authHeaders';
 import { getSlaStatusWith, SLA_BREACH_HOURS, SLA_WARNING_HOURS } from '../../utils/sla';
 import { useAuth } from '../AuthContext';
 import { useSlaConfig } from '../../hooks/useSlaConfig';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
 
 // ─── Platform metadata ────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ function PieTooltip({ active, payload }: any) {
   const { name, value, percent } = payload[0];
   return (
     <div
-      className="px-3 py-2 rounded-xl border border-white/15 text-xs shadow-2xl"
+      className="chart-tooltip px-3 py-2 rounded-xl border border-white/15 text-xs shadow-2xl"
       style={{ background: 'rgba(15,10,40,0.95)', backdropFilter: 'blur(12px)' }}
     >
       <p className="text-white font-semibold">{name}</p>
@@ -104,7 +105,7 @@ function EngagementTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div
-      className="px-3 py-2.5 rounded-xl border border-white/15 text-xs shadow-2xl space-y-1"
+      className="chart-tooltip px-3 py-2.5 rounded-xl border border-white/15 text-xs shadow-2xl space-y-1"
       style={{ background: 'rgba(15,10,40,0.95)', backdropFilter: 'blur(12px)' }}
     >
       <p className="text-white font-semibold mb-1.5">{label}</p>
@@ -220,6 +221,7 @@ function EngagementCsvImporter({
   onClose: () => void;
 }) {
   const { updateCard } = useContent();
+  const { isDark } = useDashboardTheme();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows,     setRows]     = useState<MatchedRow[] | null>(null);
   const [applying, setApplying] = useState(false);
@@ -302,7 +304,7 @@ function EngagementCsvImporter({
       <motion.div
         initial={{ scale: 0.95, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 16 }}
         className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl"
-        style={{ background: 'linear-gradient(150deg,rgba(14,12,28,0.99) 0%,rgba(8,6,18,0.99) 100%)', border: '1px solid rgba(255,255,255,0.1)' }}
+        style={{ background: isDark ? 'linear-gradient(150deg,rgba(14,12,28,0.99) 0%,rgba(8,6,18,0.99) 100%)' : 'linear-gradient(150deg,rgba(255,255,255,0.99) 0%,rgba(248,249,252,0.99) 100%)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}
       >
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-white/8 shrink-0">
@@ -373,7 +375,7 @@ function EngagementCsvImporter({
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-white/8" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                      <tr className="border-b border-white/8" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
                         {['Status', 'Card Title', 'Likes', 'Comments', 'Shares', 'Reach'].map(h => (
                           <th key={h} className="text-left text-white/40 px-3 py-2.5 font-semibold uppercase tracking-wider text-[10px]">{h}</th>
                         ))}
@@ -447,6 +449,13 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
   // ── Per-tenant SLA thresholds ─────────────────────────────────────────────
   const { user } = useAuth();
   const tenantId = user?.tenantId;
+  const { isDark } = useDashboardTheme();
+
+  // ── Chart theming (JS-level values CSS cannot override) ───────────────────
+  const chartGrid    = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)';
+  const chartTickX   = isDark ? 'rgba(255,255,255,0.4)'  : 'rgba(0,0,0,0.5)';
+  const chartTickY   = isDark ? 'rgba(255,255,255,0.3)'  : 'rgba(0,0,0,0.4)';
+  const chartCursor  = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
 
   // Load sync status on mount
   useEffect(() => {
@@ -929,24 +938,21 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
               </h4>
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={engagementByPlatform} barSize={14} barCategoryGap="30%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} vertical={false} />
                   <XAxis
                     dataKey="name"
-                    tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                    tick={{ fill: chartTickX, fontSize: 10 }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9 }}
+                    tick={{ fill: chartTickY, fontSize: 9 }}
                     axisLine={false}
                     tickLine={false}
                     width={36}
                     tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
                   />
-                  <Tooltip content={<EngagementTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                  <Bar dataKey="likes"    stackId="a" fill="#f472b6" name="Likes"    radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="comments" stackId="a" fill="#60a5fa" name="Comments" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="shares"   stackId="a" fill="#4ade80" name="Shares"   radius={[4, 4, 0, 0]} />
+                  <Tooltip content={<EngagementTooltip />} cursor={{ fill: chartCursor }} />
                 </BarChart>
               </ResponsiveContainer>
               {/* Legend */}

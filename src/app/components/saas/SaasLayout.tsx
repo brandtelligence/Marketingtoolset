@@ -172,7 +172,7 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
   // ── Page background ────────────────────────────────────────────────────────
   const bgStyle = t.isDark
     ? { backgroundImage: 'radial-gradient(ellipse at 20% 50%, rgba(120,40,200,0.12) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(0,200,180,0.07) 0%, transparent 50%)' }
-    : {};
+    : { backgroundImage: 'radial-gradient(ellipse at 20% 50%, rgba(11,164,170,0.06) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(62,60,112,0.05) 0%, transparent 50%)' };
 
   return (
     <div className={`min-h-screen flex flex-col ${t.pageBg} ${t.text}`} style={bgStyle}>

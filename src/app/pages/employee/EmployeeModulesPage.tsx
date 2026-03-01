@@ -165,17 +165,17 @@ function ModuleCard({
   const RequestStatus = () => {
     if (!request) return null;
     if (request.status === 'pending') return (
-      <span className="flex items-center gap-1 text-[0.65rem] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
+      <span className={`flex items-center gap-1 text-[0.65rem] px-2 py-0.5 rounded-full ${isDark ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
         <Clock className="w-2.5 h-2.5" /> Pending review
       </span>
     );
     if (request.status === 'approved') return (
-      <span className="flex items-center gap-1 text-[0.65rem] bg-teal-500/20 text-teal-300 border border-teal-500/30 px-2 py-0.5 rounded-full">
+      <span className={`flex items-center gap-1 text-[0.65rem] px-2 py-0.5 rounded-full ${isDark ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'bg-teal-50 text-teal-700 border border-teal-200'}`}>
         <CheckCircle className="w-2.5 h-2.5" /> Approved
       </span>
     );
     if (request.status === 'dismissed') return (
-      <span className="flex items-center gap-1 text-[0.65rem] bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full">
+      <span className={`flex items-center gap-1 text-[0.65rem] px-2 py-0.5 rounded-full ${isDark ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-red-50 text-red-700 border border-red-200'}`}>
         <XCircle className="w-2.5 h-2.5" /> Not approved
       </span>
     );
@@ -200,7 +200,7 @@ function ModuleCard({
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
               <p className={`font-medium text-sm ${et.text}`}>{m.name}</p>
               {active
-                ? <span className="text-[0.6rem] bg-teal-500/25 text-teal-300 border border-teal-500/30 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide">Active</span>
+                ? <span className={`text-[0.6rem] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide ${isDark ? 'bg-teal-500/25 text-teal-300 border border-teal-500/30' : 'bg-teal-50 text-teal-700 border border-teal-200'}`}>Active</span>
                 : <span className={`text-[0.6rem] flex items-center gap-0.5 ${et.textFaint}`}><Lock className="w-2.5 h-2.5" /> Not subscribed</span>
               }
               <RequestStatus />
@@ -213,8 +213,8 @@ function ModuleCard({
             {!active && !request && (
               <button
                 onClick={onRequest}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all"
-                style={{ background: 'rgba(11,164,170,0.3)', border: '1px solid rgba(11,164,170,0.4)' }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isDark ? 'text-white' : 'text-teal-700'}`}
+                style={{ background: isDark ? 'rgba(11,164,170,0.3)' : 'rgba(11,164,170,0.12)', border: `1px solid ${isDark ? 'rgba(11,164,170,0.4)' : 'rgba(11,164,170,0.3)'}` }}
               >
                 Request
               </button>
@@ -244,7 +244,7 @@ function ModuleCard({
                 <p className={`text-[0.6rem] uppercase tracking-wider mb-2 ${et.textFaint}`}>Included Features</p>
                 {moduleFeatures.map(f => (
                   <div key={f.id} className="flex items-center gap-2">
-                    <Zap className={`w-3 h-3 shrink-0 ${f.globalEnabled ? 'text-teal-400' : 'text-white/25'}`} />
+                    <Zap className={`w-3 h-3 shrink-0 ${f.globalEnabled ? 'text-teal-400' : (isDark ? 'text-white/25' : 'text-gray-300')}`} />
                     <span className={`text-xs flex-1 ${et.textMd}`}>{f.name}</span>
                     <span className={`text-[0.6rem] ${et.textFaint}`}>{f.rolloutNote}</span>
                   </div>

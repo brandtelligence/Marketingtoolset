@@ -1,0 +1,277 @@
+/*
+ * dashboard-light.css — Light-mode CSS overrides for the dashboard portals.
+ *
+ * Applied when `<body>` has class `dashboard-light` (toggled by DashboardThemeProvider).
+ * Mirrors the approach of web-light.css but scoped to the dashboard context.
+ *
+ * These unlayered selectors override Tailwind utilities without !important
+ * thanks to Tailwind v4's CSS cascade layers.
+ *
+ * NOTE: Intentionally does NOT touch elements inside buttons/badges that use
+ * colored backgrounds (bg-purple-500, bg-teal-500, bg-red-500, etc.) where
+ * text-white is correct for contrast. The selectors below target the most
+ * common dark-mode text patterns used across dashboard pages.
+ */
+
+/* ── Text: white → dark-on-light equivalents ──────────────────────────────── */
+.dashboard-light .text-white           { color: #111827; }
+.dashboard-light .text-white\/90       { color: rgb(17 24 39 / 0.92); }
+.dashboard-light .text-white\/85       { color: rgb(17 24 39 / 0.88); }
+.dashboard-light .text-white\/80       { color: rgb(17 24 39 / 0.82); }
+.dashboard-light .text-white\/70       { color: rgb(55 65 81 / 0.85); }
+.dashboard-light .text-white\/65       { color: rgb(55 65 81 / 0.78); }
+.dashboard-light .text-white\/60       { color: rgb(107 114 128 / 1); }
+.dashboard-light .text-white\/55       { color: rgb(107 114 128 / 0.90); }
+.dashboard-light .text-white\/50       { color: rgb(107 114 128 / 0.85); }
+.dashboard-light .text-white\/45       { color: rgb(156 163 175 / 1); }
+.dashboard-light .text-white\/40       { color: rgb(156 163 175 / 1); }
+.dashboard-light .text-white\/35       { color: rgb(156 163 175 / 0.85); }
+.dashboard-light .text-white\/30       { color: rgb(209 213 219 / 1); }
+.dashboard-light .text-white\/25       { color: rgb(209 213 219 / 0.85); }
+.dashboard-light .text-white\/20       { color: rgb(229 231 235 / 1); }
+
+/* ── Hover text: white → dark equivalents ─────────────────────────────────── */
+.dashboard-light .hover\:text-white:hover        { color: #111827; }
+.dashboard-light .hover\:text-white\/80:hover    { color: rgb(17 24 39 / 0.82); }
+.dashboard-light .hover\:text-white\/70:hover    { color: rgb(55 65 81 / 0.85); }
+.dashboard-light .hover\:text-white\/60:hover    { color: rgb(107 114 128 / 1); }
+.dashboard-light .hover\:text-white\/50:hover    { color: rgb(107 114 128 / 0.85); }
+
+/* ── Card / surface backgrounds ───────────────────────────────────────────── */
+.dashboard-light .bg-white\/3          { background-color: rgba(0 0 0 / 0.015); }
+.dashboard-light .bg-white\/5          { background-color: rgba(0 0 0 / 0.025); }
+.dashboard-light .bg-white\/6          { background-color: rgba(0 0 0 / 0.03); }
+.dashboard-light .bg-white\/8          { background-color: rgba(0 0 0 / 0.04); }
+.dashboard-light .bg-white\/10         { background-color: rgba(0 0 0 / 0.05); }
+.dashboard-light .bg-white\/12         { background-color: rgba(0 0 0 / 0.06); }
+.dashboard-light .bg-white\/15         { background-color: rgba(0 0 0 / 0.07); }
+.dashboard-light .bg-white\/20         { background-color: rgba(0 0 0 / 0.08); }
+
+/* Hover bg */
+.dashboard-light .hover\:bg-white\/5:hover   { background-color: rgba(0 0 0 / 0.04); }
+.dashboard-light .hover\:bg-white\/6:hover   { background-color: rgba(0 0 0 / 0.05); }
+.dashboard-light .hover\:bg-white\/8:hover   { background-color: rgba(0 0 0 / 0.06); }
+.dashboard-light .hover\:bg-white\/10:hover  { background-color: rgba(0 0 0 / 0.07); }
+.dashboard-light .hover\:bg-white\/12:hover  { background-color: rgba(0 0 0 / 0.08); }
+.dashboard-light .hover\:bg-white\/15:hover  { background-color: rgba(0 0 0 / 0.09); }
+.dashboard-light .hover\:bg-white\/20:hover  { background-color: rgba(0 0 0 / 0.10); }
+
+/* ── Borders: white → subtle gray ─────────────────────────────────────────── */
+.dashboard-light .border-white\/5      { border-color: rgb(229 231 235 / 1); }
+.dashboard-light .border-white\/6      { border-color: rgb(229 231 235 / 1); }
+.dashboard-light .border-white\/8      { border-color: rgb(229 231 235 / 1); }
+.dashboard-light .border-white\/10     { border-color: rgb(229 231 235 / 1); }
+.dashboard-light .border-white\/15     { border-color: rgb(209 213 219 / 1); }
+.dashboard-light .border-white\/20     { border-color: rgb(209 213 219 / 1); }
+.dashboard-light .border-white\/25     { border-color: rgb(209 213 219 / 1); }
+.dashboard-light .border-white\/30     { border-color: rgb(156 163 175 / 0.5); }
+.dashboard-light .border-white\/40     { border-color: rgb(156 163 175 / 0.6); }
+
+/* Hover borders */
+.dashboard-light .hover\:border-white\/20:hover  { border-color: rgb(156 163 175 / 0.6); }
+.dashboard-light .hover\:border-white\/25:hover  { border-color: rgb(156 163 175 / 0.7); }
+.dashboard-light .hover\:border-white\/30:hover  { border-color: rgb(156 163 175 / 0.8); }
+.dashboard-light .hover\:border-white\/40:hover  { border-color: rgb(107 114 128 / 0.5); }
+
+/* ── Divide colors ────────────────────────────────────────────────────────── */
+.dashboard-light .divide-white\/5 > * + *   { border-color: rgb(229 231 235 / 1); }
+.dashboard-light .divide-white\/8 > * + *   { border-color: rgb(229 231 235 / 1); }
+.dashboard-light .divide-white\/10 > * + *  { border-color: rgb(229 231 235 / 1); }
+
+/* ── Placeholder text ─────────────────────────────────────────────────────── */
+.dashboard-light .placeholder-white\/30::placeholder  { color: rgb(156 163 175 / 1); }
+.dashboard-light .placeholder-white\/40::placeholder  { color: rgb(156 163 175 / 1); }
+.dashboard-light .placeholder-white\/50::placeholder  { color: rgb(107 114 128 / 1); }
+
+/* ── Form inputs / selects ────────────────────────────────────────────────── */
+.dashboard-light input,
+.dashboard-light textarea,
+.dashboard-light select {
+  color-scheme: light;
+}
+
+.dashboard-light select option {
+  background-color: #ffffff;
+  color: #111827;
+}
+
+/* ── Focus border overrides ───────────────────────────────────────────────── */
+.dashboard-light .focus\:border-white\/30:focus   { border-color: rgb(156 163 175 / 0.6); }
+.dashboard-light .focus\:border-white\/40:focus   { border-color: rgb(107 114 128 / 0.5); }
+.dashboard-light .focus\:border-white\/50:focus   { border-color: rgb(107 114 128 / 0.6); }
+.dashboard-light .focus\:border-purple-400\/50:focus { border-color: rgb(147 51 234 / 0.5); }
+
+/* ── Focus bg overrides ───────────────────────────────────────────────────── */
+.dashboard-light .focus\:bg-white\/10:focus  { background-color: rgba(255 255 255 / 1); }
+.dashboard-light .focus\:bg-white\/8:focus   { background-color: rgba(255 255 255 / 1); }
+
+/* ── Shadows ──────────────────────────────────────────────────────────────── */
+.dashboard-light .shadow-2xl { box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.1); }
+
+/* ── Ring colors ──────────────────────────────────────────────────────────── */
+.dashboard-light .ring-white\/10   { --tw-ring-color: rgb(229 231 235 / 1); }
+.dashboard-light .ring-white\/20   { --tw-ring-color: rgb(209 213 219 / 1); }
+
+/* ── Dark background hex overrides ────────────────────────────────────────── */
+.dashboard-light .bg-\[\#0a0615\]       { background-color: #f8f9fc; }
+.dashboard-light .bg-\[\#0d0b2a\]\/90   { background-color: rgba(255 255 255 / 0.97); }
+.dashboard-light .bg-\[\#0d0b2a\]\/92   { background-color: rgba(255 255 255 / 0.97); }
+.dashboard-light .bg-\[\#1a0f35\]       { background-color: #ffffff; }
+.dashboard-light .bg-\[rgba\(15\,10\,40\,0\.95\)\] { background-color: rgba(255 255 255 / 0.98); }
+.dashboard-light .bg-\[rgba\(15\,10\,40\,0\.97\)\] { background-color: rgba(255 255 255 / 0.98); }
+.dashboard-light .bg-\[rgba\(15\,10\,40\,0\.98\)\] { background-color: rgba(255 255 255 / 0.98); }
+.dashboard-light .bg-\[rgba\(10\,6\,21\,0\.98\)\]  { background-color: rgba(255 255 255 / 0.98); }
+
+/* Modal / phone mockup dark hex backgrounds (Calendar, Mockups components) */
+.dashboard-light .bg-\[\#1a1035\]       { background-color: #ffffff; }
+.dashboard-light .bg-\[\#1a1035\]\/95   { background-color: rgba(255 255 255 / 0.98); }
+
+/* Super Admin dark hex panel backgrounds */
+.dashboard-light .bg-\[\#12091e\]       { background-color: #ffffff; }
+.dashboard-light .bg-\[\#13131f\]       { background-color: #ffffff; }
+.dashboard-light .bg-\[\#16162a\]       { background-color: #ffffff; }
+.dashboard-light .bg-\[\#1a1a3e\]       { background-color: #ffffff; }
+
+/* ── Option bg for selects ────────────────────────────────────────────────── */
+.dashboard-light .bg-\[\#1a1040\]       { background-color: #ffffff; }
+
+/* ── Backdrop blur surfaces ───────────────────────────────────────────────── */
+.dashboard-light .backdrop-blur-md,
+.dashboard-light .backdrop-blur-xl {
+  backdrop-filter: blur(16px) saturate(150%);
+}
+
+/* ── Device mockup preservation ──────────────────────────────────────────── */
+/* Phone mockup frames should stay dark regardless of dashboard theme        */
+.dashboard-light .mockup-device                         { background-color: #1a1035 !important; }
+.dashboard-light .mockup-device .text-white             { color: #ffffff; }
+.dashboard-light .mockup-device .text-white\/80         { color: rgba(255,255,255,0.8); }
+.dashboard-light .mockup-device .text-white\/60         { color: rgba(255,255,255,0.6); }
+.dashboard-light .mockup-device .border-white\/10       { border-color: rgba(255,255,255,0.1); }
+.dashboard-light .mockup-device .border-white\/20       { border-color: rgba(255,255,255,0.2); }
+.dashboard-light .mockup-device .bg-white\/20           { background-color: rgba(255,255,255,0.2); }
+
+/* ── Chart tooltip preservation ──────────────────────────────────────────── */
+/* Recharts tooltips keep dark bg + white text in all themes                 */
+.dashboard-light .chart-tooltip                         { color: #ffffff; }
+.dashboard-light .chart-tooltip .text-white             { color: #ffffff; }
+.dashboard-light .chart-tooltip .text-white\/60         { color: rgba(255,255,255,0.6); }
+.dashboard-light .chart-tooltip .border-white\/15       { border-color: rgba(255,255,255,0.15); }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EXCEPTIONS: Preserve text-white on colored backgrounds
+   These compound selectors (same element) restore white text for elements
+   that have both a solid colored background AND text-white, where white text
+   is needed for contrast (buttons, badges, notification dots).
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Solid colored backgrounds — same element compound selectors */
+.dashboard-light .bg-purple-500.text-white,
+.dashboard-light .bg-purple-500\/80.text-white,
+.dashboard-light .bg-purple-600.text-white,
+.dashboard-light .bg-purple-700.text-white,
+.dashboard-light .bg-red-500.text-white,
+.dashboard-light .bg-red-500\/80.text-white,
+.dashboard-light .bg-teal-500.text-white,
+.dashboard-light .bg-teal-500\/80.text-white,
+.dashboard-light .bg-emerald-500.text-white,
+.dashboard-light .bg-emerald-400.text-white,
+.dashboard-light .bg-amber-500.text-white,
+.dashboard-light .bg-amber-500\/80.text-white,
+.dashboard-light .bg-sky-500.text-white,
+.dashboard-light .bg-indigo-500.text-white,
+.dashboard-light .bg-blue-500.text-white,
+.dashboard-light .bg-blue-600.text-white,
+.dashboard-light .bg-blue-700.text-white,
+.dashboard-light .bg-orange-500.text-white,
+.dashboard-light .bg-black.text-white,
+.dashboard-light .bg-black\/50.text-white,
+.dashboard-light .bg-black\/60.text-white,
+.dashboard-light .bg-\[\#0BA4AA\].text-white,
+.dashboard-light .bg-\[\#F47A20\].text-white { color: #ffffff; }
+
+/* Elements with inline background/gradient styles (AI wizard buttons, CTAs) */
+.dashboard-light .text-white[style*="background"] { color: #ffffff; }
+.dashboard-light .text-white[style*="gradient"]    { color: #ffffff; }
+
+/* Notification badge red dots with white text */
+.dashboard-light span.bg-red-500.text-white,
+.dashboard-light span.bg-red-500 > .text-white { color: #ffffff; }
+
+/* Children of colored background containers (platform icons, badges) */
+.dashboard-light .bg-purple-600 .text-white,
+.dashboard-light .bg-blue-600 .text-white,
+.dashboard-light .bg-blue-700 .text-white,
+.dashboard-light .bg-sky-500 .text-white,
+.dashboard-light .bg-black .text-white,
+.dashboard-light .bg-black\/50 .text-white,
+.dashboard-light .bg-black\/60 .text-white,
+.dashboard-light .bg-\[\#0BA4AA\] .text-white,
+.dashboard-light .bg-\[\#F47A20\] .text-white { color: #ffffff; }
+
+/* Icon containers on gradient backgrounds (small decorative icons) */
+.dashboard-light [class*="bg-gradient"] .text-white { color: #ffffff; }
+.dashboard-light [class*="bg-gradient"].text-white  { color: #ffffff; }
+
+/* Children of elements with from- gradient classes (stat cards, step indicators) */
+.dashboard-light [class*="from-"].text-white     { color: #ffffff; }
+
+/* ── Light-mode accent text adjustments ──────────────────────────────────── */
+/* Dark-mode teal/emerald text (too light on white) → richer equivalents   */
+.dashboard-light .text-teal-300        { color: rgb(15 118 110 / 1); }   /* → teal-700 */
+.dashboard-light .text-teal-300\/80    { color: rgb(15 118 110 / 0.85); } /* → teal-700 at 85% */
+.dashboard-light .text-teal-200\/80    { color: rgb(17 94 89 / 0.85); }  /* → teal-800 */
+.dashboard-light .text-emerald-300     { color: rgb(4 120 87 / 1); }     /* → emerald-700 */
+.dashboard-light .text-emerald-300\/70 { color: rgb(4 120 87 / 0.75); }  /* → emerald-700 */
+.dashboard-light .text-emerald-300\/80 { color: rgb(4 120 87 / 0.85); }  /* → emerald-700 */
+.dashboard-light .text-emerald-400     { color: rgb(5 150 105 / 1); }    /* → emerald-600 */
+.dashboard-light .text-emerald-400\/60 { color: rgb(5 150 105 / 0.65); } /* → emerald-600 */
+.dashboard-light .text-purple-300      { color: rgb(126 34 206 / 1); }   /* → purple-700 */
+.dashboard-light .text-purple-300\/80  { color: rgb(126 34 206 / 0.85); }/* → purple-700 */
+.dashboard-light .text-purple-200      { color: rgb(147 51 234 / 1); }   /* → purple-600 */
+
+/* Status badge text — pastel-300 → richer -600/-700 for light-bg readability */
+.dashboard-light .text-amber-300       { color: rgb(217 119 6 / 1); }    /* → amber-600  */
+.dashboard-light .text-amber-300\/70   { color: rgb(217 119 6 / 0.75); } /* → amber-600  */
+.dashboard-light .text-blue-300        { color: rgb(37 99 235 / 1); }    /* → blue-600   */
+.dashboard-light .text-blue-300\/80    { color: rgb(37 99 235 / 0.85); } /* → blue-600   */
+.dashboard-light .text-green-300       { color: rgb(22 163 74 / 1); }    /* → green-600  */
+.dashboard-light .text-green-300\/80   { color: rgb(22 163 74 / 0.85); } /* → green-600  */
+.dashboard-light .text-red-300         { color: rgb(220 38 38 / 1); }    /* → red-600    */
+.dashboard-light .text-red-300\/80     { color: rgb(220 38 38 / 0.85); } /* → red-600    */
+.dashboard-light .text-pink-300        { color: rgb(219 39 119 / 1); }   /* → pink-600   */
+.dashboard-light .text-pink-300\/80    { color: rgb(219 39 119 / 0.85); }/* → pink-600   */
+.dashboard-light .text-cyan-300        { color: rgb(8 145 178 / 1); }    /* → cyan-600   */
+.dashboard-light .text-gray-300        { color: rgb(107 114 128 / 1); }  /* → gray-500   */
+.dashboard-light .text-orange-300      { color: rgb(234 88 12 / 1); }    /* → orange-600 */
+.dashboard-light .text-orange-300\/90  { color: rgb(234 88 12 / 0.92); } /* → orange-600 */
+.dashboard-light .text-orange-300\/50  { color: rgb(234 88 12 / 0.55); } /* → orange-600 */
+.dashboard-light .text-orange-300\/60  { color: rgb(234 88 12 / 0.65); } /* → orange-600 */
+.dashboard-light .text-sky-300         { color: rgb(2 132 199 / 1); }    /* → sky-600    */
+.dashboard-light .text-green-300\/60   { color: rgb(22 163 74 / 0.65); } /* → green-600  */
+.dashboard-light .text-yellow-300      { color: rgb(202 138 4 / 1); }    /* → yellow-600 */
+.dashboard-light .text-yellow-300\/70  { color: rgb(202 138 4 / 0.75); } /* → yellow-600 */
+.dashboard-light .text-gray-200        { color: rgb(107 114 128 / 1); }  /* → gray-500   */
+
+/* ── bg-white/25 and bg-white/30 overrides (active filter buttons) ────── */
+.dashboard-light .bg-white\/25         { background-color: rgba(0 0 0 / 0.10); }
+.dashboard-light .bg-white\/30         { background-color: rgba(0 0 0 / 0.12); }
+
+/* ── Very low opacity bg-white → near-transparent dark tints ─────────── */
+.dashboard-light .bg-white\/4          { background-color: rgba(0 0 0 / 0.02); }
+.dashboard-light .bg-white\/\[0\.02\]   { background-color: rgba(0 0 0 / 0.01); }
+.dashboard-light .bg-white\/7          { background-color: rgba(0 0 0 / 0.035); }
+.dashboard-light .hover\:bg-white\/7:hover   { background-color: rgba(0 0 0 / 0.045); }
+.dashboard-light .hover\:bg-white\/4:hover   { background-color: rgba(0 0 0 / 0.03); }
+
+/* ── Hover accent text ───────────────────────────────────────────────────── */
+.dashboard-light .hover\:text-red-400:hover    { color: rgb(220 38 38 / 1); }
+.dashboard-light .hover\:text-red-300:hover    { color: rgb(220 38 38 / 1); }
+.dashboard-light .hover\:text-blue-400:hover   { color: rgb(37 99 235 / 1); }
+.dashboard-light .hover\:text-green-400:hover  { color: rgb(22 163 74 / 1); }
+.dashboard-light .hover\:text-teal-300:hover   { color: rgb(15 118 110 / 1); }
+.dashboard-light .hover\:text-teal-200:hover   { color: rgb(17 94 89 / 1); }
+.dashboard-light .hover\:text-purple-300:hover { color: rgb(126 34 206 / 1); }
+.dashboard-light .hover\:text-purple-200:hover { color: rgb(147 51 234 / 1); }
+.dashboard-light .hover\:text-emerald-200:hover { color: rgb(4 120 87 / 1); }
+.dashboard-light .hover\:text-amber-200:hover  { color: rgb(217 119 6 / 1); }

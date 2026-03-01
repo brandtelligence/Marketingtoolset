@@ -288,6 +288,8 @@ function SaveAsCardModal({
   isSaving: boolean;
 }) {
   const { projects } = useProjects();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const activeProjects = projects.filter(p => p.status === 'active');
 
   const actionMeta = contentActions.find(a => a.id === actionId);
@@ -324,7 +326,7 @@ function SaveAsCardModal({
         <div className="p-5 flex flex-col gap-4">
           <div>
             <label className={`text-xs font-semibold uppercase tracking-wider mb-1.5 block ${et.textMd}`}>Card Title</label>
-            <input type="text" value={title} onChange={e => setTitle(e.target.value)} className={inputCls} placeholder="e.g. Instagram Calendar — March 2026" autoFocus />
+            <input type="text" value={title} onChange={e => setTitle(e.target.value)} className={et.inputCls} placeholder="e.g. Instagram Calendar — March 2026" autoFocus />
           </div>
 
           <div>
@@ -335,9 +337,9 @@ function SaveAsCardModal({
               <p className={`text-sm italic ${et.textFaint}`}>No active projects found.</p>
             ) : (
               <div className="relative">
-                <select value={projectId} onChange={e => setProjectId(e.target.value)} className={selectCls}>
+                <select value={projectId} onChange={e => setProjectId(e.target.value)} className={et.selectCls}>
                   {activeProjects.map(p => (
-                    <option key={p.id} value={p.id} className="bg-[#1a1040]">{p.name} — {p.client}</option>
+                    <option key={p.id} value={p.id} className={isDark ? 'bg-[#1a1040]' : 'bg-white'}>{p.name} — {p.client}</option>
                   ))}
                 </select>
                 <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${et.textFaint}`} />
@@ -371,7 +373,7 @@ function SaveAsCardModal({
                 +{platforms.length - 3} more
               </span>
             )}
-            <span className="text-[11px] px-2 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">Draft</span>
+            <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>Draft</span>
           </div>
         </div>
 
@@ -405,6 +407,8 @@ function SubmitApprovalModal({
   const { projects } = useProjects();
   const { user }     = useAuth();
   const navigate     = useNavigate();
+  const { isDark }   = useDashboardTheme();
+  const et           = employeeTheme(isDark);
 
   const card    = cards.find(c => c.id === asset.cardId);
   const project = projects.find(p => p.id === asset.projectId);
@@ -580,7 +584,7 @@ function SubmitApprovalModal({
             <textarea
               value={noteText} onChange={e => setNoteText(e.target.value)}
               placeholder="e.g. Please review before end of day — this is for tomorrow's campaign launch"
-              rows={2} className={`${inputCls} resize-none leading-relaxed`}
+              rows={2} className={`${et.inputCls} resize-none leading-relaxed`}
               style={{ minHeight: '60px', maxHeight: '100px' }}
             />
           </div>
@@ -624,7 +628,7 @@ function SavedAssetsPanel({
   if (assets.length === 0) return null;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${glass} p-4`}>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${et.glass} p-4`}>
       <div className="flex items-center gap-2 mb-3">
         <BookmarkCheck className="w-4 h-4 text-[#0BA4AA]" />
         <h3 className={`text-sm font-semibold ${et.text}`}>Saved Draft Cards</h3>
@@ -2477,7 +2481,7 @@ function AssetPipelineStep({
               onClick={onNext}
               disabled={!canProceed}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
-              style={{ background: canProceed ? 'linear-gradient(135deg,#0BA4AA,#F47A20)' : 'rgba(255,255,255,0.1)' }}
+              style={{ background: canProceed ? 'linear-gradient(135deg,#0BA4AA,#F47A20)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)') }}
             >
               <span>{nextLabel}</span>
               <ArrowRight className="w-4 h-4" />

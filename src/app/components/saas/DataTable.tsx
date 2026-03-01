@@ -174,7 +174,7 @@ export function DataTable<T extends Record<string, unknown>>({
                   <button
                     key={p}
                     onClick={() => setPage(p as number)}
-                    className={`w-7 h-7 rounded-lg text-xs transition-colors ${safePage === p ? 'bg-purple-500/40 text-white' : t.hover}`}
+                    className={`w-7 h-7 rounded-lg text-xs transition-colors ${safePage === p ? (t.isDark ? 'bg-purple-500/40 text-white' : 'bg-purple-500 text-white') : t.hover}`}
                   >
                     {p}
                   </button>

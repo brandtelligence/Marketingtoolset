@@ -12,6 +12,8 @@ import { CreateContentWizard } from '../components/ai/CreateContentWizard';
 import { ContentBoard } from '../components/ai/ContentBoard';
 import { useFoldableLayout } from '../hooks/useFoldableLayout';
 import { FoldableContainer } from '../components/FoldableContainer';
+import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
+import { employeeTheme } from '../utils/employeeTheme';
 
 /**
  * VCardProject
@@ -41,6 +43,8 @@ export function VCardProject() {
   const [activeView, setActiveView] = useState<View>('calendar');
   const [showContentWizard, setShowContentWizard] = useState(false);
   const { isDualScreen, isSquarish } = useFoldableLayout();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
 
   // Auth guard
   useEffect(() => {
@@ -53,7 +57,7 @@ export function VCardProject() {
     <BackgroundLayout>
       <EmployeeNav />
       {/* ── Header Banner ── */}
-      <div className="bg-white/5 backdrop-blur-md border-b border-white/10">
+      <div className={isDark ? 'bg-white/5 backdrop-blur-md border-b border-white/10' : 'bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm'}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
           <div className="flex flex-col gap-3 sm:gap-4">
             {/* Back Button — 44px touch target */}
@@ -62,7 +66,7 @@ export function VCardProject() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
               onClick={() => navigate('/app/projects')}
-              className="text-white/70 hover:text-white inline-flex items-center gap-2 text-sm w-fit transition-colors min-h-[2.75rem]"
+              className={`inline-flex items-center gap-2 text-sm w-fit transition-colors min-h-[2.75rem] ${isDark ? 'text-white/70 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`}
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Projects
@@ -75,14 +79,14 @@ export function VCardProject() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6 }}
               >
-                <div className="text-sm text-teal-300 mb-1">vCard.brandtelligence.my</div>
+                <div className="text-sm text-teal-500 mb-1">vCard.brandtelligence.my</div>
                 <h1
-                  className="text-white"
+                  className={et.text}
                   style={{ fontSize: 'clamp(1.5rem, 3.5vw, 1.875rem)' }}
                 >
                   vCard SaaS
                 </h1>
-                <p className="text-white/60 mt-1 text-sm sm:text-base">Social Media Content Calendar &amp; Mockups</p>
+                <p className={`${et.textMd} mt-1 text-sm sm:text-base`}>Social Media Content Calendar &amp; Mockups</p>
               </motion.div>
 
               {/* View Toggle — horizontal-scrollable on mobile */}
@@ -92,14 +96,14 @@ export function VCardProject() {
                 transition={{ duration: 0.6, delay: 0.1 }}
                 className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-none"
               >
-                <div className="flex gap-1.5 sm:gap-2 bg-white/10 backdrop-blur-md border border-white/20 p-1 rounded-xl w-max sm:w-auto">
+                <div className={`flex gap-1.5 sm:gap-2 backdrop-blur-md border p-1 rounded-xl w-max sm:w-auto ${isDark ? 'bg-white/10 border-white/20' : 'bg-gray-100 border-gray-200'}`}>
                   {/* Tab buttons — min-h-[2.75rem] for touch */}
                   <button
                     onClick={() => setActiveView('calendar')}
                     className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-lg transition-all whitespace-nowrap min-h-[2.75rem] text-sm ${
                       activeView === 'calendar'
-                        ? 'bg-white/20 text-white shadow-lg border border-white/30'
-                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                        ? (isDark ? 'bg-white/20 text-white shadow-lg border border-white/30' : 'bg-white text-gray-900 shadow-sm border border-gray-200')
+                        : (isDark ? 'text-white/60 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-white/60')
                     }`}
                   >
                     <CalendarDays className="w-4 h-4" />
@@ -109,8 +113,8 @@ export function VCardProject() {
                     onClick={() => setActiveView('mockups')}
                     className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-lg transition-all whitespace-nowrap min-h-[2.75rem] text-sm ${
                       activeView === 'mockups'
-                        ? 'bg-white/20 text-white shadow-lg border border-white/30'
-                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                        ? (isDark ? 'bg-white/20 text-white shadow-lg border border-white/30' : 'bg-white text-gray-900 shadow-sm border border-gray-200')
+                        : (isDark ? 'text-white/60 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-white/60')
                     }`}
                   >
                     <ImageIcon className="w-4 h-4" />
@@ -120,8 +124,8 @@ export function VCardProject() {
                     onClick={() => setActiveView('content-board')}
                     className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-lg transition-all whitespace-nowrap min-h-[2.75rem] text-sm ${
                       activeView === 'content-board'
-                        ? 'bg-white/20 text-white shadow-lg border border-white/30'
-                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                        ? (isDark ? 'bg-white/20 text-white shadow-lg border border-white/30' : 'bg-white text-gray-900 shadow-sm border border-gray-200')
+                        : (isDark ? 'text-white/60 hover:text-white hover:bg-white/5' : 'text-gray-500 hover:text-gray-900 hover:bg-white/60')
                     }`}
                   >
                     <LayoutGrid className="w-4 h-4" />
@@ -158,22 +162,22 @@ export function VCardProject() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.2 }}
-                className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 sm:p-6 shadow-xl"
+                className={isDark ? 'bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 sm:p-6 shadow-xl' : 'bg-white/80 backdrop-blur-md border border-gray-200 rounded-2xl p-4 sm:p-6 shadow-sm'}
               >
-                <h2 className="text-white mb-3 sm:mb-4" style={{ fontSize: 'clamp(1.125rem, 2vw, 1.25rem)' }}>
+                <h2 className={et.text + ' mb-3 sm:mb-4'} style={{ fontSize: 'clamp(1.125rem, 2vw, 1.25rem)' }}>
                   Project Overview
                 </h2>
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-white mb-2">Objective</h3>
-                    <p className="text-white/70 leading-relaxed text-sm">
+                    <h3 className={et.text + ' mb-2'}>Objective</h3>
+                    <p className={et.textMd + ' leading-relaxed text-sm'}>
                       Create a comprehensive 1-month social media marketing strategy to promote vCard SaaS platform,
                       increase brand awareness, and drive user acquisition across multiple social media channels.
                     </p>
                   </div>
                   <div>
-                    <h3 className="text-white mb-2">Deliverables</h3>
-                    <ul className="text-white/70 space-y-1 text-sm">
+                    <h3 className={et.text + ' mb-2'}>Deliverables</h3>
+                    <ul className={et.textMd + ' space-y-1 text-sm'}>
                       <li>• 31 social media posts (full month calendar)</li>
                       <li>• Content across 5 platforms</li>
                       <li>• 7 professional mockups for Week 1</li>
@@ -183,7 +187,7 @@ export function VCardProject() {
                 </div>
 
                 {/* Stats — 2x2 grid for left panel */}
-                <div className="grid grid-cols-2 gap-3 mt-5 pt-5 border-t border-white/15">
+                <div className={`grid grid-cols-2 gap-3 mt-5 pt-5 border-t ${isDark ? 'border-white/15' : 'border-gray-200'}`}>
                   {[
                     { value: '31', label: 'Total Posts', gradient: 'from-purple-400 to-pink-400' },
                     { value: '5', label: 'Platforms', gradient: 'from-teal-400 to-cyan-400' },
@@ -196,19 +200,19 @@ export function VCardProject() {
                       >
                         {stat.value}
                       </div>
-                      <div className="text-white/60 text-xs">{stat.label}</div>
+                      <div className={et.textMd + ' text-xs'}>{stat.label}</div>
                     </div>
                   ))}
                 </div>
               </motion.div>
 
               {/* Tab legend for dual-screen context */}
-              <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-4">
-                <p className="text-white/50 text-xs mb-2 uppercase tracking-wider">Active View</p>
-                <p className="text-white text-sm font-medium">
+              <div className={isDark ? 'bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-4' : 'bg-white/80 backdrop-blur-md border border-gray-200 rounded-xl p-4'}>
+                <p className={et.textFaint + ' text-xs mb-2 uppercase tracking-wider'}>Active View</p>
+                <p className={et.text + ' text-sm font-medium'}>
                   {activeView === 'calendar' ? '📅 Calendar' : activeView === 'mockups' ? '🖼️ Mockups' : '📋 Content Board'}
                 </p>
-                <p className="text-white/40 text-xs mt-1">Displayed on the right panel →</p>
+                <p className={et.textFaint + ' text-xs mt-1'}>Displayed on the right panel →</p>
               </div>
             </div>
           }
@@ -235,9 +239,9 @@ export function VCardProject() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8 shadow-xl"
+            className={isDark ? 'bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8 shadow-xl' : 'bg-white/80 backdrop-blur-md border border-gray-200 rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8 shadow-sm'}
           >
-            <h2 className="text-white mb-3 sm:mb-4" style={{ fontSize: 'clamp(1.125rem, 2vw, 1.25rem)' }}>
+            <h2 className={et.text + ' mb-3 sm:mb-4'} style={{ fontSize: 'clamp(1.125rem, 2vw, 1.25rem)' }}>
               Project Overview
             </h2>
             <div className={`gap-4 sm:gap-6 ${
@@ -246,15 +250,15 @@ export function VCardProject() {
                 : 'grid grid-cols-1 md:grid-cols-2'
             }`}>
               <div>
-                <h3 className="text-white mb-2">Objective</h3>
-                <p className="text-white/70 leading-relaxed text-sm sm:text-base">
+                <h3 className={et.text + ' mb-2'}>Objective</h3>
+                <p className={et.textMd + ' leading-relaxed text-sm sm:text-base'}>
                   Create a comprehensive 1-month social media marketing strategy to promote vCard SaaS platform,
                   increase brand awareness, and drive user acquisition across multiple social media channels.
                 </p>
               </div>
               <div>
-                <h3 className="text-white mb-2">Deliverables</h3>
-                <ul className="text-white/70 space-y-1 text-sm sm:text-base">
+                <h3 className={et.text + ' mb-2'}>Deliverables</h3>
+                <ul className={et.textMd + ' space-y-1 text-sm sm:text-base'}>
                   <li>• 31 social media posts (full month calendar)</li>
                   <li>• Content across 5 platforms (Instagram, Facebook, LinkedIn, Twitter, TikTok)</li>
                   <li>• 7 professional mockups for Week 1</li>
@@ -264,7 +268,7 @@ export function VCardProject() {
             </div>
 
             {/* Stats — 2 col mobile, 4 col md+ */}
-            <div className={`gap-3 sm:gap-4 mt-5 sm:mt-6 pt-5 sm:pt-6 border-t border-white/15 ${
+            <div className={`gap-3 sm:gap-4 mt-5 sm:mt-6 pt-5 sm:pt-6 border-t ${isDark ? 'border-white/15' : 'border-gray-200'} ${
               isSquarish
                 ? 'fold-auto-grid'
                 : 'grid grid-cols-2 md:grid-cols-4'
@@ -289,7 +293,7 @@ export function VCardProject() {
                   >
                     {stat.value}
                   </div>
-                  <div className="text-white/60 text-xs sm:text-sm">{stat.label}</div>
+                  <div className={et.textMd + ' text-xs sm:text-sm'}>{stat.label}</div>
                 </motion.div>
               ))}
             </div>

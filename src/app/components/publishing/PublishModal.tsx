@@ -26,6 +26,7 @@ import { type SocialConnection } from './ConnectAccountDrawer';
 import { projectId } from '/utils/supabase/info';
 import { IS_DEMO_MODE } from '../../config/appConfig';
 import { getAuthHeaders } from '../../utils/authHeaders';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -69,6 +70,7 @@ interface PublishModalProps {
 
 export function PublishModal({ card, tenantId, onClose, onOpenConnectionManager }: PublishModalProps) {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
 
   // Connections
   const [connections, setConnections] = useState<SocialConnection[]>([]);
@@ -197,7 +199,7 @@ export function PublishModal({ card, tenantId, onClose, onOpenConnectionManager 
 
         <motion.div
           className="relative w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl"
-          style={{ background: 'linear-gradient(150deg,rgba(14,12,28,0.99) 0%,rgba(9,7,20,0.99) 100%)', border: '1px solid rgba(255,255,255,0.09)' }}
+          style={{ background: isDark ? 'linear-gradient(150deg,rgba(14,12,28,0.99) 0%,rgba(9,7,20,0.99) 100%)' : 'linear-gradient(150deg,rgba(255,255,255,0.99) 0%,rgba(248,249,252,0.99) 100%)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.1)'}` }}
           initial={{ y: 60, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 60, opacity: 0, scale: 0.97 }}
           transition={{ type: 'spring', stiffness: 320, damping: 26 }}
         >

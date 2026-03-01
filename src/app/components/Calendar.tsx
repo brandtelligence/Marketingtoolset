@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Instagram, Facebook, Linkedin, Twitter, List, Calendar as CalendarIcon, Hash, Clock } from 'lucide-react';
 import { SiTiktok, SiTelegram } from 'react-icons/si';
 import { useContent, type ContentCard } from '../contexts/ContentContext';
+import { useDashboardTheme } from './saas/DashboardThemeContext';
 import { FoldableContainer } from './FoldableContainer';
 
 // ─── Platform Visuals ─────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ type ViewMode = 'list' | 'calendar';
 
 export function Calendar() {
   const { getCardsByProject } = useContent();
+  const { isDark } = useDashboardTheme();
   const projectCards = getCardsByProject('1'); // vCard SaaS project
 
   // Only show cards that have a scheduled date (i.e. belong on the calendar)
@@ -425,7 +427,8 @@ export function Calendar() {
             onClick={() => setSelectedPost(null)}
           >
             <div
-              className="bg-[#1a1035]/95 backdrop-blur-xl border border-white/20 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl fold-modal-safe"
+              className={`backdrop-blur-xl border rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl fold-modal-safe ${isDark ? 'border-white/20' : 'border-gray-200'}`}
+              style={{ background: isDark ? 'rgba(26,16,53,0.95)' : 'rgba(255,255,255,0.98)' }}
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">

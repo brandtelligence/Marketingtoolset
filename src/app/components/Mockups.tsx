@@ -3,6 +3,7 @@ import { Instagram, Facebook, Linkedin, Twitter, Download } from 'lucide-react';
 import { SiTiktok, SiTelegram } from 'react-icons/si';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useContent, type ContentCard } from '../contexts/ContentContext';
+import { useDashboardTheme } from './saas/DashboardThemeContext';
 import { useFoldableLayout } from '../hooks/useFoldableLayout';
 
 // ─── Platform Visuals ─────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ export function Mockups() {
   const { getCardsByProject } = useContent();
   const projectCards = getCardsByProject('1');
   const { isDualScreen, isSquarish } = useFoldableLayout();
+  const { theme, isDark } = useDashboardTheme();
 
   // Show first 7 scheduled cards (Week 1) for mockups, sorted by date
   const weekOnePosts = useMemo(() => {
@@ -210,14 +212,15 @@ export function Mockups() {
             onClick={() => setSelectedMockup(null)}
           >
             <div
-              className="bg-[#1a1035]/95 backdrop-blur-xl border border-white/20 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl fold-modal-safe"
+              className={`backdrop-blur-xl border rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl fold-modal-safe ${isDark ? 'border-white/20' : 'border-gray-200'}`}
+              style={{ background: isDark ? 'rgba(26,16,53,0.95)' : 'rgba(255,255,255,0.98)' }}
               onClick={e => e.stopPropagation()}
             >
               <div className="grid md:grid-cols-2">
                 {/* Left: Phone mockup */}
-                <div className="bg-white/5 relative">
+                <div className={`relative ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
                   <div className="p-8">
-                    <div className="bg-[#1a1035] rounded-3xl shadow-2xl overflow-hidden border-8 border-white/20">
+                    <div className="bg-[#1a1035] rounded-3xl shadow-2xl overflow-hidden border-8 border-white/20 mockup-device">
                       {/* Platform header */}
                       <div className={`${color} p-4 text-white flex items-center justify-between`}>
                         <div className="flex items-center gap-3">

@@ -11,6 +11,7 @@ import { type ContentCard, type AiPromptHistoryEntry } from '../../contexts/Cont
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { IS_DEMO_MODE } from '../../config/appConfig';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -180,6 +181,8 @@ function CropGuide({ aspectRatio }: { aspectRatio: string }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }: AIMediaGeneratorProps) {
+
+  const { isDark } = useDashboardTheme();
 
   // ── Tab ──────────────────────────────────────────────────────────────────
   const [tab,  setTab]  = useState<MediaTab>('image');
@@ -400,7 +403,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
         {/* Modal */}
         <motion.div
           className="relative w-full max-w-5xl max-h-[92vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl"
-          style={{ background: 'linear-gradient(135deg, rgba(18,18,32,0.99) 0%, rgba(12,12,22,0.99) 100%)', border: '1px solid rgba(255,255,255,0.09)' }}
+          style={{ background: isDark ? 'linear-gradient(135deg, rgba(18,18,32,0.99) 0%, rgba(12,12,22,0.99) 100%)' : 'linear-gradient(135deg, rgba(255,255,255,0.99) 0%, rgba(248,249,252,0.99) 100%)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.1)'}` }}
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}

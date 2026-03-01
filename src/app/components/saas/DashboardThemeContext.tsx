@@ -105,9 +105,9 @@ const DARK: DashboardThemeTokens = {
 
 const LIGHT: DashboardThemeTokens = {
   isDark: false,
-  pageBg: 'bg-gray-50',
+  pageBg: 'bg-gradient-to-br from-gray-50 via-white to-slate-50',
   s0: 'bg-white',
-  s1: 'bg-gray-100',
+  s1: 'bg-gray-50',
   border: 'border-gray-200',
   borderMd: 'border-gray-300',
   text: 'text-gray-900',
@@ -116,11 +116,11 @@ const LIGHT: DashboardThemeTokens = {
   textFaint: 'text-gray-400',
   hover: 'hover:bg-gray-100',
   hoverBorder: 'hover:border-gray-300',
-  inputCls: 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none',
-  selectCls: 'bg-white border-gray-300 text-gray-900 focus:border-purple-500 focus:outline-none',
+  inputCls: 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500 focus:outline-none shadow-sm',
+  selectCls: 'bg-white border-gray-300 text-gray-900 focus:border-purple-500 focus:outline-none shadow-sm',
   sidebarBg: 'bg-white',
   sidebarBorder: 'border-gray-200',
-  collapseBg: 'bg-white border-gray-300 hover:bg-gray-100',
+  collapseBg: 'bg-white border-gray-300 hover:bg-gray-100 shadow-sm',
   mobileSidebarBg: 'bg-white',
   theadBg: 'bg-gray-50',
   theadText: 'text-gray-500',
@@ -128,11 +128,11 @@ const LIGHT: DashboardThemeTokens = {
   trHover: 'hover:bg-gray-50',
   tableBorder: 'border-gray-200',
   navActive: (a) => a === 'teal'
-    ? 'bg-teal-50 text-teal-700 border-teal-200'
-    : 'bg-purple-50 text-purple-700 border-purple-200',
+    ? 'bg-teal-50 text-teal-700 border-teal-300 shadow-sm'
+    : 'bg-purple-50 text-purple-700 border-purple-300 shadow-sm',
   navHover: (a) => a === 'teal'
-    ? 'hover:bg-teal-50 hover:text-teal-700'
-    : 'hover:bg-purple-50 hover:text-purple-700',
+    ? 'hover:bg-teal-50/60 hover:text-teal-700'
+    : 'hover:bg-purple-50/60 hover:text-purple-700',
   navInactive: 'text-gray-600',
   navBadgeDot: (a) => a === 'teal' ? 'bg-teal-500 text-white' : 'bg-purple-500 text-white',
   tabBg: 'bg-gray-100',
@@ -169,6 +169,13 @@ export function DashboardThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try { localStorage.setItem('dashboard-theme', isDark ? 'dark' : 'light'); }
     catch { /* ignore */ }
+    // Toggle body class so CSS-level overrides (dashboard-light.css) apply globally
+    if (isDark) {
+      document.body.classList.remove('dashboard-light');
+    } else {
+      document.body.classList.add('dashboard-light');
+    }
+    return () => { document.body.classList.remove('dashboard-light'); };
   }, [isDark]);
 
   const tokens = isDark ? DARK : LIGHT;

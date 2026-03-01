@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import type { ContentCard } from '../../contexts/ContentContext';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
 
 const API  = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -32,6 +33,7 @@ interface ShareForReviewDialogProps {
 }
 
 export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForReviewDialogProps) {
+  const { isDark } = useDashboardTheme();
   const [clientName,   setClientName]   = useState('');
   const [expiresInDays, setExpiresIn]  = useState(7);
   const [generating,   setGenerating]   = useState(false);
@@ -89,7 +91,7 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
           exit={{    scale: 0.94, opacity: 0, y: 12 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32 }}
           className="relative w-full max-w-md rounded-2xl border border-white/15 shadow-2xl overflow-hidden"
-          style={{ background: 'rgba(12,10,40,0.97)', backdropFilter: 'blur(24px)' }}
+          style={{ background: isDark ? 'rgba(12,10,40,0.97)' : 'rgba(255,255,255,0.98)', backdropFilter: 'blur(24px)' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/10">

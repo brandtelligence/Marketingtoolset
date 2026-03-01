@@ -1305,7 +1305,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
           >
             <div
               className="pointer-events-auto flex flex-col sm:flex-row items-center gap-3 px-5 py-3.5 rounded-2xl border border-[#F47A20]/25 shadow-2xl shadow-black/60"
-              style={{ background: 'rgba(15,10,40,0.94)', backdropFilter: 'blur(20px)' }}
+              style={{ background: isDark ? 'rgba(15,10,40,0.94)' : 'rgba(255,255,255,0.96)', backdropFilter: 'blur(20px)' }}
             >
               {/* Count */}
               <div>
@@ -1472,7 +1472,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               exit={{ opacity: 0, scale: 0.95, y: 12 }}
               transition={{ type: 'spring', stiffness: 380, damping: 28 }}
               className="relative z-10 w-full max-w-md rounded-2xl border border-red-400/20 p-6 shadow-2xl"
-              style={{ background: 'rgba(15,10,40,0.97)' }}
+              style={{ background: isDark ? 'rgba(15,10,40,0.97)' : 'rgba(255,255,255,0.98)' }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}

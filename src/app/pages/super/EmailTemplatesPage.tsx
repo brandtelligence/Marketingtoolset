@@ -243,7 +243,7 @@ export function EmailTemplatesPage() {
     sentTo: 'it@brandtelligence.com.my', sentAt: '24 Feb 2026, 10:00 AM',
     // Auth templates (12–16)
     email: 'ahmad@acme.com.my', confirmUrl: '#',
-    invitedByName: 'Siti Nuraini', invitedByEmail: 'siti@brandtelligence.com.my', inviteUrl: '#',
+    invitedByName: 'Siti Nuraini', invitedByEmail: 'siti@brandtelligence.com.my',
     magicLinkUrl: '#',
     oldEmail: 'ahmad.old@acme.com.my', newEmail: 'ahmad.new@acme.com.my', changeUrl: '#',
     reauthUrl: '#', actionDescription: 'Change Password',
