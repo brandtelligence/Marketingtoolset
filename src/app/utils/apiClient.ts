@@ -319,6 +319,76 @@ export async function updateModuleRequest(id: string, patch: { status: ModuleReq
   await api(`/module-requests/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
 }
 
+// ─── Projects (tenant-scoped, KV-backed) ──────────────────────────────────────
+
+import type { Project } from '../contexts/ProjectsContext';
+
+export async function fetchProjects(tenantId: string): Promise<Project[]> {
+  if (!IS_PRODUCTION) return []; // Demo mode seeds projects locally in context
+  const { projects } = await api<{ projects: Project[] }>(`/projects?tenantId=${encodeURIComponent(tenantId)}`);
+  return projects ?? [];
+}
+
+export async function createProject(project: Project, tenantId: string): Promise<Project> {
+  if (!IS_PRODUCTION) return project;
+  const { project: created } = await api<{ project: Project }>('/projects', {
+    method: 'POST',
+    body: JSON.stringify({ ...project, tenantId }),
+  });
+  return created;
+}
+
+export async function updateProjectApi(id: string, patch: Partial<Project>, tenantId: string): Promise<Project> {
+  if (!IS_PRODUCTION) return patch as Project;
+  const { project } = await api<{ project: Project }>(`/projects/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...patch, tenantId }),
+  });
+  return project;
+}
+
+export async function syncProjects(projects: Project[], tenantId: string): Promise<void> {
+  if (!IS_PRODUCTION) return;
+  await api('/projects/sync', {
+    method: 'POST',
+    body: JSON.stringify({ projects, tenantId }),
+  });
+}
+
+// ─── Content Cards Backfill ───────────────────────────────────────────────────
+
+export async function backfillContentCardsTenant(): Promise<{ updated: number }> {
+  if (!IS_PRODUCTION) return { updated: 0 };
+  return api<{ updated: number }>('/content-cards/backfill-tenant', { method: 'POST' });
+}
+
+// ─── Approval Events ─────────────────────────────────────────────────────────
+
+export interface ServerApprovalEvent {
+  id: string;
+  cardId: string;
+  cardTitle: string;
+  platform: string;
+  eventType: string;     // approved | rejected | submitted_for_approval | reverted_to_draft
+  performedBy: string;
+  performedByEmail: string;
+  reason?: string;
+  createdAt: string;     // ISO
+}
+
+export async function fetchRecentApprovalEvents(tenantId: string, limit = 20): Promise<ServerApprovalEvent[]> {
+  if (!IS_PRODUCTION) return [];
+  try {
+    const { events } = await api<{ events: ServerApprovalEvent[] }>(
+      `/approval-events?tenantId=${encodeURIComponent(tenantId)}&limit=${limit}`,
+    );
+    return events ?? [];
+  } catch (err) {
+    console.error('[apiClient] fetchRecentApprovalEvents error:', err);
+    return [];
+  }
+}
+
 // ─── AI Content Generation ────────────────────────────────────────────────────
 //
 // Phase 2.1: all AI functions now use the centralised getAuthHeaders() utility
@@ -370,6 +440,95 @@ export async function generateContent(
   params: GenerateContentParams,
 ): Promise<GenerateContentResult> {
   return api<GenerateContentResult>('/ai/generate-content', {
+    method: 'POST',
+    body:   JSON.stringify(params),
+  });
+}
+
+// ── Dedicated Brief & Platform Copy endpoints (Steps 5 & 6 of wizard) ────────
+
+export interface GenerateBriefParams {
+  initialContent: string;
+  actionName?:    string;
+  platforms?:     string[];
+  channel?:       string;
+  tone?:          string;
+}
+
+export async function generateBrief(
+  params: GenerateBriefParams,
+): Promise<GenerateContentResult> {
+  return api<GenerateContentResult>('/ai/generate-brief', {
+    method: 'POST',
+    body:   JSON.stringify(params),
+  });
+}
+
+export interface GeneratePlatformCopyParams {
+  briefContent:    string;
+  initialContent?: string;
+  platforms:       string[];
+  channel?:        string;
+  tone?:           string;
+}
+
+export async function generatePlatformCopy(
+  params: GeneratePlatformCopyParams,
+): Promise<GenerateContentResult> {
+  return api<GenerateContentResult>('/ai/generate-platform-copy', {
+    method: 'POST',
+    body:   JSON.stringify(params),
+  });
+}
+
+// ── AI Image Generation (DALL-E 3) ──────────────────────────────────────────
+
+export interface GenerateImageParams {
+  prompt:       string;
+  size?:        '1024x1024' | '1024x1792' | '1792x1024';
+  quality?:     'standard' | 'hd';
+  assetId?:     string;
+  projectName?: string;
+}
+
+export interface GenerateImageResult {
+  success:       boolean;
+  imageUrl:      string;
+  revisedPrompt: string;
+  storagePath:   string;
+  usage:         ContentGenUsageSummary;
+}
+
+export async function generateImage(
+  params: GenerateImageParams,
+): Promise<GenerateImageResult> {
+  return api<GenerateImageResult>('/ai/generate-image', {
+    method: 'POST',
+    body:   JSON.stringify(params),
+  });
+}
+
+// ── AI Content Refinement ───────────────────────────────────────────────────
+
+export interface RefineContentParams {
+  instruction:     string;
+  currentContent?: string;
+  captions?:       Record<string, string>;
+  platforms?:      string[];
+  projectName?:    string;
+}
+
+export interface RefineContentResult {
+  success:    boolean;
+  output:     string;
+  tokensUsed: number;
+  usage:      ContentGenUsageSummary;
+}
+
+export async function refineContent(
+  params: RefineContentParams,
+): Promise<RefineContentResult> {
+  return api<RefineContentResult>('/ai/refine-content', {
     method: 'POST',
     body:   JSON.stringify(params),
   });
@@ -799,4 +958,90 @@ export async function savePenTestResults(results: Record<string, PenTestResultEn
     method: 'PUT',
     body: JSON.stringify({ results }),
   });
+}
+
+// ─── Team Activity Feed ─────────────────────────────────────────────────────
+
+export type ActivityAction =
+  | 'content_created' | 'content_edited' | 'content_approved' | 'content_rejected'
+  | 'content_published' | 'content_scheduled' | 'campaign_created' | 'campaign_generated'
+  | 'account_connected' | 'account_disconnected' | 'user_invited' | 'user_joined'
+  | 'comment_added' | 'engagement_updated';
+
+export type ActivityEntityType = 'content' | 'campaign' | 'account' | 'user' | 'system';
+
+export interface ActivityEvent {
+  id: string;
+  tenantId: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  userRole?: string;
+  action: ActivityAction;
+  entityType: ActivityEntityType;
+  entityId?: string;
+  entityTitle?: string;
+  platform?: string;
+  details?: string;
+  timestamp: string;
+}
+
+interface ActivityFeedResponse {
+  events: ActivityEvent[];
+  hasMore: boolean;
+}
+
+// ── Demo fallback data ────────────────────────────────────────────────────────
+function demoActivityFeed(): ActivityFeedResponse {
+  const now = Date.now();
+  const h = (hours: number) => new Date(now - hours * 3600_000).toISOString();
+  const DEMO_EVENTS: ActivityEvent[] = [
+    { id: 'demo-01', tenantId: 'demo', userId: 'u1', userName: 'Sarah Chen', userRole: 'TENANT_ADMIN', action: 'content_approved', entityType: 'content', entityTitle: 'March Product Launch — Instagram Carousel', platform: 'instagram', timestamp: h(0.2), details: 'Approved with minor caption edits' },
+    { id: 'demo-02', tenantId: 'demo', userId: 'u2', userName: 'Amir Hassan', userRole: 'EMPLOYEE', action: 'content_created', entityType: 'content', entityTitle: 'Hari Raya Greeting Post', platform: 'facebook', timestamp: h(0.8) },
+    { id: 'demo-03', tenantId: 'demo', userId: 'u3', userName: 'Priya Nair', userRole: 'EMPLOYEE', action: 'campaign_generated', entityType: 'campaign', entityTitle: 'Q2 Brand Awareness Campaign', timestamp: h(1.5), details: 'AI generated 24 posts across 4 platforms' },
+    { id: 'demo-04', tenantId: 'demo', userId: 'u1', userName: 'Sarah Chen', userRole: 'TENANT_ADMIN', action: 'content_rejected', entityType: 'content', entityTitle: 'Weekend Flash Sale Banner', platform: 'instagram', timestamp: h(2.3), details: 'Brand colors need adjustment — see comments' },
+    { id: 'demo-05', tenantId: 'demo', userId: 'u4', userName: 'Daniel Lim', userRole: 'EMPLOYEE', action: 'content_published', entityType: 'content', entityTitle: 'Tech Tuesday — AI in Marketing', platform: 'linkedin', timestamp: h(3.0) },
+    { id: 'demo-06', tenantId: 'demo', userId: 'u2', userName: 'Amir Hassan', userRole: 'EMPLOYEE', action: 'content_scheduled', entityType: 'content', entityTitle: 'Friday Motivation Quote', platform: 'twitter', timestamp: h(4.5), details: 'Scheduled for 2026-03-06 09:00 MYT' },
+    { id: 'demo-07', tenantId: 'demo', userId: 'u5', userName: 'Li Wei', userRole: 'EMPLOYEE', action: 'account_connected', entityType: 'account', entityTitle: 'TikTok Business Account', platform: 'tiktok', timestamp: h(6.0) },
+    { id: 'demo-08', tenantId: 'demo', userId: 'u3', userName: 'Priya Nair', userRole: 'EMPLOYEE', action: 'content_edited', entityType: 'content', entityTitle: 'World Water Day Infographic', platform: 'instagram', timestamp: h(8.0), details: 'Updated hashtags and call-to-action' },
+    { id: 'demo-09', tenantId: 'demo', userId: 'u1', userName: 'Sarah Chen', userRole: 'TENANT_ADMIN', action: 'user_invited', entityType: 'user', entityTitle: 'maya.tang@example.com', timestamp: h(10.0), details: 'Invited as EMPLOYEE to the content team' },
+    { id: 'demo-10', tenantId: 'demo', userId: 'u6', userName: 'Maya Tang', userRole: 'EMPLOYEE', action: 'user_joined', entityType: 'user', entityTitle: 'Content Team', timestamp: h(11.0) },
+    { id: 'demo-11', tenantId: 'demo', userId: 'u4', userName: 'Daniel Lim', userRole: 'EMPLOYEE', action: 'engagement_updated', entityType: 'content', entityTitle: 'Chinese New Year Campaign Recap', platform: 'facebook', timestamp: h(24.0), details: '+2.4K reach, 156 likes, 23 shares' },
+    { id: 'demo-12', tenantId: 'demo', userId: 'u2', userName: 'Amir Hassan', userRole: 'EMPLOYEE', action: 'campaign_created', entityType: 'campaign', entityTitle: 'Ramadan Content Calendar', timestamp: h(28.0) },
+    { id: 'demo-13', tenantId: 'demo', userId: 'u1', userName: 'Sarah Chen', userRole: 'TENANT_ADMIN', action: 'content_approved', entityType: 'content', entityTitle: 'Earth Hour 2026 Awareness Post', platform: 'instagram', timestamp: h(48.0) },
+    { id: 'demo-14', tenantId: 'demo', userId: 'u3', userName: 'Priya Nair', userRole: 'EMPLOYEE', action: 'content_published', entityType: 'content', entityTitle: 'Client Testimonial Video — TechVentures', platform: 'youtube', timestamp: h(72.0) },
+    { id: 'demo-15', tenantId: 'demo', userId: 'u5', userName: 'Li Wei', userRole: 'EMPLOYEE', action: 'account_disconnected', entityType: 'account', entityTitle: 'Old Twitter Account', platform: 'twitter', timestamp: h(96.0) },
+  ];
+  return { events: DEMO_EVENTS, hasMore: false };
+}
+
+export async function fetchActivityFeed(limit = 50, before?: string): Promise<ActivityFeedResponse> {
+  if (!IS_PRODUCTION) return demoActivityFeed();
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set('before', before);
+  return api<ActivityFeedResponse & { success: boolean }>(`/activity-feed?${params}`);
+}
+
+export async function postActivityEvent(event: {
+  action: ActivityAction;
+  entityType: ActivityEntityType;
+  userName: string;
+  userAvatar?: string;
+  userRole?: string;
+  entityId?: string;
+  entityTitle?: string;
+  platform?: string;
+  details?: string;
+}): Promise<ActivityEvent | null> {
+  if (!IS_PRODUCTION) return null; // Demo mode — no-op
+  try {
+    const res = await api<{ success: boolean; event: ActivityEvent }>('/activity-feed', {
+      method: 'POST',
+      body: JSON.stringify(event),
+    });
+    return res.event;
+  } catch (err) {
+    console.error('[apiClient] postActivityEvent error:', err);
+    return null;
+  }
 }

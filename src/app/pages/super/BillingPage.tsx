@@ -8,6 +8,96 @@ import { DrawerForm, Field, Textarea } from '../../components/saas/DrawerForm';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { formatRM } from '../../utils/format';
 import { fetchInvoices, updateInvoice, type Invoice, type InvoiceStatus } from '../../utils/apiClient';
+import { getAuthHeaders } from '../../utils/authHeaders';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
+
+// ── CSV Export helper ───────────────────────────────────────────────────────
+function downloadCsv(filename: string, rows: Record<string, any>[], columns: { key: string; label: string }[]) {
+  const header = columns.map(c => `"${c.label}"`).join(',');
+  const body = rows.map(r =>
+    columns.map(c => {
+      const v = r[c.key] ?? '';
+      return `"${String(v).replace(/"/g, '""')}"`;
+    }).join(',')
+  ).join('\n');
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Invoice PDF generator (opens print-friendly window → Save as PDF) ────
+function generateInvoicePdf(inv: Invoice) {
+  const fmtRM = (n: number) => n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const linesHtml = inv.lines.map(l =>
+    `<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${l.description}</td>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${l.quantity}</td>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">RM ${fmtRM(l.unitPrice)}</td>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">RM ${fmtRM(l.total)}</td></tr>`
+  ).join('');
+
+  const html = `<!DOCTYPE html><html><head><title>${inv.invoiceNumber}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:40px;color:#1f2937;max-width:800px;margin:0 auto}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #14b8a6}
+  .logo{font-size:24px;font-weight:800;color:#14b8a6}
+  .logo span{color:#6b7280;font-weight:400;font-size:14px;display:block;margin-top:2px}
+  .inv-num{text-align:right}
+  .inv-num h2{font-size:20px;color:#374151;margin-bottom:4px}
+  .inv-num p{font-size:12px;color:#6b7280}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px}
+  .meta-block h4{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#9ca3af;margin-bottom:6px}
+  .meta-block p{font-size:13px;color:#374151;margin-bottom:2px}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px}
+  thead tr{background:#f9fafb}
+  th{padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb}
+  th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:right}
+  th:nth-child(2){text-align:center}
+  .totals{display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-bottom:24px}
+  .totals .row{display:flex;gap:32px;font-size:13px;color:#6b7280}
+  .totals .row span:last-child{min-width:100px;text-align:right}
+  .totals .total-row{font-size:16px;font-weight:700;color:#1f2937;border-top:2px solid #14b8a6;padding-top:8px;margin-top:4px}
+  .status{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase}
+  .status-paid{background:#d1fae5;color:#065f46}
+  .status-sent{background:#dbeafe;color:#1e40af}
+  .status-overdue{background:#fee2e2;color:#991b1b}
+  .status-draft{background:#f3f4f6;color:#6b7280}
+  .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center}
+  .notes{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:#92400e}
+  @media print{body{padding:20px}button{display:none!important}}
+</style></head><body>
+<div class="header">
+  <div class="logo">Brandtelligence<span>AI-Powered Content Platform</span></div>
+  <div class="inv-num"><h2>${inv.invoiceNumber}</h2><p>Issued: ${inv.issuedAt}</p><p>Due: ${inv.dueDate}</p></div>
+</div>
+<div class="meta">
+  <div class="meta-block"><h4>Bill To</h4><p style="font-weight:600">${inv.tenantName}</p><p>Period: ${inv.period}</p></div>
+  <div class="meta-block" style="text-align:right"><h4>Status</h4><span class="status status-${inv.status}">${inv.status}</span>${inv.paidAt ? `<p style="margin-top:6px;font-size:12px;color:#065f46">Paid: ${inv.paidAt}</p>` : ''}</div>
+</div>
+${inv.notes ? `<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+<table><thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${linesHtml}</tbody></table>
+<div class="totals">
+  <div class="row"><span>Subtotal</span><span>RM ${fmtRM(inv.subtotal)}</span></div>
+  <div class="row"><span>SST (6%)</span><span>RM ${fmtRM(inv.tax)}</span></div>
+  <div class="row total-row"><span>Total Due</span><span>RM ${fmtRM(inv.total)}</span></div>
+</div>
+<div class="footer">
+  <p>Brandtelligence Sdn Bhd · SSM 202401000001 · SST ID W10-2401-32000001</p>
+  <p style="margin-top:4px">Thank you for your business. Payment terms: Net 30 days.</p>
+</div>
+<div style="text-align:center;margin-top:24px">
+  <button onclick="window.print()" style="padding:10px 28px;background:#14b8a6;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Print / Save as PDF</button>
+</div>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=820,height=900');
+  if (w) { w.document.write(html); w.document.close(); }
+  else { toast.error('Popup blocked — please allow popups for PDF download'); }
+}
 
 export function BillingPage() {
   const t = useDashboardTheme();
@@ -32,9 +122,23 @@ export function BillingPage() {
 
   const handleGenerateInvoices = async () => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1200));
-    setLoading(false);
-    toast.success('Monthly invoices generated for all active tenants (Feb 2025)');
+    try {
+      const res = await fetch(`${SERVER}/invoices/generate-monthly`, {
+        method: 'POST',
+        headers: await getAuthHeaders(true),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to generate invoices');
+      toast.success(`${data.message ?? 'Invoices generated'}${data.skipped ? ` (${data.skipped} already billed)` : ''}`);
+      // Refresh invoice list
+      const refreshed = await fetchInvoices();
+      setInvoices(refreshed);
+    } catch (err: any) {
+      console.error('[BillingPage] generate-monthly error:', err);
+      toast.error(`Invoice generation failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConfirmBankTransfer = async () => {
@@ -75,7 +179,7 @@ export function BillingPage() {
       render: i => (
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <button onClick={() => openInvoice(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`}><Eye className="w-4 h-4" /></button>
-          <button onClick={() => toast.info(`PDF download for ${i.invoiceNumber}`)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`}><Download className="w-4 h-4" /></button>
+          <button onClick={() => generateInvoicePdf(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`}><Download className="w-4 h-4" /></button>
         </div>
       ),
     },
@@ -88,7 +192,15 @@ export function BillingPage() {
         subtitle="Manage invoices, confirm bank transfers, and track revenue"
         actions={
           <>
-            <PrimaryBtn variant="ghost" onClick={() => toast.info('Exported to CSV')}><Download className="w-4 h-4" />Export</PrimaryBtn>
+            <PrimaryBtn variant="ghost" onClick={() => downloadCsv('invoices.csv', invoices, [
+              { key: 'invoiceNumber', label: 'Invoice #' },
+              { key: 'tenantName', label: 'Tenant' },
+              { key: 'period', label: 'Period' },
+              { key: 'total', label: 'Total' },
+              { key: 'dueDate', label: 'Due Date' },
+              { key: 'paymentMethod', label: 'Payment Method' },
+              { key: 'status', label: 'Status' },
+            ])}><Download className="w-4 h-4" />Export</PrimaryBtn>
             <PrimaryBtn onClick={handleGenerateInvoices} loading={loading}><CreditCard className="w-4 h-4" />Generate Monthly Invoices</PrimaryBtn>
           </>
         }
@@ -153,13 +265,19 @@ export function BillingPage() {
         footer={
           selected?.paymentMethod === 'bank_transfer' && selected?.status !== 'paid' ? (
             <>
+              <PrimaryBtn variant="ghost" onClick={() => selected && generateInvoicePdf(selected)}><Download className="w-4 h-4" />PDF</PrimaryBtn>
+              <div className="flex-1" />
               <PrimaryBtn variant="ghost" onClick={() => setDrawerOpen(false)}>Close</PrimaryBtn>
               <PrimaryBtn onClick={handleConfirmBankTransfer} loading={loading}>
                 <CheckCircle className="w-4 h-4" /> Confirm Bank Transfer
               </PrimaryBtn>
             </>
           ) : (
-            <PrimaryBtn variant="ghost" onClick={() => setDrawerOpen(false)}>Close</PrimaryBtn>
+            <>
+              <PrimaryBtn variant="ghost" onClick={() => selected && generateInvoicePdf(selected)}><Download className="w-4 h-4" />PDF</PrimaryBtn>
+              <div className="flex-1" />
+              <PrimaryBtn variant="ghost" onClick={() => setDrawerOpen(false)}>Close</PrimaryBtn>
+            </>
           )
         }
       >

@@ -1,4 +1,13 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
+import {
+  createContext, useContext, useState, useEffect, useCallback, useRef,
+  type ReactNode,
+} from 'react';
+import {
+  postActivityEvent,
+  fetchRecentApprovalEvents,
+  type ActivityAction,
+  type ActivityEntityType,
+} from '../utils/apiClient';
 import { socialMediaCalendar } from '../data/socialMediaCalendar';
 import { toast } from 'sonner';
 import { projectId } from '/utils/supabase/info';
@@ -514,6 +523,36 @@ export function ContentProvider({ children }: { children: ReactNode }) {
   // authenticated (unauthenticated requests would 401 and cause CORS / fetch errors).
   const { user, sessionLoading } = useAuth();
 
+  // ── Activity Feed integration (fire-and-forget) ──
+  // Maps content mutations to activity events for the Team Activity Feed.
+  // Failures are silently logged — activity tracking must never block content ops.
+  const emitActivity = useCallback((
+    action: ActivityAction,
+    card: ContentCard | null,
+    opts?: { details?: string; entityType?: ActivityEntityType },
+  ) => {
+    if (!user) return;
+    const userName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+    postActivityEvent({
+      action,
+      entityType: opts?.entityType ?? 'content',
+      userName,
+      userAvatar: user.profileImage || undefined,
+      userRole: user.role ?? 'EMPLOYEE',
+      entityId: card?.id,
+      entityTitle: card?.title,
+      platform: card?.platform,
+      details: opts?.details,
+    }).catch(err => {
+      console.error('[ContentContext] Activity event failed (non-blocking):', err);
+    });
+  }, [user]);
+
+  // Keep a ref to current cards so updateCard can detect status changes
+  // without needing `cards` in its dependency array (avoids re-creating the callback).
+  const cardsRef = useRef<ContentCard[]>(cards);
+  useEffect(() => { cardsRef.current = cards; }, [cards]);
+
   // ── Load cards from Supabase when auth resolves ──
   useEffect(() => {
     // Demo mode: mock cards are already in state — skip server fetch entirely.
@@ -550,8 +589,35 @@ export function ContentProvider({ children }: { children: ReactNode }) {
           setCards(deserialized);
           setIsSynced(true);
           console.log(`[ContentContext] Loaded ${deserialized.length} cards from Supabase`);
+        } else if (user.tenantId) {
+          // No cards found for this tenant — attempt self-healing backfill
+          // in case orphaned rows exist with tenant_id = null (Phase 2 fix).
+          console.log('[ContentContext] No tenant-scoped cards found — attempting backfill…');
+          try {
+            const bf = await apiFetch('/content-cards/backfill-tenant', { method: 'POST' });
+            if (bf.updated > 0) {
+              console.log(`[ContentContext] Backfill assigned ${bf.updated} orphaned cards to tenant ${user.tenantId}`);
+              // Re-fetch after backfill
+              const retry = await apiFetch(`/content-cards${tenantParam}`);
+              if (retry.cards?.length > 0) {
+                setCards(retry.cards.map(deserializeCard));
+                setIsSynced(true);
+              } else {
+                setCards([]);
+                setIsSynced(true);
+              }
+            } else {
+              console.log('[ContentContext] No orphaned cards found — starting with empty board');
+              setCards([]);
+              setIsSynced(true);
+            }
+          } catch (bfErr) {
+            console.warn('[ContentContext] Backfill attempt failed (non-fatal):', bfErr);
+            setCards([]);
+            setIsSynced(true);
+          }
         } else {
-          // Server has no data — start with empty board (production: no mock seeding)
+          // No tenantId (SUPER_ADMIN) — start with empty board
           console.log('[ContentContext] No server data found — starting with empty board');
           setCards([]);
           setIsSynced(true);
@@ -566,10 +632,44 @@ export function ContentProvider({ children }: { children: ReactNode }) {
     })();
   }, [user, sessionLoading]);
 
+  // ── Load recent approval events so the approval bell is populated after reload ──
+  useEffect(() => {
+    if (IS_DEMO_MODE || !user?.tenantId || isLoading) return;
+    fetchRecentApprovalEvents(user.tenantId, 20).then(serverEvents => {
+      if (serverEvents.length > 0) {
+        const mapped: ApprovalEvent[] = serverEvents.map(e => ({
+          id: e.id,
+          cardId: e.cardId,
+          cardTitle: e.cardTitle,
+          platform: e.platform,
+          action: e.eventType as ApprovalEvent['action'],
+          performedBy: e.performedBy,
+          performedByEmail: e.performedByEmail,
+          reason: e.reason,
+          timestamp: e.createdAt,
+        }));
+        setRecentEvents(prev => {
+          // Merge server events with any in-session events, dedup by id
+          const ids = new Set(prev.map(e => e.id));
+          const newOnes = mapped.filter(e => !ids.has(e.id));
+          return [...prev, ...newOnes].sort((a, b) =>
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          ).slice(0, 50);
+        });
+        console.log(`[ContentContext] Loaded ${serverEvents.length} recent approval events`);
+      }
+    }).catch(err => {
+      console.warn('[ContentContext] Approval events load failed (non-fatal):', err);
+    });
+  }, [user?.tenantId, isLoading]);
+
   // ── Sync helpers ──
   const syncAllCards = async (cardsToSync: ContentCard[]) => {
+    if (IS_DEMO_MODE) return; // Demo mode: no server to sync to
     try {
-      const serialized = cardsToSync.map(serializeCard);
+      // Belt-and-suspenders: inject tenantId so cards always carry tenant scope
+      const tid = user?.tenantId ?? null;
+      const serialized = cardsToSync.map(c => ({ ...serializeCard(c), tenantId: tid }));
       await apiFetch('/content-cards/sync', {
         method: 'POST',
         body: JSON.stringify({ cards: serialized }),
@@ -582,10 +682,12 @@ export function ContentProvider({ children }: { children: ReactNode }) {
   };
 
   const persistCard = async (card: ContentCard) => {
+    if (IS_DEMO_MODE) return; // Demo mode: keep cards local-only
     try {
+      const tid = user?.tenantId ?? null;
       await apiFetch('/content-cards', {
         method: 'POST',
-        body: JSON.stringify({ card: serializeCard(card) }),
+        body: JSON.stringify({ card: { ...serializeCard(card), tenantId: tid } }),
       });
     } catch (error) {
       console.error(`[ContentContext] Failed to persist card ${card.id}:`, error);
@@ -593,6 +695,7 @@ export function ContentProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteCardFromServer = async (cardId: string) => {
+    if (IS_DEMO_MODE) return; // Demo mode: no server-side deletion
     try {
       await apiFetch(`/content-cards/${cardId}`, { method: 'DELETE' });
     } catch (error) {
@@ -617,7 +720,9 @@ export function ContentProvider({ children }: { children: ReactNode }) {
       persistCard(card); // fire-and-forget
       return updated;
     });
-  }, []);
+    // Activity Feed: content_created
+    emitActivity('content_created', card);
+  }, [emitActivity]);
 
   const addCards = useCallback((newCards: ContentCard[]) => {
     setCards(prev => {
@@ -626,15 +731,50 @@ export function ContentProvider({ children }: { children: ReactNode }) {
       newCards.forEach(card => persistCard(card));
       return updated;
     });
-  }, []);
+    // Activity Feed: campaign_generated (batch creation is typically from AI calendar)
+    if (newCards.length > 0) {
+      const firstCard = newCards[0];
+      emitActivity('campaign_generated', firstCard, {
+        entityType: 'campaign',
+        details: `AI generated ${newCards.length} post${newCards.length > 1 ? 's' : ''} across ${new Set(newCards.map(c => c.platform)).size} platform(s)`,
+      });
+    }
+  }, [emitActivity]);
+
+  // ── Status-change detection map for Activity Feed ──
+  const STATUS_TO_ACTIVITY: Partial<Record<ContentStatus, ActivityAction>> = {
+    approved:  'content_approved',
+    rejected:  'content_rejected',
+    scheduled: 'content_scheduled',
+    published: 'content_published',
+  };
 
   const updateCard = useCallback((updated: ContentCard) => {
     setCards(prev => {
+      // Detect status transition for Activity Feed
+      const oldCard = cardsRef.current.find(c => c.id === updated.id);
+      if (oldCard && oldCard.status !== updated.status) {
+        const activityAction = STATUS_TO_ACTIVITY[updated.status];
+        if (activityAction) {
+          emitActivity(activityAction, updated, {
+            details: `Status changed from ${oldCard.status} to ${updated.status}`,
+          });
+        }
+      } else if (oldCard && oldCard.status === updated.status) {
+        // Content was edited (same status, different content)
+        const captionChanged = oldCard.caption !== updated.caption;
+        const titleChanged = oldCard.title !== updated.title;
+        const mediaChanged = oldCard.mediaUrl !== updated.mediaUrl;
+        if (captionChanged || titleChanged || mediaChanged) {
+          emitActivity('content_edited', updated);
+        }
+      }
+
       const newCards = prev.map(c => (c.id === updated.id ? updated : c));
       persistCard(updated); // fire-and-forget
       return newCards;
     });
-  }, []);
+  }, [emitActivity]);
 
   const deleteCard = useCallback((cardId: string) => {
     setCards(prev => {
@@ -661,12 +801,42 @@ export function ContentProvider({ children }: { children: ReactNode }) {
     setRecentEvents(prev => [event, ...prev].slice(0, 50));
 
     // Persist to server
-    apiFetch('/approval-events', {
-      method: 'POST',
-      body: JSON.stringify({ event }),
-    }).catch(error => {
-      console.error('[ContentContext] Failed to log approval event:', error);
-    });
+    if (!IS_DEMO_MODE) {
+      apiFetch('/approval-events', {
+        method: 'POST',
+        body: JSON.stringify({ event }),
+      }).catch(error => {
+        console.error('[ContentContext] Failed to log approval event:', error);
+      });
+    }
+
+    // Activity Feed: map approval actions → activity actions
+    // (updateCard also detects status changes, but logApprovalEvent carries
+    //  richer context like rejection reasons and the performer's name.)
+    const APPROVAL_TO_ACTIVITY: Record<string, ActivityAction | null> = {
+      approved: 'content_approved',
+      rejected: 'content_rejected',
+      submitted_for_approval: null, // no direct ActivityAction; skip
+      reverted_to_draft: null,      // handled as content_edited via updateCard
+    };
+    const activityAction = APPROVAL_TO_ACTIVITY[event.action];
+    if (activityAction) {
+      // Build a lightweight card-like object for the emitter
+      const cardStub: ContentCard = {
+        id: event.cardId,
+        title: event.cardTitle,
+        platform: event.platform,
+        // Minimal required fields (not used by emitActivity beyond id/title/platform)
+        projectId: '', channel: '', caption: '', hashtags: [],
+        status: event.action === 'approved' ? 'approved' : 'rejected',
+        approvers: [], createdBy: event.performedBy,
+        createdByEmail: event.performedByEmail,
+        createdAt: new Date(), auditLog: [],
+      };
+      emitActivity(activityAction, cardStub, {
+        details: event.reason || `${event.performedBy} ${event.action} "${event.cardTitle}"`,
+      });
+    }
 
     // Show real-time toast
     const actionEmojis: Record<string, string> = {
@@ -689,7 +859,7 @@ export function ContentProvider({ children }: { children: ReactNode }) {
       description: `"${event.cardTitle}" on ${event.platform} — by ${event.performedBy}`,
       duration: 5000,
     });
-  }, []);
+  }, [emitActivity]);
 
   // ── Re-fetch cards from the server ──
   const refreshCards = useCallback(async () => {

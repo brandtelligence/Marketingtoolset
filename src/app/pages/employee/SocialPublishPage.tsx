@@ -20,6 +20,10 @@ import { ConnectAccountDrawer, type SocialConnection, type SocialPlatform } from
 import { projectId } from '/utils/supabase/info';
 import { IS_DEMO_MODE } from '../../config/appConfig';
 import { getAuthHeaders } from '../../utils/authHeaders';
+import { BackgroundLayout } from '../../components/BackgroundLayout';
+import { EmployeeNav } from '../../components/EmployeeNav';
+import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { employeeTheme } from '../../utils/employeeTheme';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -83,6 +87,8 @@ function ConnectionCard({
   testing:  boolean;
 }) {
   const meta = PM[conn.platform];
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const ok   = conn.lastTestStatus === 'ok';
   const err  = conn.lastTestStatus === 'error';
   const none = !conn.lastTestStatus;
@@ -108,22 +114,22 @@ function ConnectionCard({
           <meta.Icon className={`w-5 h-5 ${meta.color}`} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white font-bold text-sm truncate">{conn.displayName}</p>
-          <p className="text-white/40 text-xs capitalize">{meta.label}</p>
+          <p className={`font-bold text-sm truncate ${et.text}`}>{conn.displayName}</p>
+          <p className={`text-xs capitalize ${et.textFaint}`}>{meta.label}</p>
         </div>
         {/* Status dot */}
         <div className="shrink-0 mt-1">
           {ok   && <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-sm shadow-green-400/50" title="Connection verified" />}
           {err  && <div className="w-2.5 h-2.5 rounded-full bg-red-400 shadow-sm shadow-red-400/50" title="Connection issue" />}
-          {none && <div className="w-2.5 h-2.5 rounded-full bg-white/20" title="Not yet tested" />}
+          {none && <div className={`w-2.5 h-2.5 rounded-full ${isDark ? 'bg-white/20' : 'bg-gray-300'}`} title="Not yet tested" />}
         </div>
       </div>
 
       {/* Meta info */}
-      <div className="space-y-1 text-[10px] text-white/30">
+      <div className={`space-y-1 text-[10px] ${et.textFaint}`}>
         <div className="flex items-center gap-1.5">
           <Clock className="w-2.5 h-2.5" />
-          <span>Connected by <span className="text-white/50">{conn.connectedBy}</span></span>
+          <span>Connected by <span className={et.textMd}>{conn.connectedBy}</span></span>
         </div>
         {conn.lastTestedAt && (
           <div className="flex items-center gap-1.5">
@@ -142,18 +148,18 @@ function ConnectionCard({
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-2 pt-1 border-t border-white/8">
+      <div className={`flex items-center gap-2 pt-1 border-t ${et.border}`}>
         <button
           onClick={onTest}
           disabled={testing}
-          className="flex items-center gap-1.5 text-[10px] font-semibold text-white/40 hover:text-white/70 px-2.5 py-1.5 rounded-lg bg-white/4 hover:bg-white/8 transition-all disabled:opacity-40"
+          className={`flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-40 ${isDark ? 'text-white/40 hover:text-white/70 bg-white/4 hover:bg-white/8' : 'text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200'}`}
         >
           {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
           Test
         </button>
         <button
           onClick={onEdit}
-          className="flex items-center gap-1.5 text-[10px] font-semibold text-white/40 hover:text-white/70 px-2.5 py-1.5 rounded-lg bg-white/4 hover:bg-white/8 transition-all"
+          className={`flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg transition-all ${isDark ? 'text-white/40 hover:text-white/70 bg-white/4 hover:bg-white/8' : 'text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200'}`}
         >
           <Settings className="w-3 h-3" /> Edit
         </button>
@@ -174,9 +180,11 @@ function HistoryRow({ rec }: { rec: PublishRecord }) {
   const meta = PM[rec.platform as SocialPlatform] ?? PM.telegram;
   const d    = new Date(rec.publishedAt);
   const fmt  = d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/3 transition-colors">
+    <div className={`flex items-center gap-3 px-4 py-3 transition-colors ${isDark ? 'hover:bg-white/3' : 'hover:bg-gray-50'}`}>
       {/* Status icon */}
       {rec.status === 'success'
         ? <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
@@ -189,20 +197,20 @@ function HistoryRow({ rec }: { rec: PublishRecord }) {
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className="text-white/75 text-xs font-medium truncate">{rec.cardTitle}</p>
+        <p className={`text-xs font-medium truncate ${et.textSm}`}>{rec.cardTitle}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-white/30 text-[10px] capitalize">{meta.label}</span>
-          <span className="text-white/15 text-[10px]">·</span>
-          <span className="text-white/30 text-[10px]">{rec.connectionName}</span>
-          <span className="text-white/15 text-[10px]">·</span>
-          <span className="text-white/25 text-[10px]">by {rec.publishedBy}</span>
+          <span className={`text-[10px] capitalize ${et.textFaint}`}>{meta.label}</span>
+          <span className={`text-[10px] ${et.textFaint}`}>·</span>
+          <span className={`text-[10px] ${et.textFaint}`}>{rec.connectionName}</span>
+          <span className={`text-[10px] ${et.textFaint}`}>·</span>
+          <span className={`text-[10px] ${et.textFaint}`}>by {rec.publishedBy}</span>
         </div>
         {rec.errorMessage && <p className="text-red-300/60 text-[10px] mt-0.5 truncate">{rec.errorMessage}</p>}
       </div>
 
       {/* Date + link */}
       <div className="flex items-center gap-2 shrink-0">
-        <span className="text-white/25 text-[10px]">{fmt}</span>
+        <span className={`text-[10px] ${et.textFaint}`}>{fmt}</span>
         {rec.postUrl && (
           <a href={rec.postUrl} target="_blank" rel="noreferrer"
             className="flex items-center gap-0.5 text-teal-400 hover:text-teal-300 text-[10px] transition-colors">
@@ -219,6 +227,8 @@ function HistoryRow({ rec }: { rec: PublishRecord }) {
 export function SocialPublishPage() {
   const { user } = useAuth();
   const tenantId = user?.tenantId ?? 'demo';
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
 
   const [connections,  setConnections]  = useState<SocialConnection[]>([]);
   const [history,      setHistory]      = useState<PublishRecord[]>([]);
@@ -318,17 +328,18 @@ export function SocialPublishPage() {
   const errorCount   = history.filter(h => h.status === 'error').length;
 
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg,#0a0820 0%,#050315 100%)' }}>
+    <BackgroundLayout>
+      <EmployeeNav />
       <ProfileBanner />
       <div className="max-w-5xl mx-auto px-4 py-6">
 
         {/* Page header */}
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-white font-bold text-2xl flex items-center gap-2.5">
+            <h1 className={`font-bold text-2xl flex items-center gap-2.5 ${et.text}`}>
               <Send className="w-6 h-6 text-teal-400" /> Social Publishing Hub
             </h1>
-            <p className="text-white/40 text-sm mt-1">
+            <p className={`text-sm mt-1 ${et.textFaint}`}>
               Connect social channels and publish content directly from Brandtelligence
             </p>
           </div>
@@ -348,25 +359,25 @@ export function SocialPublishPage() {
             { label: 'Published',  value: successCount,        Icon: CheckCircle2,  color: 'text-green-400' },
             { label: 'Failed',     value: errorCount,          Icon: XCircle,       color: 'text-red-400'   },
           ].map(({ label, value, Icon, color }) => (
-            <div key={label} className="flex items-center gap-3 p-4 rounded-2xl bg-white/4 border border-white/8">
+            <div key={label} className={`flex items-center gap-3 p-4 rounded-2xl ${isDark ? 'bg-white/4 border border-white/8' : 'bg-white border border-gray-200 shadow-sm'}`}>
               <Icon className={`w-5 h-5 ${color} shrink-0`} />
               <div>
-                <p className="text-white font-bold text-xl leading-tight">{value}</p>
-                <p className="text-white/35 text-xs">{label}</p>
+                <p className={`font-bold text-xl leading-tight ${et.text}`}>{value}</p>
+                <p className={`text-xs ${et.textFaint}`}>{label}</p>
               </div>
             </div>
           ))}
         </div>
 
         {/* Tab bar */}
-        <div className="flex items-center gap-1 mb-5 p-1 bg-white/4 border border-white/8 rounded-xl w-fit">
+        <div className={`flex items-center gap-1 mb-5 p-1 rounded-xl w-fit ${isDark ? 'bg-white/4 border border-white/8' : 'bg-gray-100 border border-gray-200'}`}>
           {([
             { id: 'accounts' as const, label: 'Connected Accounts', Icon: Wifi    },
             { id: 'history'  as const, label: 'Publish History',     Icon: History },
           ] as const).map(({ id, label, Icon }) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all
-                ${tab === id ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/70'}`}>
+                ${tab === id ? (isDark ? 'bg-white/15 text-white' : 'bg-white text-gray-900 shadow-sm') : (isDark ? 'text-white/40 hover:text-white/70' : 'text-gray-500 hover:text-gray-700')}`}>
               <Icon className="w-3.5 h-3.5" /> {label}
             </button>
           ))}
@@ -382,12 +393,12 @@ export function SocialPublishPage() {
                 </div>
               ) : connections.length === 0 ? (
                 <div className="flex flex-col items-center gap-4 py-20 text-center">
-                  <div className="w-20 h-20 rounded-3xl bg-white/4 border border-white/8 flex items-center justify-center">
-                    <Send className="w-8 h-8 text-white/15" />
+                  <div className={`w-20 h-20 rounded-3xl flex items-center justify-center ${isDark ? 'bg-white/4 border border-white/8' : 'bg-gray-100 border border-gray-200'}`}>
+                    <Send className={`w-8 h-8 ${et.textFaint}`} />
                   </div>
                   <div>
-                    <p className="text-white/60 font-bold text-lg">No channels connected yet</p>
-                    <p className="text-white/30 text-sm mt-1 max-w-sm">
+                    <p className={`font-bold text-lg ${et.textMd}`}>No channels connected yet</p>
+                    <p className={`text-sm mt-1 max-w-sm ${et.textFaint}`}>
                       Connect Telegram, WhatsApp, Facebook, Instagram, Twitter/X, or LinkedIn to start publishing directly from content cards.
                     </p>
                   </div>
@@ -426,12 +437,12 @@ export function SocialPublishPage() {
                 </div>
               ) : history.length === 0 ? (
                 <div className="flex flex-col items-center gap-3 py-20 text-center">
-                  <History className="w-10 h-10 text-white/15" />
-                  <p className="text-white/40 text-sm">No publish history yet</p>
+                  <History className={`w-10 h-10 ${et.textFaint}`} />
+                  <p className={`text-sm ${et.textFaint}`}>No publish history yet</p>
                 </div>
               ) : (
-                <div className="rounded-2xl bg-white/3 border border-white/8 overflow-hidden">
-                  <div className="divide-y divide-white/5">
+                <div className={`rounded-2xl border overflow-hidden ${isDark ? 'bg-white/3 border-white/8' : 'bg-white border-gray-200 shadow-sm'}`}>
+                  <div className={`${isDark ? 'divide-y divide-white/5' : 'divide-y divide-gray-100'}`}>
                     {history.map(rec => <HistoryRow key={rec.id} rec={rec} />)}
                   </div>
                 </div>
@@ -450,6 +461,6 @@ export function SocialPublishPage() {
           onClose={() => { setDrawerOpen(false); setEditingConn(undefined); }}
         />
       )}
-    </div>
+    </BackgroundLayout>
   );
 }

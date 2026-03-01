@@ -29,6 +29,7 @@ import { AuditPage } from "./pages/super/AuditPage";
 import { SupportPage } from "./pages/super/SupportPage";
 import { SettingsPage } from "./pages/super/SettingsPage";
 import { EmailTemplatesPage } from "./pages/super/EmailTemplatesPage";
+import { InboxPage } from "./pages/super/InboxPage";
 
 // ── Tenant Admin dashboard ──────────────────────────────────────────────────
 import { TenantLayout } from "./pages/tenant/TenantLayout";
@@ -47,6 +48,12 @@ import { EmployeeModulesPage }  from "./pages/employee/EmployeeModulesPage";
 import { ContentGenPage }       from "./pages/employee/ContentGenPage";
 import { SocialPublishPage }    from "./pages/employee/SocialPublishPage";
 import { CampaignPlannerPage }  from "./pages/employee/CampaignPlannerPage";
+
+// ── Team Activity Feed ──────────────────────────────────────────────────────
+import { ActivityFeedPage }     from "./pages/employee/ActivityFeedPage";
+
+// ── 404 Not Found page ──────────────────────────────────────────────────────
+import { NotFoundPage } from "./pages/NotFoundPage";
 
 // ── Public marketing website (now at root /*) ───────────────────────────────
 import { WebLayout }           from "./pages/web/WebLayout";
@@ -112,6 +119,7 @@ export const router = createBrowserRouter([
     path: "/app",
     Component: RootLayout,
     children: [
+      { index: true,                 loader: () => redirect("/app/projects") },
       { path: "projects",            Component: ProjectsPage      },
       { path: "projects/vcard-saas", Component: VCardProject      },
       { path: "projects/:slug",      Component: ProjectDetailPage },
@@ -120,6 +128,8 @@ export const router = createBrowserRouter([
       { path: "content",             Component: ContentGenPage      },
       { path: "publish",             Component: SocialPublishPage   },
       { path: "campaign",            Component: CampaignPlannerPage },
+      { path: "activity",            Component: ActivityFeedPage    },
+      { path: "*",                   loader: () => redirect("/app/projects") },
     ],
   },
 
@@ -143,6 +153,8 @@ export const router = createBrowserRouter([
       { path: "support",   Component: SupportPage       },
       { path: "settings",  Component: SettingsPage      },
       { path: "email-templates", Component: EmailTemplatesPage },
+      { path: "inbox",     Component: InboxPage         },
+      { path: "*",         loader: () => redirect("/super/requests") },
     ],
   },
 
@@ -160,6 +172,10 @@ export const router = createBrowserRouter([
       { path: "usage",     Component: TenantUsagePage     },
       { path: "audit",     Component: TenantAuditPage     },
       { path: "settings",  Component: TenantSettingsPage  },
+      { path: "*",         loader: () => redirect("/tenant/overview") },
     ],
   },
+
+  // ── 404 Not Found page ──────────────────────────────────────────────────────
+  { path: "*", Component: NotFoundPage },
 ]);

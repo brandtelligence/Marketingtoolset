@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus, Filter, LayoutGrid, Search,
   FileText, Clock, CheckCircle, CalendarDays, Check, XCircle, Loader2,
@@ -27,6 +28,7 @@ import { ContentLeaderboard } from './ContentLeaderboard';
 import { socialPlatforms } from './aiEngine';
 import { useFoldableLayout } from '../../hooks/useFoldableLayout';
 import { projectId as supabaseProjectId } from '/utils/supabase/info';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import {
   getSlaStatusWith, getSlaHoursElapsed, formatSlaAge,
@@ -83,11 +85,27 @@ interface ContentBoardProps {
 export function ContentBoard({ projectId, projectTeamMembers, projectName }: ContentBoardProps) {
   const { user } = useAuth();
   const {
-    getCardsByProject, addCard, updateCard,
+    getCardsByProject, addCard, updateCard, logApprovalEvent,
     isLoading, isSynced,
   } = useContent();
   const cards = getCardsByProject(projectId);
   const { isDualScreen, isSquarish } = useFoldableLayout();
+  const { isDark } = useDashboardTheme();
+
+  // ── Theme helpers ──────────────────────────────────────────────────────
+  const th = isDark ? 'text-white' : 'text-gray-900';
+  const thSm = isDark ? 'text-white/80' : 'text-gray-700';
+  const thMd = isDark ? 'text-white/60' : 'text-gray-500';
+  const thDim = isDark ? 'text-white/50' : 'text-gray-400';
+  const thFaint = isDark ? 'text-white/40' : 'text-gray-400';
+  const btnInactive = isDark
+    ? 'bg-white/8 border-white/15 text-white/70 hover:bg-white/15 hover:text-white hover:border-white/25'
+    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-900 hover:border-gray-300';
+  const surfSm = isDark ? 'bg-white/10' : 'bg-gray-100';
+  const surfBdr = isDark ? 'border-white/15' : 'border-gray-200';
+  const inputCls = isDark
+    ? 'bg-white/10 border-white/15 text-white placeholder-white/30'
+    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400';
 
   // ── Filters ──
   const [statusFilter,   setStatusFilter]   = useState<ContentStatus | 'all'>('all');
@@ -436,6 +454,18 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
         approvedAt: now,
         auditLog: [...card.auditLog, ...entries],
       });
+
+      // Persist approval event for Activity tab & server audit trail
+      logApprovalEvent({
+        id: crypto.randomUUID(),
+        cardId: card.id,
+        cardTitle: card.title,
+        platform: card.platform,
+        action: 'approved',
+        performedBy: userName,
+        performedByEmail: userEmail,
+        timestamp: now.toISOString(),
+      });
       count++;
     }
 
@@ -486,6 +516,19 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
         rejectedAt: now,
         rejectionReason: reason,
         auditLog: [...card.auditLog, entry],
+      });
+
+      // Persist rejection event for Activity tab & server audit trail
+      logApprovalEvent({
+        id: crypto.randomUUID(),
+        cardId: card.id,
+        cardTitle: card.title,
+        platform: card.platform,
+        action: 'rejected',
+        performedBy: userName,
+        performedByEmail: userEmail,
+        reason,
+        timestamp: now.toISOString(),
       });
       count++;
     }
@@ -574,9 +617,9 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <h2 className={`text-xl font-bold ${th} flex items-center gap-2`}>
             Content Board
-            <span className="bg-white/10 text-white/60 text-xs px-2 py-0.5 rounded-full font-normal">
+            <span className={`${surfSm} ${thMd} text-xs px-2 py-0.5 rounded-full font-normal`}>
               {cards.length} cards
             </span>
             {isLoading && <Loader2 className="w-4 h-4 text-teal-400 animate-spin" />}
@@ -587,7 +630,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               </span>
             )}
           </h2>
-          <p className="text-white/50 text-xs mt-0.5">
+          <p className={`${thDim} text-xs mt-0.5`}>
             Manage, edit, and approve content for {projectName}
           </p>
         </div>
@@ -602,7 +645,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm border transition-all ${
                 bulkMode
                   ? 'bg-amber-500/20 border-amber-400/40 text-amber-300 shadow-amber-500/10 shadow-md'
-                  : 'bg-white/8 border-white/15 text-white/70 hover:bg-white/15 hover:text-white hover:border-white/25'
+                  : btnInactive
               }`}
             >
               {bulkMode
@@ -620,7 +663,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm border transition-all ${
               bulkShareMode
                 ? 'bg-[#F47A20]/20 border-[#F47A20]/40 text-[#F47A20] shadow-orange-500/10 shadow-md'
-                : 'bg-white/8 border-white/15 text-white/70 hover:bg-white/15 hover:text-white hover:border-white/25'
+                : btnInactive
             }`}
           >
             {bulkShareMode
@@ -637,7 +680,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm border transition-all ${
               showAnalytics
                 ? 'bg-purple-500/20 border-purple-400/40 text-purple-300 shadow-purple-500/10 shadow-md'
-                : 'bg-white/8 border-white/15 text-white/70 hover:bg-white/15 hover:text-white hover:border-white/25'
+                : btnInactive
             }`}
           >
             <BarChart2 className="w-4 h-4" />
@@ -652,7 +695,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm border transition-all ${
               showLeaderboard
                 ? 'bg-blue-500/20 border-blue-400/40 text-blue-300 shadow-blue-500/10 shadow-md'
-                : 'bg-white/8 border-white/15 text-white/70 hover:bg-white/15 hover:text-white hover:border-white/25'
+                : btnInactive
             }`}
           >
             <Trophy className="w-4 h-4" />
@@ -660,14 +703,14 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
           </motion.button>
 
           {/* View mode toggle (Grid / Calendar) */}
-          <div className="flex items-center gap-0.5 bg-white/8 border border-white/15 rounded-xl p-1">
+          <div className={`flex items-center gap-0.5 ${surfSm} border ${surfBdr} rounded-xl p-1`}>
             <button
               onClick={() => setViewMode('grid')}
               title="Grid view"
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 viewMode === 'grid'
-                  ? 'bg-white/15 text-white shadow-sm'
-                  : 'text-white/40 hover:text-white/70 hover:bg-white/8'
+                  ? `${isDark ? 'bg-white/15 text-white' : 'bg-white text-gray-900'} shadow-sm`
+                  : `${thFaint} ${isDark ? 'hover:text-white/70 hover:bg-white/8' : 'hover:text-gray-700 hover:bg-gray-50'}`
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
@@ -681,8 +724,8 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               title="Calendar view"
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 viewMode === 'calendar'
-                  ? 'bg-white/15 text-white shadow-sm'
-                  : 'text-white/40 hover:text-white/70 hover:bg-white/8'
+                  ? `${isDark ? 'bg-white/15 text-white' : 'bg-white text-gray-900'} shadow-sm`
+                  : `${thFaint} ${isDark ? 'hover:text-white/70 hover:bg-white/8' : 'hover:text-gray-700 hover:bg-gray-50'}`
               }`}
             >
               <CalendarDays className="w-3.5 h-3.5" />
@@ -712,17 +755,17 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="bg-white/5 border border-purple-400/20 rounded-2xl p-5">
+            <div className={`${isDark ? 'bg-white/5' : 'bg-purple-50/50'} border border-purple-400/20 rounded-2xl p-5`}>
               {/* Panel header */}
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
                   <BarChart2 className="w-4 h-4 text-purple-400" />
-                  <h3 className="text-white font-semibold text-sm">Content Analytics</h3>
-                  <span className="text-white/30 text-[10px]">— {projectName}</span>
+                  <h3 className={`${th} font-semibold text-sm`}>Content Analytics</h3>
+                  <span className={`${thFaint} text-[10px]`}>— {projectName}</span>
                 </div>
                 <button
                   onClick={() => setShowAnalytics(false)}
-                  className="text-white/30 hover:text-white/60 transition-colors"
+                  className={`${thFaint} ${isDark ? 'hover:text-white/60' : 'hover:text-gray-600'} transition-colors`}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -744,17 +787,17 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="bg-white/5 border border-blue-400/20 rounded-2xl p-5">
+            <div className={`${isDark ? 'bg-white/5' : 'bg-blue-50/50'} border border-blue-400/20 rounded-2xl p-5`}>
               {/* Panel header */}
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
                   <Trophy className="w-4 h-4 text-blue-400" />
-                  <h3 className="text-white font-semibold text-sm">Content Leaderboard</h3>
-                  <span className="text-white/30 text-[10px]">— {projectName}</span>
+                  <h3 className={`${th} font-semibold text-sm`}>Content Leaderboard</h3>
+                  <span className={`${thFaint} text-[10px]`}>— {projectName}</span>
                 </div>
                 <button
                   onClick={() => setShowLeaderboard(false)}
-                  className="text-white/30 hover:text-white/60 transition-colors"
+                  className={`${thFaint} ${isDark ? 'hover:text-white/60' : 'hover:text-gray-600'} transition-colors`}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -974,10 +1017,10 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                   isActive
                     ? showMyBadge
                       ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
-                      : 'bg-white/15 border-white/30 text-white'
+                      : isDark ? 'bg-white/15 border-white/30 text-white' : 'bg-gray-900/10 border-gray-300 text-gray-900'
                     : showMyBadge
                       ? 'bg-amber-500/10 border-amber-400/30 text-amber-300/80 hover:bg-amber-500/15 hover:text-amber-200'
-                      : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white/70'
+                      : isDark ? 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white/70' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                 }`}
               >
                 {showMyBadge
@@ -986,7 +1029,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                 }
                 {sf.label}
                 {count > 0 && (
-                  <span className={`text-[10px] ${isActive ? 'text-white/80' : 'text-white/30'}`}>
+                  <span className={`text-[10px] ${isActive ? (isDark ? 'text-white/80' : 'text-gray-700') : (isDark ? 'text-white/30' : 'text-gray-400')}`}>
                     ({count})
                   </span>
                 )}
@@ -1004,24 +1047,24 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
       {/* ── Search + Platform filter ── */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${thFaint}`} />
           <input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search content cards..."
-            className="w-full bg-white/8 border border-white/15 rounded-xl pl-9 pr-4 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-teal-400/40 transition-all"
+            className={`w-full ${inputCls} rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-teal-400/40 transition-all`}
           />
         </div>
-        <div className="flex items-center gap-1.5 bg-white/8 border border-white/15 rounded-xl px-3 py-1.5">
-          <Filter className="w-3.5 h-3.5 text-white/30" />
+        <div className={`flex items-center gap-1.5 ${surfSm} border ${surfBdr} rounded-xl px-3 py-1.5`}>
+          <Filter className={`w-3.5 h-3.5 ${thFaint}`} />
           <select
             value={platformFilter}
             onChange={e => setPlatformFilter(e.target.value)}
-            className="bg-transparent text-white text-xs focus:outline-none appearance-none cursor-pointer pr-4"
+            className={`bg-transparent ${th} text-xs focus:outline-none appearance-none cursor-pointer pr-4`}
           >
-            <option value="all" className="bg-gray-900">All Platforms</option>
+            <option value="all" className={isDark ? 'bg-gray-900' : 'bg-white'}>All Platforms</option>
             {usedPlatforms.map(p => (
-              <option key={p} value={p} className="bg-gray-900">{platformNames[p] || p}</option>
+              <option key={p} value={p} className={isDark ? 'bg-gray-900' : 'bg-white'}>{platformNames[p] || p}</option>
             ))}
           </select>
         </div>
@@ -1036,13 +1079,13 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="bg-white/8 backdrop-blur-md border border-teal-400/30 rounded-2xl p-5 space-y-3">
-              <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+            <div className={`${isDark ? 'bg-white/8' : 'bg-gray-50'} backdrop-blur-md border border-teal-400/30 rounded-2xl p-5 space-y-3`}>
+              <h3 className={`${th} font-semibold text-sm flex items-center gap-2`}>
                 <Plus className="w-4 h-4 text-teal-400" /> Create New Content Card
               </h3>
 
               <div>
-                <label className="text-white/50 text-xs mb-1.5 block">Platform</label>
+                <label className={`${thDim} text-xs mb-1.5 block`}>Platform</label>
                 <div className="flex flex-wrap gap-2">
                   {socialPlatforms.map(p => {
                     const PIcon      = platformIcons[p.id];
@@ -1053,8 +1096,8 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                         onClick={() => setNewPlatform(p.id)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all border ${
                           isSelected
-                            ? 'bg-white/15 border-teal-400/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                            ? isDark ? 'bg-white/15 border-teal-400/50 text-white' : 'bg-teal-50 border-teal-400/50 text-gray-900'
+                            : isDark ? 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                         }`}
                       >
                         {PIcon && <PIcon className={`w-3.5 h-3.5 ${isSelected ? platformColors[p.id] : 'text-white/40'}`} />}
@@ -1068,7 +1111,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               {/* Title + AI brief button */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-white/50 text-xs">Title</label>
+                  <label className={`${thDim} text-xs`}>Title</label>
                   {newTitle.trim() && (
                     <button
                       type="button"
@@ -1087,28 +1130,28 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                   value={newTitle}
                   onChange={e => setNewTitle(e.target.value)}
                   placeholder="Content card title..."
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all"
+                  className={`w-full ${inputCls} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400/50 transition-all`}
                 />
               </div>
 
               <div>
-                <label className="text-white/50 text-xs mb-1.5 block">Caption (optional)</label>
+                <label className={`${thDim} text-xs mb-1.5 block`}>Caption (optional)</label>
                 <textarea
                   value={newCaption}
                   onChange={e => setNewCaption(e.target.value)}
                   placeholder="Write your caption or click ✨ Generate Brief..."
                   rows={3}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all resize-none"
+                  className={`w-full ${inputCls} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400/50 transition-all resize-none`}
                 />
               </div>
 
               <div>
-                <label className="text-white/50 text-xs mb-1.5 block">Hashtags (comma separated)</label>
+                <label className={`${thDim} text-xs mb-1.5 block`}>Hashtags (comma separated)</label>
                 <input
                   value={newHashtags}
                   onChange={e => setNewHashtags(e.target.value)}
                   placeholder="e.g. marketing, digital, brand"
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all"
+                  className={`w-full ${inputCls} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400/50 transition-all`}
                 />
               </div>
 
@@ -1122,7 +1165,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                 </button>
                 <button
                   onClick={() => { setShowNewCardForm(false); setNewTitle(''); setNewCaption(''); setNewHashtags(''); }}
-                  className="text-white/50 hover:text-white text-sm px-4 py-2 rounded-xl hover:bg-white/10 transition-all"
+                  className={`${thDim} ${isDark ? 'hover:text-white hover:bg-white/10' : 'hover:text-gray-900 hover:bg-gray-100'} text-sm px-4 py-2 rounded-xl transition-all`}
                 >
                   Cancel
                 </button>
@@ -1141,14 +1184,14 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.25 }}
-            className="bg-white/5 border border-blue-400/15 rounded-2xl p-5"
+            className={`${isDark ? 'bg-white/5' : 'bg-blue-50/50'} border border-blue-400/15 rounded-2xl p-5`}
           >
             {/* Calendar panel header */}
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-blue-400" />
-                <h3 className="text-white font-semibold text-sm">Content Calendar</h3>
-                <span className="text-white/30 text-[10px]">— {projectName}</span>
+                <h3 className={`${th} font-semibold text-sm`}>Content Calendar</h3>
+                <span className={`${thFaint} text-[10px]`}>— {projectName}</span>
                 {(statusFilter !== 'all' || platformFilter !== 'all') && (
                   <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/12 border border-blue-400/20 px-2 py-0.5 rounded-full">
                     Filtered
@@ -1182,9 +1225,9 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                 animate={{ opacity: 1 }}
                 className="text-center py-16"
               >
-                <FileText className="w-12 h-12 text-white/20 mx-auto mb-3" />
-                <h3 className="text-white/50 font-semibold mb-1">No content cards found</h3>
-                <p className="text-white/30 text-sm">
+                <FileText className={`w-12 h-12 ${thFaint} mx-auto mb-3`} />
+                <h3 className={`${thDim} font-semibold mb-1`}>No content cards found</h3>
+                <p className={`${thFaint} text-sm`}>
                   {cards.length === 0
                     ? 'Create your first content card or use the AI Content Studio to generate content.'
                     : 'Try adjusting your filters to see more cards.'}
@@ -1230,17 +1273,17 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                 <button
                   onClick={() => setCurrentPage(currentPage - 1)}
                   disabled={currentPage === 1}
-                  className="flex items-center gap-1 bg-white/8 border border-white/15 rounded-xl px-3 py-1.5 text-white/50 hover:text-white/70 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`flex items-center gap-1 ${surfSm} border ${surfBdr} rounded-xl px-3 py-1.5 ${thDim} ${isDark ? 'hover:text-white/70' : 'hover:text-gray-700'} transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
                   <ChevronLeft className="w-3.5 h-3.5" /> Previous
                 </button>
-                <span className="mx-2 text-white/50 text-sm">
+                <span className={`mx-2 ${thDim} text-sm`}>
                   Page {currentPage} of {totalPages}
                 </span>
                 <button
                   onClick={() => setCurrentPage(currentPage + 1)}
                   disabled={currentPage === totalPages}
-                  className="flex items-center gap-1 bg-white/8 border border-white/15 rounded-xl px-3 py-1.5 text-white/50 hover:text-white/70 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`flex items-center gap-1 ${surfSm} border ${surfBdr} rounded-xl px-3 py-1.5 ${thDim} ${isDark ? 'hover:text-white/70' : 'hover:text-gray-700'} transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
                   Next <ChevronRight className="w-3.5 h-3.5" />
                 </button>

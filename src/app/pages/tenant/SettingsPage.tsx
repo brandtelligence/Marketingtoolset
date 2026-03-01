@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Save, Lock, Bell, Shield, Eye, EyeOff, Timer, Sparkles, ImageIcon, Video, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
@@ -9,6 +9,7 @@ import { useSlaConfig } from '../../hooks/useSlaConfig';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { IS_DEMO_MODE } from '../../config/appConfig';
+import { supabase } from '../../utils/supabaseClient';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -128,6 +129,106 @@ export function TenantSettingsPage() {
 
   const [mfaEnabled, setMfaEnabled] = useState(false);
   const [sessionTimeout, setSessionTimeout] = useState('480');
+  const [securitySaving, setSecuritySaving] = useState(false);
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // ── P3-FIX-25: Load persisted tenant settings from server ──────────────
+  const loadTenantSettings = useCallback(async () => {
+    if (!user?.tenantId || IS_DEMO_MODE) return;
+    try {
+      const res = await fetch(
+        `${API_BASE}/tenant-settings?tenantId=${encodeURIComponent(user.tenantId)}`,
+        { headers: await getAuthHeaders() },
+      );
+      const data = await res.json();
+      if (!res.ok) { console.error('[TenantSettings] load error:', data.error); return; }
+      const s = data.settings ?? {};
+      // Security
+      if (s.mfaEnabled !== undefined) setMfaEnabled(s.mfaEnabled);
+      if (s.sessionTimeout !== undefined) setSessionTimeout(String(s.sessionTimeout));
+      // Notifications
+      if (s.emailInvoice !== undefined) setEmailInvoice(s.emailInvoice);
+      if (s.emailOverdue !== undefined) setEmailOverdue(s.emailOverdue);
+      if (s.emailUserInvite !== undefined) setEmailUserInvite(s.emailUserInvite);
+      if (s.emailPaymentConfirm !== undefined) setEmailPaymentConfirm(s.emailPaymentConfirm);
+      if (s.emailWeeklyReport !== undefined) setEmailWeeklyReport(s.emailWeeklyReport);
+      setSettingsLoaded(true);
+    } catch (err) {
+      console.error('[TenantSettings] load error:', err);
+    }
+  }, [user?.tenantId]);
+
+  useEffect(() => { loadTenantSettings(); }, [loadTenantSettings]);
+
+  const saveTenantSettings = async (section: string, payload: Record<string, any>) => {
+    if (!user?.tenantId) { toast.error('Tenant ID not found'); return false; }
+    try {
+      const res = await fetch(`${API_BASE}/tenant-settings`, {
+        method: 'PUT',
+        headers: await getAuthHeaders(true),
+        body: JSON.stringify({ tenantId: user.tenantId, ...payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Failed to save ${section}`);
+      return true;
+    } catch (err: any) {
+      console.error(`[TenantSettings] save ${section} error:`, err);
+      toast.error(`Failed to save ${section}: ${err.message}`);
+      return false;
+    }
+  };
+
+  const handleSaveSecurity = async () => {
+    const timeout = parseInt(sessionTimeout, 10);
+    if (!Number.isFinite(timeout) || timeout < 30 || timeout > 1440) {
+      toast.error('Session timeout must be between 30 and 1440 minutes');
+      return;
+    }
+    setSecuritySaving(true);
+    const ok = await saveTenantSettings('security settings', { mfaEnabled, sessionTimeout: timeout });
+    setSecuritySaving(false);
+    if (ok) toast.success('Security settings saved');
+  };
+
+  const handleSaveNotifications = async () => {
+    setNotifSaving(true);
+    const ok = await saveTenantSettings('notification preferences', {
+      emailInvoice, emailOverdue, emailPaymentConfirm, emailUserInvite, emailWeeklyReport,
+    });
+    setNotifSaving(false);
+    if (ok) toast.success('Notification preferences saved');
+  };
+
+  const [exportLoading, setExportLoading] = useState(false);
+  const handleDataExport = async () => {
+    if (!user?.tenantId) { toast.error('Tenant ID not found'); return; }
+    setExportLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/tenant-data-export`, {
+        method: 'POST',
+        headers: await getAuthHeaders(true),
+        body: JSON.stringify({ tenantId: user.tenantId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Export failed');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `brandtelligence-data-export-${user.tenantId}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Data export downloaded successfully');
+    } catch (err: any) {
+      console.error('[DataExport] error:', err);
+      toast.error(`Data export failed: ${err.message}`);
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const getStrength = (pw: string) => {
     let s = 0;
@@ -141,16 +242,33 @@ export function TenantSettingsPage() {
   const strengthColors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-teal-500', 'bg-green-500'];
   const strengthLabels = ['Weak', 'Fair', 'Good', 'Strong', 'Very Strong'];
 
+  // P3-FIX-18: Actually change password via Supabase Auth (was fake delay no-op)
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPassword) { toast.error('Enter your current password'); return; }
     if (newPassword.length < 8) { toast.error('New password must be at least 8 characters'); return; }
     if (newPassword !== confirmNewPassword) { toast.error('New passwords do not match'); return; }
     setPasswordLoading(true);
-    await new Promise(r => setTimeout(r, 900));
-    setPasswordLoading(false);
-    setCurrentPassword(''); setNewPassword(''); setConfirmNewPassword('');
-    toast.success('Password updated successfully');
+    try {
+      // Step 1: Verify current password by attempting signIn
+      const { error: verifyErr } = await supabase.auth.signInWithPassword({
+        email: user?.email ?? '',
+        password: currentPassword,
+      });
+      if (verifyErr) {
+        toast.error('Current password is incorrect');
+        return;
+      }
+      // Step 2: Update to new password
+      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateErr) throw updateErr;
+      setCurrentPassword(''); setNewPassword(''); setConfirmNewPassword('');
+      toast.success('Password updated successfully');
+    } catch (err: any) {
+      toast.error(`Password change failed: ${err.message}`);
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const Toggle = ({ checked, onChange, label, description }: { checked: boolean; onChange: (v: boolean) => void; label: string; description?: string }) => (
@@ -257,7 +375,7 @@ export function TenantSettingsPage() {
               <Input type="number" value={sessionTimeout} onChange={e => setSessionTimeout(e.target.value)} min="30" max="1440" />
             </Field>
             <div className="flex justify-end pt-2">
-              <PrimaryBtn size="sm" variant="teal" onClick={() => toast.success('Security settings saved')}>
+              <PrimaryBtn size="sm" variant="teal" onClick={handleSaveSecurity} loading={securitySaving}>
                 <Shield className="w-3.5 h-3.5" /> Save
               </PrimaryBtn>
             </div>
@@ -273,7 +391,7 @@ export function TenantSettingsPage() {
             <Toggle checked={emailUserInvite}      onChange={setEmailUserInvite}      label="New User Invite"          description="When you invite a team member" />
             <Toggle checked={emailWeeklyReport}    onChange={setEmailWeeklyReport}    label="Weekly Usage Report"      description="Summary of platform activity every Monday" />
             <div className="flex justify-end pt-2">
-              <PrimaryBtn size="sm" variant="teal" onClick={() => toast.success('Notification preferences saved')}>
+              <PrimaryBtn size="sm" variant="teal" onClick={handleSaveNotifications} loading={notifSaving}>
                 <Bell className="w-3.5 h-3.5" /> Save
               </PrimaryBtn>
             </div>
@@ -467,7 +585,7 @@ export function TenantSettingsPage() {
             <p className="text-red-600 font-medium text-sm">Export My Data</p>
             <p className="text-red-600/60 text-xs mt-0.5">Download a complete export of your account data (GDPR-compliant)</p>
           </div>
-          <PrimaryBtn size="sm" variant="ghost" onClick={() => toast.info('Data export requested — you will receive an email within 24h')}>
+          <PrimaryBtn size="sm" variant="ghost" onClick={handleDataExport} loading={exportLoading}>
             <Save className="w-3.5 h-3.5" /> Request Export
           </PrimaryBtn>
         </div>

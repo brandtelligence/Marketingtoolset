@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BackgroundLayout } from '../components/BackgroundLayout';
+import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
 import brandtelligenceLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 import {
   createRequest, fetchModules, checkAccessEmail,
@@ -215,6 +216,7 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select…', sea
 
 export function RequestAccessPage() {
   const navigate = useNavigate();
+  const { isDark } = useDashboardTheme();
 
   // ── Data ────────────────────────────────────────────────────────────────
   const [modules,         setModules]         = useState<Module[]>([]);
@@ -336,8 +338,17 @@ export function RequestAccessPage() {
     }
   };
 
-  const inputCls =
-    'w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-purple-400/50 transition-all text-sm';
+  // ── Theme helpers ──────────────────────────────────────────────────────
+  const glass   = isDark ? 'bg-white/10 backdrop-blur-md border border-white/20' : 'bg-white/80 backdrop-blur-md border border-gray-200/60 shadow-sm';
+  const th      = isDark ? 'text-white' : 'text-gray-900';
+  const thSm    = isDark ? 'text-white/80' : 'text-gray-700';
+  const thMd    = isDark ? 'text-white/60' : 'text-gray-500';
+  const thDim   = isDark ? 'text-white/50' : 'text-gray-400';
+  const thFaint = isDark ? 'text-white/40' : 'text-gray-400';
+
+  const inputCls = isDark
+    ? 'w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-purple-400/50 transition-all text-sm'
+    : 'w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-purple-400/50 transition-all text-sm';
 
   // ─── Country options ────────────────────────────────────────────────────
   const countryOptions = COUNTRIES.map(c => ({ value: c, label: c }));
@@ -493,7 +504,7 @@ export function RequestAccessPage() {
           <motion.button
             initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
             onClick={() => navigate('/login')}
-            className="text-white/70 hover:text-white mb-6 inline-flex items-center gap-2 text-sm transition-colors"
+            className={`${thMd} ${isDark ? 'hover:text-white' : 'hover:text-gray-900'} mb-6 inline-flex items-center gap-2 text-sm transition-colors`}
           >
             <ArrowLeft className="w-4 h-4" /> Back to Login
           </motion.button>
@@ -502,24 +513,23 @@ export function RequestAccessPage() {
 
             {/* Header */}
             <div className="mb-8 text-center">
-              <div className="inline-block bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-6 border border-white/20 shadow-2xl mb-6">
+              <div className={`inline-block ${glass} rounded-2xl p-4 sm:p-6 shadow-2xl mb-6`}>
                 <img src={brandtelligenceLogo} alt="Brandtelligence" className="w-full max-w-[14rem] sm:max-w-xs h-auto mx-auto" />
               </div>
-              <h1 className="text-white font-bold" style={{ fontSize: 'clamp(1.5rem, 4vw, 2rem)' }}>Request Access</h1>
-              <p className="text-white/60 text-sm mt-2">
+              <h1 className={`${th} font-bold`} style={{ fontSize: 'clamp(1.5rem, 4vw, 2rem)' }}>Request Access</h1>
+              <p className={`${thMd} text-sm mt-2`}>
                 New here? We'd love to show you around! Tell us a bit about your company and we'll zip a personal invite link straight to your inbox.
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
-
+            <form onSubmit={handleSubmit} className={`${glass} rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6`}>
               {/* ── Company Details ──────────────────────────────────────── */}
               <div className="space-y-5">
-                <p className="text-white/50 text-xs font-semibold uppercase tracking-widest">Company Details</p>
+                <p className={`${thDim} text-xs font-semibold uppercase tracking-widest`}>Company Details</p>
 
                 {/* Company Name */}
                 <div>
-                  <label className="block text-white/80 text-sm font-medium mb-2">
+                  <label className={`block ${thSm} text-sm font-medium mb-2`}>
                     Company Name <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
@@ -533,7 +543,7 @@ export function RequestAccessPage() {
 
                 {/* Contact Name */}
                 <div>
-                  <label className="block text-white/80 text-sm font-medium mb-2">
+                  <label className={`block ${thSm} text-sm font-medium mb-2`}>
                     Contact Name <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
@@ -547,7 +557,7 @@ export function RequestAccessPage() {
 
                 {/* Business Email with live check */}
                 <div>
-                  <label className="block text-white/80 text-sm font-medium mb-2">
+                  <label className={`block ${thSm} text-sm font-medium mb-2`}>
                     Business Email <span className="text-red-400">*</span>
                   </label>
                   <div className="relative">
@@ -586,7 +596,7 @@ export function RequestAccessPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-white/80 text-sm font-medium mb-2 flex items-center gap-1.5">
-                      <Globe className="w-3.5 h-3.5 text-white/50" /> Country
+                      <Globe className={`w-3.5 h-3.5 ${thDim}`} /> Country
                     </label>
                     <CustomSelect
                       value={country}
@@ -599,7 +609,7 @@ export function RequestAccessPage() {
                   </div>
                   <div>
                     <label className="block text-white/80 text-sm font-medium mb-2 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-white/50" /> Team Size
+                      <Users className={`w-3.5 h-3.5 ${thDim}`} /> Team Size
                     </label>
                     <CustomSelect
                       value={size}
@@ -615,20 +625,20 @@ export function RequestAccessPage() {
               {/* ── Module Selection ─────────────────────────────────────── */}
               <div id="modules-section">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-white/80 text-sm font-medium">
+                  <label className={`${thSm} text-sm font-medium`}>
                     Select Modules to Trial <span className="text-red-400">*</span>
                   </label>
                   {selectedModules.length > 0 && (
                     <button
                       type="button"
                       onClick={() => { setSelectedModules([]); setModuleError(false); }}
-                      className="text-white/40 hover:text-white/70 text-xs transition-colors"
+                      className={`${thFaint} ${isDark ? 'hover:text-white/70' : 'hover:text-gray-600'} text-xs transition-colors`}
                     >
                       Clear all
                     </button>
                   )}
                 </div>
-                <p className="text-white/40 text-xs mb-3">
+                <p className={`${thFaint} text-xs mb-3`}>
                   We use this to provision your trial account — not a purchase commitment.
                   You can change your modules any time after sign-up.
                 </p>
@@ -843,10 +853,10 @@ export function RequestAccessPage() {
 
               {/* ── Additional Notes ─────────────────────────────────────── */}
               <div>
-                <label className="block text-white/80 text-sm font-medium mb-2 flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-white/50" />
+                <label className={`block ${thSm} text-sm font-medium mb-2 flex items-center gap-1.5`}>
+                  <FileText className={`w-3.5 h-3.5 ${thDim}`} />
                   Additional Notes
-                  <span className="text-white/40 font-normal">(optional)</span>
+                  <span className={`${thFaint} font-normal`}>(optional)</span>
                 </label>
                 <textarea
                   value={notes} onChange={e => setNotes(e.target.value)}
@@ -878,9 +888,9 @@ export function RequestAccessPage() {
                 }
               </motion.button>
 
-              <p className="text-white/40 text-xs text-center">
+              <p className={`${thFaint} text-xs text-center`}>
                 Already have an invite?{' '}
-                <button type="button" onClick={() => navigate('/login')} className="underline hover:text-white/60 transition-colors">
+                <button type="button" onClick={() => navigate('/login')} className={`underline ${isDark ? 'hover:text-white/60' : 'hover:text-gray-600'} transition-colors`}>
                   Sign in here
                 </button>
               </p>

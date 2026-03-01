@@ -32,8 +32,9 @@ import brandtelligenceLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858
 import { useAuth, buildProfileFromSupabaseUser, type UserProfile } from '../components/AuthContext';
 import { BackgroundLayout } from '../components/BackgroundLayout';
 import { MFAChallengeModal } from '../components/saas/MFAChallengeModal';
+import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
 import { toast } from 'sonner';
-import { projectId } from '/utils/supabase/info';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { getAuthHeaders } from '../utils/authHeaders';
 import { supabase } from '../utils/supabaseClient';
 import {
@@ -74,6 +75,7 @@ type ViewMode = 'login' | 'signup' | 'forgot' | 'mfa-challenge';
 export function LoginPage() {
   const navigate = useNavigate();
   const { login, user, sessionLoading } = useAuth();
+  const { isDark } = useDashboardTheme();
 
   // ── View state ─────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('login');
@@ -428,8 +430,23 @@ export function LoginPage() {
 
   // ── Seed data handler ──────────────────────────────────────────────────────
 
-  const handleSeedData = () => {
-    toast.success('Demo data seeded successfully! All 45 accounts are ready.');
+  const [seedLoading, setSeedLoading] = useState(false);
+  const handleSeedData = async () => {
+    setSeedLoading(true);
+    try {
+      const res = await fetch(`${SERVER}/seed-modules`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Seed failed');
+      toast.success(data.message || 'Demo data seeded successfully!');
+    } catch (err: any) {
+      console.error('[Seed] error:', err);
+      toast.error(`Seed failed: ${err.message}`);
+    } finally {
+      setSeedLoading(false);
+    }
   };
 
   // ── Password strength ──────────────────────────────────────────────────────
@@ -462,17 +479,32 @@ export function LoginPage() {
     setShowDemoHint(false);
   };
 
-  // ── Shared input classes ────────────────────────────────────────────────────
-  const inputCls               = 'w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all min-h-[2.75rem]';
-  const inputWithIconCls       = 'w-full bg-white/10 border border-white/20 rounded-xl pl-11 pr-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all min-h-[2.75rem]';
-  const inputWithIconToggleCls = 'w-full bg-white/10 border border-white/20 rounded-xl pl-11 pr-12 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all min-h-[2.75rem]';
+  // ── Shared input classes (theme-aware) ───────────────────────────────────────
+  const inputBase = isDark
+    ? 'bg-white/10 border-white/20 text-white placeholder-white/50 focus:border-white/40'
+    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#0BA4AA]/60 focus:ring-2 focus:ring-[#0BA4AA]/15';
+  const inputCls               = `w-full ${inputBase} border rounded-xl px-4 py-3 focus:outline-none transition-all min-h-[2.75rem]`;
+  const inputWithIconCls       = `w-full ${inputBase} border rounded-xl pl-11 pr-4 py-3 focus:outline-none transition-all min-h-[2.75rem]`;
+  const inputWithIconToggleCls = `w-full ${inputBase} border rounded-xl pl-11 pr-12 py-3 focus:outline-none transition-all min-h-[2.75rem]`;
+
+  // ── Theme-aware color helpers ──────────────────────────────────────────────
+  const cardCls    = isDark ? 'bg-white/10 backdrop-blur-md border border-white/20' : 'bg-white/80 backdrop-blur-md border border-gray-200/60 shadow-xl';
+  const heading    = isDark ? 'text-white' : 'text-gray-900';
+  const subtext    = isDark ? 'text-white/60' : 'text-gray-500';
+  const labelText  = isDark ? 'text-white/90' : 'text-gray-700';
+  const iconColor  = isDark ? 'text-white/40' : 'text-gray-400';
+  const faintText  = isDark ? 'text-white/40' : 'text-gray-400';
+  const mutedText  = isDark ? 'text-white/30' : 'text-gray-300';
+  const tabInactive = isDark ? 'text-white/50 hover:text-white/70' : 'text-gray-400 hover:text-gray-600';
+  const tabBg      = isDark ? 'bg-white/10' : 'bg-gray-100';
+  const borderDiv  = isDark ? 'border-white/20' : 'border-gray-200';
 
   const HCaptchaDisclosure = () => (
-    <p className="text-white/40 text-[0.65rem] text-center leading-relaxed pt-1">
+    <p className={`${faintText} text-[0.65rem] text-center leading-relaxed pt-1`}>
       Protected by hCaptcha —{' '}
-      <a href="https://www.hcaptcha.com/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/60 transition-colors">Privacy Policy</a>{' '}
+      <a href="https://www.hcaptcha.com/privacy" target="_blank" rel="noopener noreferrer" className={`underline ${isDark ? 'hover:text-white/60' : 'hover:text-gray-600'} transition-colors`}>Privacy Policy</a>{' '}
       &amp;{' '}
-      <a href="https://www.hcaptcha.com/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/60 transition-colors">Terms of Service</a>{' '}
+      <a href="https://www.hcaptcha.com/terms" target="_blank" rel="noopener noreferrer" className={`underline ${isDark ? 'hover:text-white/60' : 'hover:text-gray-600'} transition-colors`}>Terms of Service</a>{' '}
       apply.
     </p>
   );
@@ -525,18 +557,18 @@ export function LoginPage() {
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.6 }}
               >
-                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl">
+                <div className={cardCls + ' rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl'}>
 
-                  <h2 className="text-white font-bold text-2xl sm:text-3xl mb-1">Sign in</h2>
-                  <p className="text-white/60 text-sm mb-6">Access your workspace</p>
+                  <h2 className={heading + ' font-bold text-2xl sm:text-3xl mb-1'}>Sign in</h2>
+                  <p className={subtext + ' text-sm mb-6'}>Access your workspace</p>
 
                   {/* Password / Magic Link tab toggle */}
-                  <div className="flex bg-white/10 rounded-xl p-1 mb-6">
+                  <div className={`flex ${tabBg} rounded-xl p-1 mb-6`}>
                     <button type="button" onClick={() => setAuthTab('password')}
-                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authTab === 'password' ? 'bg-[#0BA4AA] text-white shadow-lg shadow-[#0BA4AA]/30' : 'text-white/50 hover:text-white/70'}`}
+                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authTab === 'password' ? 'bg-[#0BA4AA] text-white shadow-lg shadow-[#0BA4AA]/30' : tabInactive}`}
                     >Password</button>
                     <button type="button" onClick={() => setAuthTab('magic')}
-                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authTab === 'magic' ? 'bg-[#0BA4AA] text-white shadow-lg shadow-[#0BA4AA]/30' : 'text-white/50 hover:text-white/70'}`}
+                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authTab === 'magic' ? 'bg-[#0BA4AA] text-white shadow-lg shadow-[#0BA4AA]/30' : tabInactive}`}
                     >Magic Link</button>
                   </div>
 
@@ -544,18 +576,18 @@ export function LoginPage() {
                   {authTab === 'password' && (
                     <form onSubmit={handleLogin} className="space-y-5">
                       <div>
-                        <label className="block text-white/90 mb-2 text-sm font-medium">Email address</label>
+                        <label className={`block ${labelText} mb-2 text-sm font-medium`}>Email address</label>
                         <div className="relative">
-                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                          <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 ${iconColor}`} />
                           <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required autoComplete="email" />
                         </div>
                       </div>
                       <div>
-                        <label className="block text-white/90 mb-2 text-sm font-medium">Password</label>
+                        <label className={labelText + ' mb-2 text-sm font-medium'}>Password</label>
                         <div className="relative">
-                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                          <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 ${iconColor}`} />
                           <input type={showPassword ? 'text' : 'password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputWithIconToggleCls} placeholder="••••••••" required autoComplete="current-password" />
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors p-1">
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className={`absolute right-3 top-1/2 -translate-y-1/2 ${iconColor} ${isDark ? 'hover:text-white/70' : 'hover:text-gray-600'} transition-colors p-1`}>
                             {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                           </button>
                         </div>
@@ -593,9 +625,9 @@ export function LoginPage() {
                   {authTab === 'magic' && (
                     <form onSubmit={handleMagicLink} className="space-y-5">
                       <div>
-                        <label className="block text-white/90 mb-2 text-sm font-medium">Email address</label>
+                        <label className={labelText + ' mb-2 text-sm font-medium'}>Email address</label>
                         <div className="relative">
-                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                          <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 ${iconColor}`} />
                           <input type="email" value={magicLinkEmail} onChange={e => setMagicLinkEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required autoComplete="email" />
                         </div>
                       </div>
@@ -618,28 +650,28 @@ export function LoginPage() {
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="mt-5">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-white/70 text-xs font-bold uppercase tracking-wider">Demo Accounts</span>
-                        <span className="text-[0.6rem] font-semibold px-2 py-0.5 rounded-full border border-white/20 text-white/50">{demoAccountCount} roles</span>
-                        <button type="button" onClick={() => setShowDemoHint(v => !v)} className="flex items-center gap-1 text-white/40 hover:text-white/60 text-xs transition-colors">
+                        <span className={`${subtext} text-xs font-bold uppercase tracking-wider`}>Demo Accounts</span>
+                        <span className={`text-[0.6rem] font-semibold px-2 py-0.5 rounded-full border ${borderDiv} ${faintText}`}>{demoAccountCount} roles</span>
+                        <button type="button" onClick={() => setShowDemoHint(v => !v)} className={`flex items-center gap-1 ${faintText} ${isDark ? 'hover:text-white/60' : 'hover:text-gray-600'} text-xs transition-colors`}>
                           <ChevronDown className={`w-3 h-3 transition-transform ${showDemoHint ? 'rotate-180' : ''}`} />
                           {showDemoHint ? 'hide' : 'show'}
                         </button>
                       </div>
-                      <button type="button" onClick={handleSeedData} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/20 text-white/60 hover:text-white/80 hover:border-white/30 text-xs font-medium transition-all">
-                        <Zap className="w-3 h-3" style={{ color: '#F47A20' }} /> Seed Data
+                      <button type="button" onClick={handleSeedData} disabled={seedLoading} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${borderDiv} ${subtext} ${isDark ? 'hover:text-white/80 hover:border-white/30' : 'hover:text-gray-700 hover:border-gray-300'} text-xs font-medium transition-all disabled:opacity-50`}>
+                        {seedLoading ? <Loader2 className="w-3 h-3 animate-spin" style={{ color: '#F47A20' }} /> : <Zap className="w-3 h-3" style={{ color: '#F47A20' }} />} {seedLoading ? 'Seeding…' : 'Seed Data'}
                       </button>
                     </div>
-                    <p className="text-white/40 text-xs mb-2">{demoAccountCount} demo accounts across {demoRoleCount} roles · {demoCountryCount} countries · click to expand</p>
+                    <p className={`${faintText} text-xs mb-2`}>{demoAccountCount} demo accounts across {demoRoleCount} roles · {demoCountryCount} countries · click to expand</p>
                     <AnimatePresence>
                       {showDemoHint && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5 overflow-hidden">
                           {DEMO_ACCOUNT_DISPLAY.map(a => (
                             <button key={a.email} type="button" onClick={() => { fillDemo(a.email, a.password); setAuthTab('password'); }}
-                              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10 hover:border-white/25 transition-all text-left"
+                              className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all text-left ${isDark ? 'bg-white/5 border-white/10 hover:border-white/25' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}
                             >
                               <span className={`text-[0.65rem] font-bold px-2 py-0.5 rounded-full border ${a.badge}`}>{a.label}</span>
-                              <span className="text-white/60 text-xs font-mono truncate flex-1">{a.email}</span>
-                              <span className="text-white/30 text-[0.65rem] shrink-0">click to fill</span>
+                              <span className={`${subtext} text-xs font-mono truncate flex-1`}>{a.email}</span>
+                              <span className={`${mutedText} text-[0.65rem] shrink-0`}>click to fill</span>
                             </button>
                           ))}
                         </motion.div>
@@ -654,15 +686,15 @@ export function LoginPage() {
                   style={{ background: 'rgba(244,122,32,0.08)', borderColor: 'rgba(244,122,32,0.35)' }}
                 >
                   <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#F47A20' }} />
-                  <p className="text-white/70 text-xs leading-relaxed">
+                  <p className={`${subtext} text-xs leading-relaxed`}>
                     MFA enforcement via TOTP is available. Enable it under{' '}
-                    <span className="text-white/90 font-medium">Settings &rarr; Security</span> after login.
+                    <span className={`${heading} font-medium`}>Settings &rarr; Security</span> after login.
                   </p>
                 </motion.div>
 
                 {/* ── Compliance footer ────────────────────────────────────────── */}
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-                  className="text-center text-white/30 text-xs mt-6"
+                  className={`text-center ${mutedText} text-xs mt-6`}
                 >
                   Internal use only · POPIA / PDPA / DPA compliant · v2.0.0
                 </motion.p>
@@ -672,15 +704,15 @@ export function LoginPage() {
             {/* ═══ FORGOT PASSWORD FORM ═══ */}
             {viewMode === 'forgot' && !resetEmailSent && (
               <motion.div key="forgot" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.6 }}
-                className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
+                className={`${cardCls} rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl`}
               >
-                <h2 className="text-white font-bold text-2xl mb-1">Reset Password</h2>
-                <p className="text-white/60 text-sm mb-6">Enter your email to receive reset instructions</p>
+                <h2 className={`${heading} font-bold text-2xl mb-1`}>Reset Password</h2>
+                <p className={`${subtext} text-sm mb-6`}>Enter your email to receive reset instructions</p>
                 <form onSubmit={handleForgotPassword} className="space-y-5">
                   <div>
-                    <label className="block text-white/90 mb-2 text-sm font-medium">Email address</label>
+                    <label className={`block ${labelText} mb-2 text-sm font-medium`}>Email address</label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                      <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 ${iconColor}`} />
                       <input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required />
                     </div>
                   </div>
@@ -690,9 +722,9 @@ export function LoginPage() {
                   >
                     {resetLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Send Reset Instructions'}
                   </motion.button>
-                  <div className="text-center pt-4 border-t border-white/20">
-                    <p className="text-white/60 text-sm">Remember your password?{' '}
-                      <button type="button" onClick={() => setViewMode('login')} className="text-white font-medium hover:underline">Sign In</button>
+                  <div className={`text-center pt-4 border-t ${borderDiv}`}>
+                    <p className={`${subtext} text-sm`}>Remember your password?{' '}
+                      <button type="button" onClick={() => setViewMode('login')} className={`${heading} font-medium hover:underline`}>Sign In</button>
                     </p>
                   </div>
                 </form>
@@ -702,15 +734,15 @@ export function LoginPage() {
             {/* ═══ FORGOT PASSWORD SUCCESS ═══ */}
             {viewMode === 'forgot' && resetEmailSent && (
               <motion.div key="forgot-sent" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
-                className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
+                className={`${cardCls} rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl`}
               >
                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
                   className="w-14 h-14 border-2 border-green-400 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: 'rgba(34,197,94,0.15)' }}
                 ><Check className="w-7 h-7 text-green-400" /></motion.div>
-                <h2 className="text-white font-bold text-2xl mb-4 text-center">Check Your Inbox</h2>
-                <div className="bg-white/5 border border-white/20 rounded-xl p-4 mb-6">
-                  <p className="text-white/90 text-center text-sm">Reset instructions sent to</p>
-                  <p className="text-white text-center mt-2 break-all font-medium">{resetEmail}</p>
+                <h2 className={`${heading} font-bold text-2xl mb-4 text-center`}>Check Your Inbox</h2>
+                <div className={`${isDark ? 'bg-white/5 border-white/20' : 'bg-gray-50 border-gray-200'} border rounded-xl p-4 mb-6`}>
+                  <p className={`${labelText} text-center text-sm`}>Reset instructions sent to</p>
+                  <p className={`${heading} text-center mt-2 break-all font-medium`}>{resetEmail}</p>
                 </div>
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   onClick={() => { setResetEmailSent(false); setResetEmail(''); setViewMode('login'); }}
@@ -725,15 +757,22 @@ export function LoginPage() {
           {/* ── Demo / Production Mode Toggle ──────────────────────────────── */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} className="mt-6 flex items-center justify-center">
             <button type="button" onClick={() => setDemoMode(!IS_DEMO_MODE)}
-              className="group flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all text-xs"
-              style={{ background: IS_DEMO_MODE ? 'rgba(62,60,112,0.5)' : 'rgba(255,255,255,0.05)', borderColor: IS_DEMO_MODE ? '#3E3C7060' : 'rgba(255,255,255,0.1)' }}
+              className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all text-xs`}
+              style={{
+                background: IS_DEMO_MODE
+                  ? 'rgba(62,60,112,0.5)'
+                  : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                borderColor: IS_DEMO_MODE
+                  ? '#3E3C7060'
+                  : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+              }}
             >
-              <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: IS_DEMO_MODE ? '#F47A20' : 'rgba(255,255,255,0.3)' }} />
-              <span className="text-white/50 group-hover:text-white/70 transition-colors">{IS_DEMO_MODE ? 'Demo Mode' : 'Production Mode'}</span>
-              <div className="relative w-9 h-5 rounded-full transition-colors" style={{ background: IS_DEMO_MODE ? '#0BA4AA' : 'rgba(255,255,255,0.15)' }}>
+              <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: IS_DEMO_MODE ? '#F47A20' : isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)' }} />
+              <span className={`${faintText} group-hover:${isDark ? 'text-white/70' : 'text-gray-600'} transition-colors`}>{IS_DEMO_MODE ? 'Demo Mode' : 'Production Mode'}</span>
+              <div className="relative w-9 h-5 rounded-full transition-colors" style={{ background: IS_DEMO_MODE ? '#0BA4AA' : isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)' }}>
                 <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all" style={{ left: IS_DEMO_MODE ? '1.125rem' : '0.125rem' }} />
               </div>
-              <span className="text-white/30 text-[0.6rem]">{IS_DEMO_MODE ? 'switch to production' : 'switch to demo'}</span>
+              <span className={`${mutedText} text-[0.6rem]`}>{IS_DEMO_MODE ? 'switch to production' : 'switch to demo'}</span>
             </button>
           </motion.div>
 

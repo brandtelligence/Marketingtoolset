@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, X, Filter, Building2, AlertCircle, Calendar, Factory, UserCircle, Tag } from 'lucide-react';
+import { useDashboardTheme } from './saas/DashboardThemeContext';
 
 interface FilterOption {
   label: string;
@@ -60,6 +61,7 @@ function MultiSelectDropdown({
   selected: string[];
   onChange: (selected: string[]) => void;
 }) {
+  const { isDark } = useDashboardTheme();
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<DropdownPosition>({ top: 0, left: 0, width: 224 });
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -130,11 +132,13 @@ function MultiSelectDropdown({
           width: dropdownPos.width,
           zIndex: 99999,
         }}
-        className="bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl overflow-hidden"
+        className={isDark
+          ? "bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl overflow-hidden"
+          : "bg-white backdrop-blur-xl border border-gray-200 rounded-xl shadow-2xl overflow-hidden"}
       >
         <div className="p-2 max-h-48 overflow-y-auto custom-scrollbar">
           {options.length === 0 ? (
-            <div className="text-white/40 text-xs text-center py-2">No options</div>
+            <div className={`${isDark ? 'text-white/40' : 'text-gray-400'} text-xs text-center py-2`}>No options</div>
           ) : (
             options.map((option) => (
               <button
@@ -142,14 +146,14 @@ function MultiSelectDropdown({
                 onClick={() => toggleOption(option.value)}
                 className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all mb-0.5 ${
                   selected.includes(option.value)
-                    ? 'bg-teal-500/30 text-white'
-                    : 'text-white/70 hover:bg-white/10 hover:text-white'
+                    ? isDark ? 'bg-teal-500/30 text-white' : 'bg-teal-500/15 text-teal-800'
+                    : isDark ? 'text-white/70 hover:bg-white/10 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 }`}
               >
                 <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
                   selected.includes(option.value)
                     ? 'bg-teal-500 border-teal-400'
-                    : 'border-white/30'
+                    : isDark ? 'border-white/30' : 'border-gray-300'
                 }`}>
                   {selected.includes(option.value) && (
                     <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -163,10 +167,10 @@ function MultiSelectDropdown({
           )}
         </div>
         {selected.length > 0 && (
-          <div className="border-t border-white/10 p-1.5">
+          <div className={`border-t ${isDark ? 'border-white/10' : 'border-gray-200'} p-1.5`}>
             <button
               onClick={() => onChange([])}
-              className="w-full text-xs text-white/50 hover:text-white py-1 rounded-lg hover:bg-white/10 transition-all"
+              className={`w-full text-xs ${isDark ? 'text-white/50 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'} py-1 rounded-lg transition-all`}
             >
               Clear selection
             </button>
@@ -184,14 +188,14 @@ function MultiSelectDropdown({
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all ${
           selected.length > 0
-            ? 'bg-white/25 border border-white/40 text-white'
-            : 'bg-white/8 border border-white/15 text-white/70 hover:bg-white/12 hover:border-white/25'
+            ? isDark ? 'bg-white/25 border border-white/40 text-white' : 'bg-teal-50 border border-teal-300 text-teal-800'
+            : isDark ? 'bg-white/8 border border-white/15 text-white/70 hover:bg-white/12 hover:border-white/25' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
         }`}
       >
         {icon}
         <span className="truncate flex-1 text-left">{label}</span>
         {selected.length > 0 && (
-          <span className="bg-white/30 text-white px-1.5 py-0.5 rounded-full text-[10px] font-semibold min-w-[18px] text-center shrink-0">
+          <span className={`${isDark ? 'bg-white/30 text-white' : 'bg-teal-500 text-white'} px-1.5 py-0.5 rounded-full text-[10px] font-semibold min-w-[18px] text-center shrink-0`}>
             {selected.length}
           </span>
         )}
@@ -204,6 +208,7 @@ function MultiSelectDropdown({
 }
 
 export function FilterBanner({ filterOptions, activeFilters, onFiltersChange }: FilterBannerProps) {
+  const { isDark } = useDashboardTheme();
   const totalActive = Object.values(activeFilters).reduce((sum, arr) => sum + arr.length, 0);
 
   const handleFilterChange = (key: FilterKey, selected: string[]) => {
@@ -226,15 +231,15 @@ export function FilterBanner({ filterOptions, activeFilters, onFiltersChange }: 
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
-      className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 md:p-5 shadow-xl h-full flex flex-col"
+      className={`${isDark ? 'bg-white/10 backdrop-blur-md border border-white/20' : 'bg-white/80 backdrop-blur-md border border-gray-200/60 shadow-sm'} rounded-2xl p-4 md:p-5 shadow-xl h-full flex flex-col`}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-white/80" />
-          <span className="text-white font-semibold text-sm">Filters</span>
+          <Filter className={`w-4 h-4 ${isDark ? 'text-white/80' : 'text-gray-500'}`} />
+          <span className={`${isDark ? 'text-white' : 'text-gray-900'} font-semibold text-sm`}>Filters</span>
           {totalActive > 0 && (
-            <span className="bg-teal-500/40 text-teal-200 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+            <span className={`${isDark ? 'bg-teal-500/40 text-teal-200' : 'bg-teal-100 text-teal-700'} px-2 py-0.5 rounded-full text-[10px] font-semibold`}>
               {totalActive} active
             </span>
           )}
@@ -242,7 +247,7 @@ export function FilterBanner({ filterOptions, activeFilters, onFiltersChange }: 
         {totalActive > 0 && (
           <button
             onClick={clearAllFilters}
-            className="flex items-center gap-1 text-white/50 hover:text-white text-xs transition-all"
+            className={`flex items-center gap-1 ${isDark ? 'text-white/50 hover:text-white' : 'text-gray-400 hover:text-gray-700'} text-xs transition-all`}
           >
             <X className="w-3 h-3" />
             Clear all

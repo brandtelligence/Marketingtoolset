@@ -8,6 +8,22 @@ import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { fetchAuditLogs, type AuditLog } from '../../utils/apiClient';
 
+// ── CSV Export helper ───────────────────────────────────────────────────────
+function downloadCsv(filename: string, rows: Record<string, any>[], columns: { key: string; label: string }[]) {
+  const header = columns.map(c => `"${c.label}"`).join(',');
+  const body = rows.map(r =>
+    columns.map(c => {
+      const v = r[c.key] ?? '';
+      return `"${String(v).replace(/"/g, '""')}"`;
+    }).join(',')
+  ).join('\n');
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function TenantAuditPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
@@ -71,7 +87,14 @@ export function TenantAuditPage() {
         title="Activity Log"
         subtitle="All actions performed within your tenant account"
         actions={
-          <PrimaryBtn variant="ghost" onClick={() => toast.info('Exported to CSV')}>
+          <PrimaryBtn variant="ghost" onClick={() => downloadCsv('audit-log.csv', logs, [
+            { key: 'createdAt', label: 'Timestamp' },
+            { key: 'actorName', label: 'User' },
+            { key: 'action', label: 'Action' },
+            { key: 'detail', label: 'Detail' },
+            { key: 'ip', label: 'IP' },
+            { key: 'severity', label: 'Severity' },
+          ])}>
             <Download className="w-4 h-4" /> Export
           </PrimaryBtn>
         }

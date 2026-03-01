@@ -4,10 +4,13 @@
  * Glassmorphism top navigation bar for the employee portal (/app/*).
  *
  * Links:
- *   📂 Projects  →  /app/projects
- *   ✨ AI Studio  →  /app/content
- *   🧩 Modules   →  /app/modules
- *   👤 Profile   →  /app/profile
+ *   📂 Projects    →  /app/projects
+ *   ✨ AI Studio   →  /app/content
+ *   📅 Campaign    →  /app/campaign
+ *   📤 Publish Hub →  /app/publish
+ *   📊 Activity    →  /app/activity
+ *   🧩 Modules     →  /app/modules
+ *   👤 Profile     →  /app/profile
  *
  * Approval Bell:
  *   Shows a live badge count of pending_approval content cards.
@@ -22,7 +25,7 @@ import {
   FolderKanban, Puzzle, UserCircle, LogOut, Sparkles,
   Bell, X, ExternalLink, CheckCheck, Send, Activity,
   CheckCircle, XCircle, Check, Clock, AlertTriangle,
-  RotateCw, Loader2, CalendarDays,
+  RotateCw, Loader2, CalendarDays, Sun, Moon,
 } from 'lucide-react';
 import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 import { useAuth } from './AuthContext';
@@ -31,6 +34,7 @@ import { useProjects } from '../contexts/ProjectsContext';
 import { toast } from 'sonner';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../utils/authHeaders';
+import { useDashboardTheme } from './saas/DashboardThemeContext';
 
 // ─── Platform icon map ────────────────────────────────────────────────────────
 
@@ -46,6 +50,7 @@ const NAV_ITEMS = [
   { path: '/app/content',   label: 'AI Studio',   icon: <Sparkles className="w-4 h-4" /> },
   { path: '/app/campaign',  label: 'Campaign',    icon: <CalendarDays className="w-4 h-4" /> },
   { path: '/app/publish',   label: 'Publish Hub', icon: <Send className="w-4 h-4" /> },
+  { path: '/app/activity',  label: 'Activity',    icon: <Activity className="w-4 h-4" /> },
   { path: '/app/modules',   label: 'My Modules',  icon: <Puzzle className="w-4 h-4" /> },
   { path: '/app/profile',   label: 'My Profile',  icon: <UserCircle className="w-4 h-4" /> },
 ];
@@ -376,9 +381,9 @@ function ApprovalBell() {
                           <meta.Icon className={`w-3 h-3 ${meta.color}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-white/80 text-xs font-semibold truncate leading-snug">{event.cardTitle}</p>
+                          <p className="text-white/80 text-xs font-semibold truncate leading-snug">{event.cardTitle || 'Untitled content'}</p>
                           <p className={`text-[10px] mt-0.5 ${meta.color}`}>
-                            {meta.label} by {event.performedBy}
+                            {meta.label}{event.performedBy ? ` by ${event.performedBy}` : ''}
                             {event.reason ? ` — "${event.reason}"` : ''}
                           </p>
                           <p className="text-white/25 text-[10px] mt-0.5">{fmtAgo(event.timestamp)}</p>
@@ -489,6 +494,7 @@ function ApprovalBell() {
 export function EmployeeNav() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { isDark, toggleTheme } = useDashboardTheme();
 
   if (!user) return null;
 
@@ -501,8 +507,12 @@ export function EmployeeNav() {
   const linkCls = (isActive: boolean) =>
     `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
       isActive
-        ? 'bg-white/20 text-white border border-white/30'
-        : 'text-white/70 hover:text-white hover:bg-white/10'
+        ? isDark
+          ? 'bg-white/20 text-white border border-white/30'
+          : 'bg-[#0BA4AA]/12 text-[#0BA4AA] border border-[#0BA4AA]/25'
+        : isDark
+          ? 'text-white/70 hover:text-white hover:bg-white/10'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
     }`;
 
   return (
@@ -511,17 +521,22 @@ export function EmployeeNav() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
       className="sticky top-0 z-40 w-full"
+      aria-label="Employee portal navigation"
     >
       <div
-        className="backdrop-blur-xl border-b border-white/15 px-4 py-2.5"
-        style={{ background: 'rgba(11,164,170,0.08)' }}
+        className={`backdrop-blur-xl border-b px-4 py-2.5 ${
+          isDark
+            ? 'border-white/15'
+            : 'border-gray-200/80 shadow-sm'
+        }`}
+        style={{ background: isDark ? 'rgba(11,164,170,0.08)' : 'rgba(255,255,255,0.85)' }}
       >
         <div className="max-w-7xl mx-auto flex items-center gap-4">
           {/* Logo */}
           <img src={brandLogo} alt="Brandtelligence" className="h-6 w-auto shrink-0" />
 
           {/* Divider */}
-          <div className="w-px h-5 bg-white/20 shrink-0" />
+          <div className={`w-px h-5 shrink-0 ${isDark ? 'bg-white/20' : 'bg-gray-300'}`} />
 
           {/* Nav links */}
           <div className="flex items-center gap-1 flex-1">
@@ -537,30 +552,56 @@ export function EmployeeNav() {
             ))}
           </div>
 
-          {/* Right: approval bell + user avatar + sign out */}
+          {/* Right: theme toggle + approval bell + user avatar + sign out */}
           <div className="flex items-center gap-2 shrink-0">
+
+            {/* Theme toggle */}
+            <div className="flex items-center gap-1.5">
+              <Sun className={`w-3.5 h-3.5 transition-colors ${!isDark ? 'text-amber-500' : 'text-white/25'}`} />
+              <button
+                onClick={toggleTheme}
+                title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                className={`relative w-9 h-5 rounded-full transition-colors duration-300 focus:outline-none ${
+                  isDark ? 'bg-[#3E3C70]' : 'bg-amber-400'
+                }`}
+              >
+                <motion.span
+                  animate={{ x: isDark ? 18 : 2 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md block"
+                />
+              </button>
+              <Moon className={`w-3.5 h-3.5 transition-colors ${isDark ? 'text-purple-300' : 'text-gray-300'}`} />
+            </div>
+
+            {/* Divider */}
+            <div className={`w-px h-5 hidden sm:block ${isDark ? 'bg-white/15' : 'bg-gray-300'}`} />
 
             {/* Approval bell */}
             <ApprovalBell />
 
             {/* Divider */}
-            <div className="w-px h-5 bg-white/15 hidden sm:block" />
+            <div className={`w-px h-5 hidden sm:block ${isDark ? 'bg-white/15' : 'bg-gray-300'}`} />
 
             {/* Avatar + name */}
             <div className="hidden sm:flex items-center gap-2">
               <img
                 src={user.profileImage}
                 alt={user.firstName}
-                className="w-7 h-7 rounded-full border border-white/30 object-cover"
+                className={`w-7 h-7 rounded-full object-cover ${isDark ? 'border border-white/30' : 'border border-gray-300 ring-1 ring-gray-200'}`}
               />
-              <span className="text-white/80 text-sm font-medium">{user.firstName}</span>
+              <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-700'}`}>{user.firstName}</span>
             </div>
 
             {/* Sign out */}
             <button
               onClick={handleLogout}
               title="Sign out"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-all text-sm"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-sm ${
+                isDark
+                  ? 'text-white/60 hover:text-white hover:bg-white/10'
+                  : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+              }`}
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden md:inline">Sign out</span>

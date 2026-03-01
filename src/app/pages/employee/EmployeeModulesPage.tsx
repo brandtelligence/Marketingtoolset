@@ -30,6 +30,8 @@ import {
   type Module, type ModuleRequest,
 } from '../../utils/apiClient';
 import { formatRM } from '../../utils/format';
+import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { employeeTheme } from '../../utils/employeeTheme';
 
 // ── Tiny RequestDrawer (inline, not using DrawerForm to keep this file self-contained)
 function RequestDrawer({
@@ -41,6 +43,8 @@ function RequestDrawer({
   existingRequest?: ModuleRequest;
 }) {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const [useCase, setUseCase] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -84,15 +88,15 @@ function RequestDrawer({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 40, scale: 0.96 }}
         transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-        className="w-full max-w-md bg-[#1a1a3e] border border-white/20 rounded-2xl p-6 shadow-2xl"
+        className={`w-full max-w-md rounded-2xl p-6 shadow-2xl ${isDark ? 'bg-[#1a1a3e] border border-white/20' : 'bg-white border border-gray-200'}`}
       >
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center text-xl shrink-0">
             {m.icon}
           </div>
           <div>
-            <h3 className="text-white font-semibold">Request {m.name}</h3>
-            <p className="text-white/50 text-xs">RM {formatRM(m.basePrice)}/mo · Your Tenant Admin will review</p>
+            <h3 className={`font-semibold ${et.text}`}>Request {m.name}</h3>
+            <p className={`text-xs ${et.textMd}`}>RM {formatRM(m.basePrice)}/mo · Your Tenant Admin will review</p>
           </div>
         </div>
 
@@ -104,7 +108,7 @@ function RequestDrawer({
         )}
 
         <div className="mb-4">
-          <label className="block text-white/70 text-xs mb-1.5">
+          <label className={`block text-xs mb-1.5 ${et.textMd}`}>
             Why do you need this module? <span className="text-red-400">*</span>
           </label>
           <textarea
@@ -112,18 +116,18 @@ function RequestDrawer({
             onChange={e => setUseCase(e.target.value)}
             rows={4}
             placeholder={`e.g. "We need ${m.name} to improve our Q3 campaign performance…"`}
-            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-teal-400/50 transition-all resize-none"
+            className={et.inputCls + ' resize-none'}
           />
         </div>
 
-        <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white/50 mb-5">
+        <div className={`rounded-xl p-3 text-xs mb-5 ${isDark ? 'bg-white/5 border border-white/10 text-white/50' : 'bg-gray-50 border border-gray-200 text-gray-500'}`}>
           💡 Your Tenant Admin will receive this request and can escalate to the Brandtelligence team if they decide to upgrade.
         </div>
 
         <div className="flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-white/20 text-white/60 hover:text-white hover:border-white/40 text-sm transition-all"
+            className={`flex-1 py-2.5 rounded-xl border text-sm transition-all ${isDark ? 'border-white/20 text-white/60 hover:text-white hover:border-white/40' : 'border-gray-300 text-gray-500 hover:text-gray-900 hover:border-gray-400'}`}
           >
             Cancel
           </button>
@@ -153,6 +157,8 @@ function ModuleCard({
   features: any[];
   onRequest: () => void;
 }) {
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const [expanded, setExpanded] = useState(false);
   const moduleFeatures = features.filter(f => f.moduleId === m.id);
 
@@ -180,27 +186,27 @@ function ModuleCard({
     <div className={`rounded-2xl border transition-all ${
       active
         ? 'bg-teal-500/10 border-teal-500/25'
-        : 'bg-white/5 border-white/10'
+        : isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200 shadow-sm'
     }`}>
       <div className="p-4">
         <div className="flex items-start gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-            active ? 'bg-teal-500/20' : 'bg-white/10'
+            active ? 'bg-teal-500/20' : isDark ? 'bg-white/10' : 'bg-gray-100'
           }`}>
             {m.icon}
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
-              <p className="text-white font-medium text-sm">{m.name}</p>
+              <p className={`font-medium text-sm ${et.text}`}>{m.name}</p>
               {active
                 ? <span className="text-[0.6rem] bg-teal-500/25 text-teal-300 border border-teal-500/30 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide">Active</span>
-                : <span className="text-[0.6rem] text-white/30 flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" /> Not subscribed</span>
+                : <span className={`text-[0.6rem] flex items-center gap-0.5 ${et.textFaint}`}><Lock className="w-2.5 h-2.5" /> Not subscribed</span>
               }
               <RequestStatus />
             </div>
-            <p className="text-white/50 text-xs">{m.description}</p>
-            <p className="text-white/40 text-xs mt-1">RM {formatRM(m.basePrice)}/mo</p>
+            <p className={`text-xs ${et.textMd}`}>{m.description}</p>
+            <p className={`text-xs mt-1 ${et.textFaint}`}>RM {formatRM(m.basePrice)}/mo</p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -216,7 +222,7 @@ function ModuleCard({
             {moduleFeatures.length > 0 && (
               <button
                 onClick={() => setExpanded(v => !v)}
-                className="text-white/40 hover:text-white/70 transition-colors p-1"
+                className={`transition-colors p-1 ${isDark ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600'}`}
                 title={expanded ? 'Hide features' : 'Show features'}
               >
                 {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -234,13 +240,13 @@ function ModuleCard({
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="mt-3 pt-3 border-t border-white/10 space-y-1.5">
-                <p className="text-white/30 text-[0.6rem] uppercase tracking-wider mb-2">Included Features</p>
+              <div className={`mt-3 pt-3 space-y-1.5 ${et.border} border-t`}>
+                <p className={`text-[0.6rem] uppercase tracking-wider mb-2 ${et.textFaint}`}>Included Features</p>
                 {moduleFeatures.map(f => (
                   <div key={f.id} className="flex items-center gap-2">
                     <Zap className={`w-3 h-3 shrink-0 ${f.globalEnabled ? 'text-teal-400' : 'text-white/25'}`} />
-                    <span className="text-white/60 text-xs flex-1">{f.name}</span>
-                    <span className="text-white/30 text-[0.6rem]">{f.rolloutNote}</span>
+                    <span className={`text-xs flex-1 ${et.textMd}`}>{f.name}</span>
+                    <span className={`text-[0.6rem] ${et.textFaint}`}>{f.rolloutNote}</span>
                   </div>
                 ))}
               </div>
@@ -256,6 +262,8 @@ function ModuleCard({
 
 export function EmployeeModulesPage() {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
 
   const [modules,   setModules]   = useState<Module[]>([]);
   const [features,  setFeatures]  = useState<any[]>([]);
@@ -309,10 +317,10 @@ export function EmployeeModulesPage() {
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-white text-2xl font-bold flex items-center gap-2">
+            <h1 className={`text-2xl font-bold flex items-center gap-2 ${et.text}`}>
               <Puzzle className="w-6 h-6 text-teal-400" /> My Modules
             </h1>
-            <p className="text-white/60 text-sm mt-1">
+            <p className={`text-sm mt-1 ${et.textMd}`}>
               {activeModules.length} active · {availableModules.length} available
               {pendingCount > 0 && <span className="ml-2 text-amber-400">· {pendingCount} pending request{pendingCount > 1 ? 's' : ''}</span>}
             </p>
@@ -320,18 +328,18 @@ export function EmployeeModulesPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-24 text-white/40">
+          <div className={`flex items-center justify-center py-24 ${et.textFaint}`}>
             <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading modules…
           </div>
         ) : (
           <>
             {/* ── Active modules ─────────────────────────────────────────── */}
             <section className="mb-8">
-              <h2 className="text-white/60 text-xs uppercase tracking-wider font-semibold mb-3 flex items-center gap-2">
+              <h2 className={`text-xs uppercase tracking-wider font-semibold mb-3 flex items-center gap-2 ${et.textMd}`}>
                 <CheckCircle className="w-3.5 h-3.5 text-teal-400" /> Active Modules ({activeModules.length})
               </h2>
               {activeModules.length === 0 ? (
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-white/30 text-sm">
+                <div className={`rounded-2xl p-8 text-center text-sm ${isDark ? 'bg-white/5 border border-white/10 text-white/30' : 'bg-gray-50 border border-gray-200 text-gray-400'}`}>
                   No modules are active for your organisation yet.
                 </div>
               ) : (
@@ -350,10 +358,10 @@ export function EmployeeModulesPage() {
             {/* ── Available to request ───────────────────────────────────── */}
             {availableModules.length > 0 && (
               <section>
-                <h2 className="text-white/60 text-xs uppercase tracking-wider font-semibold mb-3 flex items-center gap-2">
-                  <Lock className="w-3.5 h-3.5 text-white/40" /> Available to Request ({availableModules.length})
+                <h2 className={`text-xs uppercase tracking-wider font-semibold mb-3 flex items-center gap-2 ${et.textMd}`}>
+                  <Lock className={`w-3.5 h-3.5 ${et.textFaint}`} /> Available to Request ({availableModules.length})
                 </h2>
-                <p className="text-white/40 text-xs mb-4">
+                <p className={`text-xs mb-4 ${et.textFaint}`}>
                   These modules aren't in your current subscription. Click "Request" to submit a case to your Tenant Admin — they'll review and escalate if approved.
                 </p>
                 <div className="space-y-3">

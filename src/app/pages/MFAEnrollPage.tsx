@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
 import { useAuth } from '../components/AuthContext';
 import { BackgroundLayout } from '../components/BackgroundLayout';
+import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
 import {
   IS_DEMO_MODE, MFA_RECOVERY_CODE_COUNT, TOTP_ISSUER,
   SS_MFA_PENDING_USER, SS_MFA_TARGET_ROUTE,
@@ -143,6 +144,13 @@ function StepIndicator({ current }: { current: number }) {
 export function MFAEnrollPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { isDark } = useDashboardTheme();
+
+  // ── Theme helpers ──────────────────────────────────────────────────────
+  const glass   = isDark ? 'bg-white/10 backdrop-blur-md border border-white/20' : 'bg-white/80 backdrop-blur-md border border-gray-200/60 shadow-sm';
+  const th      = isDark ? 'text-white' : 'text-gray-900';
+  const thMd    = isDark ? 'text-white/60' : 'text-gray-500';
+  const thFaint = isDark ? 'text-white/40' : 'text-gray-400';
 
   const [step,          setStep]          = useState(0);
   const [factorId,      setFactorId]      = useState('');
@@ -303,9 +311,9 @@ export function MFAEnrollPage() {
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
             className="text-center mb-6"
           >
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md rounded-2xl px-5 py-3 border border-white/20">
+            <div className={`inline-flex items-center gap-2 ${glass} rounded-2xl px-5 py-3`}>
               <ShieldCheck className="w-5 h-5 text-purple-300" />
-              <span className="text-white font-bold text-sm">Two-Factor Authentication Setup</span>
+              <span className={`${th} font-bold text-sm`}>Two-Factor Authentication Setup</span>
             </div>
           </motion.div>
 
@@ -324,7 +332,7 @@ export function MFAEnrollPage() {
 
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
+            className={`${glass} rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl`}
           >
             <StepIndicator current={step} />
 
@@ -338,8 +346,8 @@ export function MFAEnrollPage() {
                 >
                   <div className="text-center">
                     <Smartphone className="w-10 h-10 text-purple-300 mx-auto mb-3" />
-                    <h2 className="text-white text-xl font-bold mb-1">Get an Authenticator App</h2>
-                    <p className="text-white/60 text-sm">
+                    <h2 className={`${th} text-xl font-bold mb-1`}>Get an Authenticator App</h2>
+                    <p className={`${thMd} text-sm`}>
                       You'll need an authenticator app to generate secure login codes.
                     </p>
                   </div>
@@ -392,8 +400,8 @@ export function MFAEnrollPage() {
                 >
                   <div className="text-center">
                     <QrCode className="w-8 h-8 text-purple-300 mx-auto mb-2" />
-                    <h2 className="text-white text-xl font-bold mb-1">Scan the QR Code</h2>
-                    <p className="text-white/60 text-sm">
+                    <h2 className={`${th} text-xl font-bold mb-1`}>Scan the QR Code</h2>
+                    <p className={`${thMd} text-sm`}>
                       Open your authenticator app, tap <strong className="text-white/80">"+"</strong> or
                       <strong className="text-white/80"> "Add account"</strong>, then scan this code.
                     </p>
@@ -558,7 +566,7 @@ export function MFAEnrollPage() {
           {/* Bottom note */}
           <motion.p
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-            className="text-center text-white/30 text-xs mt-4"
+            className={`text-center ${thFaint} text-xs mt-4`}
           >
             MFA is required for your account role. Contact your Super Admin if you need assistance.
           </motion.p>

@@ -15,9 +15,13 @@ import { supabase } from '../../utils/supabaseClient';
 import { IS_PRODUCTION } from '../../config/appConfig';
 import { toast } from 'sonner';
 import { RoleBadge } from '../../components/saas/StatusBadge';
+import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { employeeTheme } from '../../utils/employeeTheme';
 
 export function EmployeeProfilePage() {
   const { user, login } = useAuth();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
 
   const [firstName,     setFirstName]     = useState(user?.firstName ?? '');
   const [lastName,      setLastName]      = useState(user?.lastName  ?? '');
@@ -94,7 +98,7 @@ export function EmployeeProfilePage() {
   const strength      = pwStrength(newPw);
   const strengthLabel = ['', 'Weak', 'Fair', 'Good', 'Strong'][strength] ?? '';
   const strengthColor = ['', 'bg-red-500', 'bg-orange-400', 'bg-yellow-400', 'bg-teal-500'][strength] ?? '';
-  const inputCls = 'w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-white/40 transition-all text-sm';
+  const inputCls = et.inputCls;
 
   return (
     <BackgroundLayout>
@@ -103,19 +107,19 @@ export function EmployeeProfilePage() {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
 
           <div className="mb-6">
-            <h1 className="text-white text-2xl font-bold">My Profile</h1>
-            <p className="text-white/60 text-sm mt-1">Manage your personal information and password</p>
+            <h1 className={`text-2xl font-bold ${et.text}`}>My Profile</h1>
+            <p className={`text-sm mt-1 ${et.textMd}`}>Manage your personal information and password</p>
           </div>
 
           {/* Profile card */}
-          <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 mb-5 shadow-xl">
-            <h2 className="text-white font-semibold mb-5 flex items-center gap-2">
+          <div className={`${et.glass} p-6 mb-5`}>
+            <h2 className={`${et.text} font-semibold mb-5 flex items-center gap-2`}>
               <Briefcase className="w-4 h-4 text-teal-400" /> Personal Information
             </h2>
 
             <div className="flex items-center gap-5 mb-6">
               <div className="relative">
-                <div className="w-20 h-20 rounded-full border-2 border-white/30 overflow-hidden bg-white/10">
+                <div className={`w-20 h-20 rounded-full border-2 overflow-hidden ${isDark ? 'border-white/30 bg-white/10' : 'border-gray-200 bg-gray-100'}`}>
                   <img src={avatarSrc} alt={user.firstName} className="w-full h-full object-cover" />
                 </div>
                 <button
@@ -129,36 +133,36 @@ export function EmployeeProfilePage() {
                 <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
               </div>
               <div>
-                <p className="text-white font-semibold text-lg">{user.firstName} {user.lastName}</p>
+                <p className={`${et.text} font-semibold text-lg`}>{user.firstName} {user.lastName}</p>
                 <div className="flex items-center gap-2 mt-1">
                   <RoleBadge role={user.role ?? 'EMPLOYEE'} />
-                  <span className="text-white/50 text-xs">{user.tenantName ?? user.company}</span>
+                  <span className={`text-xs ${et.textFaint}`}>{user.tenantName ?? user.company}</span>
                 </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-white/70 text-xs mb-1.5">First Name</label>
+                <label className={`block text-xs mb-1.5 ${et.textMd}`}>First Name</label>
                 <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} className={inputCls} placeholder="First name" />
               </div>
               <div>
-                <label className="block text-white/70 text-xs mb-1.5">Last Name</label>
+                <label className={`block text-xs mb-1.5 ${et.textMd}`}>Last Name</label>
                 <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} className={inputCls} placeholder="Last name" />
               </div>
             </div>
 
             <div className="space-y-3 mb-6">
               {[
-                { icon: <Mail className="w-4 h-4 text-white/40 shrink-0" />, label: 'Email (read-only)', value: user.email },
-                { icon: <Building2 className="w-4 h-4 text-white/40 shrink-0" />, label: 'Organisation', value: user.tenantName ?? user.company },
-                { icon: <Briefcase className="w-4 h-4 text-white/40 shrink-0" />, label: 'Role', value: user.jobTitle },
+                { icon: <Mail className={`w-4 h-4 shrink-0 ${et.textFaint}`} />, label: 'Email (read-only)', value: user.email },
+                { icon: <Building2 className={`w-4 h-4 shrink-0 ${et.textFaint}`} />, label: 'Organisation', value: user.tenantName ?? user.company },
+                { icon: <Briefcase className={`w-4 h-4 shrink-0 ${et.textFaint}`} />, label: 'Role', value: user.jobTitle },
               ].map(field => (
-                <div key={field.label} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                <div key={field.label} className={`flex items-center gap-3 rounded-xl px-4 py-3 ${isDark ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}>
                   {field.icon}
                   <div>
-                    <p className="text-white/40 text-[0.65rem] uppercase tracking-wider">{field.label}</p>
-                    <p className="text-white text-sm">{field.value}</p>
+                    <p className={`text-[0.65rem] uppercase tracking-wider ${et.textFaint}`}>{field.label}</p>
+                    <p className={`text-sm ${et.text}`}>{field.value}</p>
                   </div>
                 </div>
               ))}
@@ -175,8 +179,8 @@ export function EmployeeProfilePage() {
           </div>
 
           {/* Change Password card */}
-          <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 shadow-xl">
-            <h2 className="text-white font-semibold mb-5 flex items-center gap-2">
+          <div className={`${et.glass} p-6`}>
+            <h2 className={`${et.text} font-semibold mb-5 flex items-center gap-2`}>
               <Lock className="w-4 h-4 text-teal-400" /> Change Password
             </h2>
 
@@ -187,7 +191,7 @@ export function EmployeeProfilePage() {
                 { label: 'Confirm New Password', value: confirmPw, show: showCon, setVal: setConfirmPw, toggleShow: () => setShowCon(v => !v), placeholder: 'Re-enter new password' },
               ].map(field => (
                 <div key={field.label}>
-                  <label className="block text-white/70 text-xs mb-1.5">{field.label}</label>
+                  <label className={`block text-xs mb-1.5 ${et.textMd}`}>{field.label}</label>
                   <div className="relative">
                     <input
                       type={field.show ? 'text' : 'password'} value={field.value}
@@ -195,7 +199,7 @@ export function EmployeeProfilePage() {
                       className={`${inputCls} pr-11`} placeholder={field.placeholder}
                     />
                     <button type="button" onClick={field.toggleShow}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70">
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600'}`}>
                       {field.show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
@@ -203,10 +207,10 @@ export function EmployeeProfilePage() {
                     <div className="mt-2">
                       <div className="flex gap-1 mb-1">
                         {[...Array(4)].map((_, i) => (
-                          <div key={i} className={`h-1 flex-1 rounded-full transition-all ${i < strength ? strengthColor : 'bg-white/15'}`} />
+                          <div key={i} className={`h-1 flex-1 rounded-full transition-all ${i < strength ? strengthColor : (isDark ? 'bg-white/15' : 'bg-gray-200')}`} />
                         ))}
                       </div>
-                      <p className="text-xs text-white/50">Strength: {strengthLabel}</p>
+                      <p className={`text-xs ${et.textFaint}`}>Strength: {strengthLabel}</p>
                     </div>
                   )}
                   {field.label === 'Confirm New Password' && confirmPw && (
@@ -217,9 +221,9 @@ export function EmployeeProfilePage() {
                 </div>
               ))}
 
-              <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex items-start gap-2.5">
+              <div className={`rounded-xl p-3 flex items-start gap-2.5 ${isDark ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}>
                 <Shield className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-                <p className="text-white/50 text-xs leading-relaxed">
+                <p className={`text-xs leading-relaxed ${et.textFaint}`}>
                   Use at least 8 characters with a mix of uppercase, lowercase, numbers, and symbols.
                 </p>
               </div>

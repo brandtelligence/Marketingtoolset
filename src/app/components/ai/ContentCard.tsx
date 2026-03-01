@@ -14,6 +14,8 @@ import {
 } from 'react-icons/si';
 import { useAuth } from '../AuthContext';
 import { availableTeamMembers } from '../../contexts/ProjectsContext';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
+import { employeeTheme } from '../../utils/employeeTheme';
 import {
   useContent,
   createCardId,
@@ -290,6 +292,8 @@ interface InlineApprovalStripProps {
 
 function InlineApprovalStrip({ card }: InlineApprovalStripProps) {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const { updateCard, logApprovalEvent } = useContent();
 
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -444,7 +448,7 @@ function InlineApprovalStrip({ card }: InlineApprovalStripProps) {
           }}
           placeholder="Why is this content being rejected?"
           rows={2}
-          className="w-full bg-white/8 border border-red-400/30 rounded-xl px-3 py-2 text-white text-xs placeholder-white/30 focus:outline-none focus:border-red-400/50 resize-none transition-all"
+          className={`w-full ${isDark ? 'bg-white/8' : 'bg-red-50'} border border-red-400/30 rounded-xl px-3 py-2 ${et.text} text-xs ${isDark ? 'placeholder-white/30' : 'placeholder-gray-400'} focus:outline-none focus:border-red-400/50 resize-none transition-all`}
           onClick={e => e.stopPropagation()}
         />
         <div className="flex gap-2">
@@ -461,7 +465,7 @@ function InlineApprovalStrip({ card }: InlineApprovalStripProps) {
           </motion.button>
           <button
             onClick={e => { e.stopPropagation(); setShowRejectInput(false); setRejectionReason(''); }}
-            className="text-white/40 hover:text-white/60 text-xs px-3 py-2 rounded-lg hover:bg-white/8 transition-all shrink-0"
+            className={`${et.textFaint} hover:${isDark ? 'text-white/60' : 'text-gray-600'} text-xs px-3 py-2 rounded-lg ${et.hover} transition-all shrink-0`}
           >
             Cancel
           </button>
@@ -508,6 +512,8 @@ function InlineApprovalStrip({ card }: InlineApprovalStripProps) {
 
 function InlinePublishStrip({ card }: { card: ContentCardType }) {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const { updateCard } = useContent();
   const [confirming, setConfirming] = useState(false);
   const [busy,       setBusy]       = useState(false);
@@ -564,7 +570,7 @@ function InlinePublishStrip({ card }: { card: ContentCardType }) {
           </motion.button>
           <button
             onClick={e => { e.stopPropagation(); setConfirming(false); }}
-            className="text-white/40 hover:text-white/60 text-xs px-3 py-2 rounded-lg hover:bg-white/8 transition-all shrink-0"
+            className={`${et.textFaint} hover:${isDark ? 'text-white/60' : 'text-gray-600'} text-xs px-3 py-2 rounded-lg ${et.hover} transition-all shrink-0`}
           >
             Cancel
           </button>
@@ -609,10 +615,17 @@ export function ContentCardCompact({
   bulkMode = false, isSelectable = false, isSelected = false, onToggleSelect,
 }: ContentCardProps) {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const { warningHours, breachHours } = useSlaConfig(user?.tenantId ?? undefined);
   const PlatformIcon = platformIcons[card.platform];
   const sc = statusConfig[card.status];
   const StatusIcon = sc.icon;
+
+  // Theme-aware platform colors (twitter/tiktok/threads need contrast fix in light mode)
+  const themedPlatformColors: Record<string, string> = isDark
+    ? platformColors
+    : { ...platformColors, twitter: 'text-gray-800', tiktok: 'text-gray-800', threads: 'text-gray-700' };
 
   // Is the current user a designated approver who can action this card?
   const canApprove = card.status === 'pending_approval' && card.approvers.some(appId => {
@@ -625,19 +638,23 @@ export function ContentCardCompact({
   const scheduledStatus = getScheduledStatus(card);
 
   // ── Bulk-mode derived classes ─────────────────────────────────────────────
+  const defaultBorder = isDark ? 'border-white/15 hover:border-white/30' : 'border-gray-200 hover:border-gray-300';
+  const bulkSelectableBorder = isDark ? 'border-white/20 hover:border-white/40' : 'border-gray-300 hover:border-gray-400';
+  const bulkDisabledBorder = isDark ? 'border-white/5 opacity-40' : 'border-gray-100 opacity-40';
+
   const borderCls = bulkMode
     ? isSelected
       ? 'border-teal-400/75 shadow-teal-500/15 ring-1 ring-teal-400/25'
       : isSelectable
-        ? 'border-white/20 hover:border-white/40'
-        : 'border-white/5 opacity-40'
+        ? bulkSelectableBorder
+        : bulkDisabledBorder
     : canApprove
       ? 'border-amber-400/50 shadow-amber-500/10 hover:border-amber-400/70'
       : scheduledStatus === 'due_today'
         ? 'border-green-400/40 shadow-green-500/8 hover:border-green-400/60'
         : scheduledStatus === 'overdue'
           ? 'border-orange-400/35 shadow-orange-500/8 hover:border-orange-400/55'
-          : 'border-white/15 hover:border-white/30';
+          : defaultBorder;
 
   const cursorCls = bulkMode
     ? isSelectable ? 'cursor-pointer' : 'cursor-not-allowed pointer-events-none'
@@ -654,7 +671,7 @@ export function ContentCardCompact({
         if (bulkMode) { if (isSelectable) onToggleSelect?.(card.id); return; }
         onOpenDetail(card);
       }}
-      className={`relative bg-white/8 backdrop-blur-md rounded-2xl overflow-hidden transition-all group shadow-lg hover:shadow-xl border ${borderCls} ${cursorCls}`}
+      className={`relative ${isDark ? 'bg-white/8 backdrop-blur-md' : 'bg-white'} rounded-2xl overflow-hidden transition-all group shadow-lg hover:shadow-xl border ${borderCls} ${cursorCls}`}
     >
       {/* ── Bulk checkbox overlay — top-left corner ── */}
       {bulkMode && isSelectable && (
@@ -727,12 +744,12 @@ export function ContentCardCompact({
           {card.mediaType === 'image' ? (
             <img src={card.mediaUrl} alt="" className="w-full h-full object-cover" />
           ) : card.mediaType === 'video' ? (
-            <div className="w-full h-full bg-gradient-to-br from-purple-900/80 to-gray-900/80 flex items-center justify-center">
-              <Video className="w-10 h-10 text-white/40" />
+            <div className={`w-full h-full flex items-center justify-center ${isDark ? 'bg-gradient-to-br from-purple-900/80 to-gray-900/80' : 'bg-gradient-to-br from-purple-100 to-gray-100'}`}>
+              <Video className={`w-10 h-10 ${et.textFaint}`} />
             </div>
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-teal-900/80 to-gray-900/80 flex items-center justify-center">
-              <Music className="w-10 h-10 text-white/40" />
+            <div className={`w-full h-full flex items-center justify-center ${isDark ? 'bg-gradient-to-br from-teal-900/80 to-gray-900/80' : 'bg-gradient-to-br from-teal-100 to-gray-100'}`}>
+              <Music className={`w-10 h-10 ${et.textFaint}`} />
             </div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
@@ -750,8 +767,8 @@ export function ContentCardCompact({
         {/* Platform + Status (if no media) */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            {PlatformIcon && <PlatformIcon className={`w-4 h-4 ${platformColors[card.platform]}`} />}
-            <span className="text-white/60 text-xs">{platformNames[card.platform]}</span>
+            {PlatformIcon && <PlatformIcon className={`w-4 h-4 ${themedPlatformColors[card.platform]}`} />}
+            <span className={`${et.textMd} text-xs`}>{platformNames[card.platform]}</span>
           </div>
           {!card.mediaUrl && (
             <div className={`${sc.bg} ${sc.border} border rounded-full px-2 py-0.5 flex items-center gap-1`}>
@@ -762,13 +779,13 @@ export function ContentCardCompact({
         </div>
 
         {/* Title */}
-        <h3 className="text-white font-semibold text-sm mb-1 line-clamp-1">{card.title}</h3>
+        <h3 className={`${et.text} font-semibold text-sm mb-1 line-clamp-1`}>{card.title}</h3>
 
         {/* Caption preview */}
-        <p className="text-white/50 text-xs line-clamp-2 mb-3">{card.caption}</p>
+        <p className={`${et.textMd} text-xs line-clamp-2 mb-3`}>{card.caption}</p>
 
         {/* Footer */}
-        <div className="flex items-center justify-between text-[10px] text-white/40">
+        <div className={`flex items-center justify-between text-[10px] ${et.textFaint}`}>
           <div className="flex items-center gap-1">
             <User className="w-3 h-3" />
             <span>{card.createdBy}</span>
@@ -825,8 +842,15 @@ interface ContentCardDetailProps {
 
 export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClose }: ContentCardDetailProps) {
   const { user } = useAuth();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
   const { updateCard, addAuditEntry, deleteCard, logApprovalEvent } = useContent();
   const { warningHours, breachHours } = useSlaConfig(user?.tenantId ?? undefined);
+
+  // Theme-aware platform colors
+  const themedPlatformColors: Record<string, string> = isDark
+    ? platformColors
+    : { ...platformColors, twitter: 'text-gray-800', tiktok: 'text-gray-800', threads: 'text-gray-700' };
 
   const [card, setCard] = useState<ContentCardType>(initialCard);
   const [isEditing, setIsEditing] = useState(false);
@@ -1362,18 +1386,18 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="bg-gradient-to-br from-gray-900/95 via-purple-900/90 to-gray-900/95 backdrop-blur-2xl border border-white/15 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-full sm:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col fold-modal-safe"
+        className={`${isDark ? 'bg-gradient-to-br from-gray-900/95 via-purple-900/90 to-gray-900/95 border-white/15' : 'bg-white border-gray-200'} backdrop-blur-2xl border rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-full sm:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col fold-modal-safe`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
+        <div className={`flex items-center justify-between p-5 border-b ${et.border} shrink-0`}>
           <div className="flex items-center gap-3">
             {PlatformIcon && (
-              <div className={`w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center`}>
-                <PlatformIcon className={`w-5 h-5 ${platformColors[card.platform]}`} />
+              <div className={`w-10 h-10 ${et.surfaceAlt} rounded-xl flex items-center justify-center`}>
+                <PlatformIcon className={`w-5 h-5 ${themedPlatformColors[card.platform]}`} />
               </div>
             )}
             <div>
-              <h2 className="text-white font-bold text-sm">{platformNames[card.platform]}</h2>
+              <h2 className={`${et.text} font-bold text-sm`}>{platformNames[card.platform]}</h2>
               <div className={`flex items-center gap-1.5 mt-0.5 ${sc.bg} ${sc.border} border rounded-full px-2 py-0.5 w-fit`}>
                 <StatusIcon className={`w-3 h-3 ${sc.color}`} />
                 <span className={`text-[10px] font-semibold ${sc.color}`}>{sc.label}</span>
@@ -1385,14 +1409,14 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
             {!isEditing && (card.status === 'draft' || card.status === 'rejected') && (
               <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center gap-1.5 text-white/60 hover:text-white text-xs px-3 py-1.5 rounded-lg hover:bg-white/10 transition-all"
+                className={`flex items-center gap-1.5 ${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} text-xs px-3 py-1.5 rounded-lg ${et.hover} transition-all`}
               >
                 <Edit3 className="w-3.5 h-3.5" /> Edit
               </button>
             )}
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-all"
+              className={`w-8 h-8 rounded-lg ${et.surfaceAlt} ${et.hover} flex items-center justify-center ${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} transition-all`}
             >
               <X className="w-4 h-4" />
             </button>
@@ -1409,7 +1433,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
           {/* ── Media Section ── */}
           <div>
-            <label className="text-white/50 text-xs uppercase tracking-wider mb-2 block">Media Asset</label>
+            <label className={`${et.textMd} text-xs uppercase tracking-wider mb-2 block`}>Media Asset</label>
             {card.mediaUrl ? (
               <div className="relative rounded-xl overflow-hidden border border-white/15">
                 {card.mediaType === 'image' ? (
@@ -1491,17 +1515,17 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
           {isEditing ? (
             <div className="space-y-3">
               <div>
-                <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Title</label>
+                <label className={`${et.textMd} text-xs uppercase tracking-wider mb-1.5 block`}>Title</label>
                 <input
                   value={editTitle}
                   onChange={e => setEditTitle(e.target.value)}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all"
+                  className={et.inputCls}
                 />
               </div>
               <div className="space-y-2">
                 {/* Caption label + AI Refine button */}
                 <div className="flex items-center justify-between">
-                  <label className="text-white/50 text-xs uppercase tracking-wider">Caption</label>
+                  <label className={`${et.textMd} text-xs uppercase tracking-wider`}>Caption</label>
                   <button
                     type="button"
                     onClick={handleAiRefine}
@@ -1519,7 +1543,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                   value={editCaption}
                   onChange={e => setEditCaption(e.target.value)}
                   rows={5}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all resize-none"
+                  className={`${et.inputCls} resize-none`}
                 />
 
                 {/* AI result panel */}
@@ -1539,18 +1563,18 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                           <div className="flex items-center gap-2">
                             <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                             <span className="text-purple-300 text-xs font-semibold">AI-Generated Caption</span>
-                            <span className="text-white/20 text-[10px]">— {platformNames[card.platform]}-optimised</span>
+                            <span className={`${et.textFaint} text-[10px]`}>— {platformNames[card.platform]}-optimised</span>
                           </div>
                           <button
                             onClick={() => setAiResult(null)}
-                            className="text-white/20 hover:text-white/50 transition-colors"
+                            className={`${et.textFaint} hover:${isDark ? 'text-white/50' : 'text-gray-500'} transition-colors`}
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
 
                         {/* Typewriter caption */}
-                        <p className="text-white/85 text-sm leading-relaxed whitespace-pre-line min-h-[2.5rem]">
+                        <p className={`${et.textSm} text-sm leading-relaxed whitespace-pre-line min-h-[2.5rem]`}>
                           {displayedCaption}
                           {displayedCaption.length < aiResult.caption.length && (
                             <span className="inline-block w-0.5 h-3.5 bg-purple-400 ml-0.5 animate-pulse align-middle" />
@@ -1583,7 +1607,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                           </motion.button>
                           <button
                             onClick={() => setAiResult(null)}
-                            className="text-white/40 hover:text-white/70 text-xs px-3 py-2 rounded-xl hover:bg-white/8 transition-all"
+                            className={`${et.textFaint} hover:${isDark ? 'text-white/70' : 'text-gray-600'} text-xs px-3 py-2 rounded-xl ${et.hover} transition-all`}
                           >
                             Discard
                           </button>
@@ -1594,31 +1618,31 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                 </AnimatePresence>
               </div>
               <div>
-                <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Hashtags (comma separated)</label>
+                <label className={`${et.textMd} text-xs uppercase tracking-wider mb-1.5 block`}>Hashtags (comma separated)</label>
                 <input
                   value={editHashtags}
                   onChange={e => setEditHashtags(e.target.value)}
                   placeholder="e.g. marketing, digital, brand"
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all"
+                  className={et.inputCls}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Schedule Date</label>
+                  <label className={`${et.textMd} text-xs uppercase tracking-wider mb-1.5 block`}>Schedule Date</label>
                   <input
                     type="date"
                     value={editDate}
                     onChange={e => setEditDate(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all [color-scheme:dark]"
+                    className={`${et.inputCls} ${isDark ? '[color-scheme:dark]' : ''}`}
                   />
                 </div>
                 <div>
-                  <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Schedule Time</label>
+                  <label className={`${et.textMd} text-xs uppercase tracking-wider mb-1.5 block`}>Schedule Time</label>
                   <input
                     type="time"
                     value={editTime}
                     onChange={e => setEditTime(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all [color-scheme:dark]"
+                    className={`${et.inputCls} ${isDark ? '[color-scheme:dark]' : ''}`}
                   />
                 </div>
               </div>
@@ -1633,7 +1657,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                 </button>
                 <button
                   onClick={() => { setIsEditing(false); setEditTitle(card.title); setEditCaption(card.caption); setEditHashtags(card.hashtags.join(', ')); }}
-                  className="px-4 py-2.5 text-white/60 hover:text-white text-sm rounded-xl hover:bg-white/10 transition-all"
+                  className={`px-4 py-2.5 ${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} text-sm rounded-xl ${et.hover} transition-all`}
                 >
                   Cancel
                 </button>
@@ -1641,13 +1665,13 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
             </div>
           ) : (
             <div>
-              <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Content</label>
-              <h3 className="text-white font-bold mb-2">{card.title}</h3>
-              <p className="text-white/70 text-sm whitespace-pre-line leading-relaxed">{card.caption}</p>
+              <label className={`${et.textMd} text-xs uppercase tracking-wider mb-1.5 block`}>Content</label>
+              <h3 className={`${et.text} font-bold mb-2`}>{card.title}</h3>
+              <p className={`${et.textSm} text-sm whitespace-pre-line leading-relaxed`}>{card.caption}</p>
               {card.hashtags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {card.hashtags.map((tag, i) => (
-                    <span key={i} className="bg-white/10 border border-white/15 text-white/60 text-xs px-2 py-0.5 rounded-full">#{tag}</span>
+                    <span key={i} className={`${et.surfaceAlt} border ${et.border} ${et.textMd} text-xs px-2 py-0.5 rounded-full`}>#{tag}</span>
                   ))}
                 </div>
               )}
@@ -1661,7 +1685,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                 ? 'bg-green-500/8 border-green-400/25'
                 : scheduledStatus === 'overdue'
                   ? 'bg-orange-500/8 border-orange-400/25'
-                  : 'bg-white/5 border-white/10'
+                  : isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'
             }`}>
               <CalendarDays className={`w-5 h-5 shrink-0 ${
                 scheduledStatus === 'due_today' ? 'text-green-400'
@@ -1669,11 +1693,11 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                   : 'text-blue-400'
               }`} />
               <div className="flex-1 min-w-0">
-                <div className="text-white/80 text-sm font-medium">
+                <div className={`${et.textSm} text-sm font-medium`}>
                   {card.scheduledDate && new Date(card.scheduledDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                   {card.scheduledTime && ` at ${card.scheduledTime}`}
                 </div>
-                <div className="text-white/40 text-xs">Scheduled publish time on {platformNames[card.platform]}</div>
+                <div className={`${et.textFaint} text-xs`}>Scheduled publish time on {platformNames[card.platform]}</div>
               </div>
               {/* Due today / overdue badge */}
               {scheduledStatus === 'due_today' && (
@@ -1696,14 +1720,14 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                 <XCircle className="w-4 h-4 text-red-400" />
                 <span className="text-red-300 font-semibold text-sm">Rejected by {card.rejectedByName}</span>
               </div>
-              <p className="text-white/60 text-sm pl-6">{card.rejectionReason}</p>
+              <p className={`${et.textMd} text-sm pl-6`}>{card.rejectionReason}</p>
             </div>
           )}
 
           {/* ── Approvers Section ── */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-white/50 text-xs uppercase tracking-wider flex items-center gap-1.5">
+              <label className={`${et.textMd} text-xs uppercase tracking-wider flex items-center gap-1.5`}>
                 <Shield className="w-3.5 h-3.5" /> Approvers
               </label>
               {(card.status === 'draft' || card.status === 'rejected') && (
@@ -1726,7 +1750,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 bg-white/5 border border-white/10 rounded-xl p-3">
+                  <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 ${et.surface} border ${et.border} rounded-xl p-3`}>
                     {projectTeamMembers.map(memberId => {
                       const member = availableTeamMembers.find(m => m.id === memberId);
                       if (!member) return null;
@@ -1737,18 +1761,18 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                           onClick={() => toggleApprover(memberId)}
                           className={`flex items-center gap-2 p-2 rounded-lg text-left transition-all text-xs ${
                             isSelected
-                              ? 'bg-teal-500/20 border border-teal-400/40 text-white'
-                              : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+                              ? `bg-teal-500/20 border border-teal-400/40 ${et.text}`
+                              : `${et.surface} border ${et.border} ${et.textMd} ${et.hover}`
                           }`}
                         >
                           <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 ${
-                            isSelected ? 'bg-teal-500 text-white' : 'bg-white/15 text-white/50'
+                            isSelected ? 'bg-teal-500 text-white' : `${isDark ? 'bg-white/15 text-white/50' : 'bg-gray-200 text-gray-500'}`
                           }`}>
                             {isSelected ? <Check className="w-3 h-3" /> : `${member.firstName[0]}${member.lastName[0]}`}
                           </div>
                           <div className="min-w-0">
                             <div className="truncate">{member.firstName} {member.lastName}</div>
-                            <div className="text-white/40 text-[10px] truncate">{member.jobTitle}</div>
+                            <div className={`${et.textFaint} text-[10px] truncate`}>{member.jobTitle}</div>
                           </div>
                         </button>
                       );
@@ -1771,7 +1795,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${
                         isTheApprover
                           ? 'bg-teal-500/20 border border-teal-400/30 text-teal-300'
-                          : 'bg-white/10 border border-white/15 text-white/60'
+                          : `${et.surfaceAlt} border ${et.border} ${et.textMd}`
                       }`}
                     >
                       {isTheApprover && <CheckCircle className="w-3 h-3" />}
@@ -1779,12 +1803,12 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     </div>
                   );
                 })}
-                <span className="text-white/30 text-[10px] self-center ml-1">(1 approval needed)</span>
+                <span className={`${et.textFaint} text-[10px] self-center ml-1`}>(1 approval needed)</span>
               </div>
             )}
 
             {selectedApprovers.length === 0 && !showApproverSelector && (
-              <p className="text-white/30 text-xs">No approvers selected</p>
+              <p className={`${et.textFaint} text-xs`}>No approvers selected</p>
             )}
           </div>
 
@@ -1872,7 +1896,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
             {(card.status === 'rejected' || card.status === 'pending_approval') && (
               <button
                 onClick={() => setShowRevertInput(true)}
-                className="flex items-center gap-2 text-white/50 hover:text-white text-xs px-3 py-2 rounded-lg hover:bg-white/10 transition-all"
+                className={`flex items-center gap-2 ${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} text-xs px-3 py-2 rounded-lg ${et.hover} transition-all`}
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Revert to Draft
               </button>
@@ -1895,7 +1919,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     onChange={e => setRejectionReason(e.target.value)}
                     placeholder="Explain what needs to be changed..."
                     rows={3}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-400/50 resize-none"
+                    className={`w-full ${isDark ? 'bg-white/10 border-white/20' : 'bg-red-50 border-red-200'} border rounded-lg px-3 py-2 ${et.text} text-sm focus:outline-none focus:border-red-400/50 resize-none`}
                   />
                   <div className="flex gap-2">
                     <button
@@ -1907,7 +1931,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     </button>
                     <button
                       onClick={() => { setShowRejectInput(false); setRejectionReason(''); }}
-                      className="text-white/50 hover:text-white text-sm px-3 py-2 rounded-lg hover:bg-white/10 transition-all"
+                      className={`${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} text-sm px-3 py-2 rounded-lg ${et.hover} transition-all`}
                     >
                       Cancel
                     </button>
@@ -1933,7 +1957,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     onChange={e => setRevertReason(e.target.value)}
                     placeholder="Explain why you're reverting to draft..."
                     rows={3}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-400/50 resize-none"
+                    className={`w-full ${isDark ? 'bg-white/10 border-white/20' : 'bg-red-50 border-red-200'} border rounded-lg px-3 py-2 ${et.text} text-sm focus:outline-none focus:border-red-400/50 resize-none`}
                   />
                   <div className="flex gap-2">
                     <button
@@ -1945,7 +1969,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     </button>
                     <button
                       onClick={() => { setShowRevertInput(false); setRevertReason(''); }}
-                      className="text-white/50 hover:text-white text-sm px-3 py-2 rounded-lg hover:bg-white/10 transition-all"
+                      className={`${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} text-sm px-3 py-2 rounded-lg ${et.hover} transition-all`}
                     >
                       Cancel
                     </button>
@@ -1959,7 +1983,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
           {card.status === 'published' && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-white/50 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <label className={`${et.textMd} text-xs uppercase tracking-wider flex items-center gap-1.5`}>
                   <TrendingUp className="w-3.5 h-3.5" /> Engagement Metrics
                 </label>
                 {!showEngageForm && (
@@ -1984,7 +2008,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     className="overflow-hidden"
                   >
                     <div className="bg-green-500/6 border border-green-400/20 rounded-xl p-4 space-y-3">
-                      <p className="text-white/40 text-[11px]">Enter the latest metrics from your social platform dashboard.</p>
+                      <p className={`${et.textFaint} text-[11px]`}>Enter the latest metrics from your social platform dashboard.</p>
                       <div className="grid grid-cols-2 gap-3">
                         {([
                           { label: 'Likes',     icon: Heart,          state: engageLikes,    set: setEngageLikes    },
@@ -1993,7 +2017,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                           { label: 'Reach',     icon: Eye,            state: engageReach,    set: setEngageReach    },
                         ] as const).map(({ label, icon: Icon, state, set }) => (
                           <div key={label}>
-                            <label className="text-white/40 text-[10px] uppercase tracking-wide flex items-center gap-1 mb-1">
+                            <label className={`${et.textFaint} text-[10px] uppercase tracking-wide flex items-center gap-1 mb-1`}>
                               <Icon className="w-3 h-3" /> {label}
                             </label>
                             <input
@@ -2002,7 +2026,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                               value={state}
                               onChange={e => set(e.target.value)}
                               placeholder="0"
-                              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-400/50 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              className={`${et.inputCls} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
                             />
                           </div>
                         ))}
@@ -2018,7 +2042,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                         </motion.button>
                         <button
                           onClick={() => setShowEngageForm(false)}
-                          className="text-white/40 hover:text-white/70 text-xs px-3 py-2 rounded-xl hover:bg-white/8 transition-all"
+                          className={`${et.textFaint} hover:${isDark ? 'text-white/70' : 'text-gray-600'} text-xs px-3 py-2 rounded-xl ${et.hover} transition-all`}
                         >
                           Cancel
                         </button>
@@ -2042,10 +2066,10 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     ] as const).map(({ label, icon: Icon, value, color, bg }) => (
                       <div key={label} className={`flex flex-col items-center justify-center gap-1 rounded-xl border p-2.5 ${bg}`}>
                         <Icon className={`w-3.5 h-3.5 ${color}`} />
-                        <p className={`text-sm font-bold ${value !== undefined ? 'text-white' : 'text-white/20'}`}>
+                        <p className={`text-sm font-bold ${value !== undefined ? et.text : et.textFaint}`}>
                           {value !== undefined ? value.toLocaleString() : '—'}
                         </p>
-                        <p className="text-white/35 text-[9px] uppercase tracking-wide">{label}</p>
+                        <p className={`${et.textFaint} text-[9px] uppercase tracking-wide`}>{label}</p>
                       </div>
                     ))}
                   </motion.div>
@@ -2056,13 +2080,13 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex items-center justify-between gap-3 border-2 border-dashed border-green-400/12 rounded-xl px-4 py-3"
+                    className={`flex items-center justify-between gap-3 border-2 border-dashed ${isDark ? 'border-green-400/12' : 'border-green-300/30'} rounded-xl px-4 py-3`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <TrendingUp className="w-4 h-4 text-white/15 shrink-0" />
+                      <TrendingUp className={`w-4 h-4 ${et.textFaint} shrink-0`} />
                       <div>
-                        <p className="text-white/40 text-xs font-medium">No engagement data logged yet</p>
-                        <p className="text-white/20 text-[10px]">Track likes, comments, shares &amp; reach</p>
+                        <p className={`${et.textFaint} text-xs font-medium`}>No engagement data logged yet</p>
+                        <p className={`${isDark ? 'text-white/20' : 'text-gray-300'} text-[10px]`}>Track likes, comments, shares &amp; reach</p>
                       </div>
                     </div>
                     <button
@@ -2078,31 +2102,31 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
           )}
 
           {/* ── Creator & Meta Info ── */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div className={`${et.surface} border ${et.border} rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs`}>
             <div>
-              <div className="text-white/40 mb-0.5">Created by</div>
-              <div className="text-white/80 font-medium">{card.createdBy}</div>
-              <div className="text-white/40 text-[10px]">{formatDateTime(card.createdAt)}</div>
+              <div className={`${et.textFaint} mb-0.5`}>Created by</div>
+              <div className={`${et.textSm} font-medium`}>{card.createdBy}</div>
+              <div className={`${et.textFaint} text-[10px]`}>{formatDateTime(card.createdAt)}</div>
             </div>
             {card.lastEditedBy && (
               <div>
-                <div className="text-white/40 mb-0.5">Last edited by</div>
-                <div className="text-white/80 font-medium">{card.lastEditedBy}</div>
-                <div className="text-white/40 text-[10px]">{card.lastEditedAt && formatDateTime(card.lastEditedAt)}</div>
+                <div className={`${et.textFaint} mb-0.5`}>Last edited by</div>
+                <div className={`${et.textSm} font-medium`}>{card.lastEditedBy}</div>
+                <div className={`${et.textFaint} text-[10px]`}>{card.lastEditedAt && formatDateTime(card.lastEditedAt)}</div>
               </div>
             )}
             {card.approvedByName && (
               <div>
-                <div className="text-white/40 mb-0.5">Approved by</div>
+                <div className={`${et.textFaint} mb-0.5`}>Approved by</div>
                 <div className="text-teal-300 font-medium">{card.approvedByName}</div>
-                <div className="text-white/40 text-[10px]">{card.approvedAt && formatDateTime(card.approvedAt)}</div>
+                <div className={`${et.textFaint} text-[10px]`}>{card.approvedAt && formatDateTime(card.approvedAt)}</div>
               </div>
             )}
             {card.rejectedByName && (
               <div>
-                <div className="text-white/40 mb-0.5">Rejected by</div>
+                <div className={`${et.textFaint} mb-0.5`}>Rejected by</div>
                 <div className="text-red-300 font-medium">{card.rejectedByName}</div>
-                <div className="text-white/40 text-[10px]">{card.rejectedAt && formatDateTime(card.rejectedAt)}</div>
+                <div className={`${et.textFaint} text-[10px]`}>{card.rejectedAt && formatDateTime(card.rejectedAt)}</div>
               </div>
             )}
           </div>
@@ -2117,7 +2141,7 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
           <div>
             <button
               onClick={() => setShowAuditLog(!showAuditLog)}
-              className="flex items-center justify-between w-full text-white/50 hover:text-white/70 text-xs uppercase tracking-wider transition-colors py-2"
+              className={`flex items-center justify-between w-full ${et.textMd} hover:${isDark ? 'text-white/70' : 'text-gray-700'} text-xs uppercase tracking-wider transition-colors py-2`}
             >
               <span className="flex items-center gap-1.5">
                 <Eye className="w-3.5 h-3.5" />
@@ -2134,13 +2158,13 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+                  <div className={`${et.surface} border ${et.border} rounded-xl overflow-hidden`}>
                     {card.auditLog.map((entry, i) => {
-                      const cfg = auditActionLabels[entry.action] || { label: entry.action, color: 'text-white/50' };
+                      const cfg = auditActionLabels[entry.action] || { label: entry.action, color: et.textMd };
                       return (
                         <div
                           key={entry.id}
-                          className={`flex items-start gap-3 px-4 py-3 ${i < card.auditLog.length - 1 ? 'border-b border-white/5' : ''}`}
+                          className={`flex items-start gap-3 px-4 py-3 ${i < card.auditLog.length - 1 ? `border-b ${et.border}` : ''}`}
                         >
                           {/* Timeline dot */}
                           <div className="flex flex-col items-center pt-1">
@@ -2149,16 +2173,16 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                             ) : (
                               <div className={`w-2 h-2 rounded-full ${cfg.color.replace('text-', 'bg-')}`} />
                             )}
-                            {i < card.auditLog.length - 1 && <div className="w-px flex-1 bg-white/10 mt-1" />}
+                            {i < card.auditLog.length - 1 && <div className={`w-px flex-1 ${isDark ? 'bg-white/10' : 'bg-gray-200'} mt-1`} />}
                           </div>
 
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className={`font-semibold text-xs ${cfg.color}`}>{cfg.label}</span>
-                              <span className="text-white/30 text-[10px]">by {entry.performedBy}</span>
+                              <span className={`${et.textFaint} text-[10px]`}>by {entry.performedBy}</span>
                             </div>
                             {entry.details && (
-                              <p className="text-white/50 text-[11px] mt-0.5 leading-relaxed">{entry.details}</p>
+                              <p className={`${et.textMd} text-[11px] mt-0.5 leading-relaxed`}>{entry.details}</p>
                             )}
                             <div className="text-white/25 text-[10px] mt-1">{formatDateTime(entry.timestamp)}</div>
                           </div>

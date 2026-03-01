@@ -12,6 +12,10 @@ import {
   fetchModuleRequests, updateModuleRequest,
   type Module, type ModuleRequest,
 } from '../../utils/apiClient';
+import { getAuthHeaders } from '../../utils/authHeaders';
+import { projectId } from '/utils/supabase/info';
+
+const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
 export function TenantModulesPage() {
   const t = useDashboardTheme();
@@ -65,12 +69,34 @@ export function TenantModulesPage() {
   const pendingRequests = requests.filter(r => r.status === 'pending');
 
   const handleUpgradeRequest = async () => {
+    if (!upgradeMsg.trim()) {
+      toast.error('Please add a note about your upgrade requirements');
+      return;
+    }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    setLoading(false);
-    setUpgradeOpen(false);
-    setUpgradeMsg('');
-    toast.success('Upgrade request sent to your account manager!');
+    try {
+      const res = await fetch(`${SERVER}/upgrade-requests`, {
+        method: 'POST',
+        headers: await getAuthHeaders(true),
+        body: JSON.stringify({
+          tenantId: user?.tenantId,
+          tenantName: tenant?.name ?? '',
+          message: upgradeMsg,
+          currentModules: entitledModules.map(m => ({ id: m.id, name: m.name })),
+          availableModules: availableModules.map(m => ({ id: m.id, name: m.name })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to submit upgrade request');
+      toast.success('Upgrade request sent to your account manager!');
+      setUpgradeOpen(false);
+      setUpgradeMsg('');
+    } catch (err: any) {
+      console.error('[TenantModulesPage] upgrade-request error:', err);
+      toast.error(`Request failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRequestAction = async (req: ModuleRequest, status: 'approved' | 'dismissed') => {

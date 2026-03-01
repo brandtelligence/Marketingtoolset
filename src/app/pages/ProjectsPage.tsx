@@ -22,12 +22,28 @@ import {
 } from '../contexts/ProjectsContext';
 import { useState, useMemo, useEffect } from 'react';
 import { useFoldableLayout } from '../hooks/useFoldableLayout';
+import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
 
 export function ProjectsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { projects, addProject, updateProject, requestEditAccess } = useProjects();
+  const { projects, addProject, updateProject, requestEditAccess, isLoading: projectsLoading } = useProjects();
   const { isDualScreen, isSquarish, spanningMode } = useFoldableLayout();
+  const { isDark } = useDashboardTheme();
+
+  // ── Theme helpers ──────────────────────────────────────────────────────────
+  const glass   = isDark ? 'bg-white/10 backdrop-blur-md border border-white/20' : 'bg-white/80 backdrop-blur-md border border-gray-200/60 shadow-sm';
+  const heading = isDark ? 'text-white' : 'text-gray-900';
+  const sub     = isDark ? 'text-white/70' : 'text-gray-600';
+  const muted   = isDark ? 'text-white/60' : 'text-gray-500';
+  const faint   = isDark ? 'text-white/40' : 'text-gray-400';
+  const dim     = isDark ? 'text-white/50' : 'text-gray-400';
+  const mid     = isDark ? 'text-white/55' : 'text-gray-500';
+  const bright  = isDark ? 'text-white/75' : 'text-gray-700';
+  const bdr     = isDark ? 'border-white/15' : 'border-gray-200';
+  const cardHover = isDark
+    ? 'hover:bg-white/[0.13] hover:border-white/30'
+    : 'hover:bg-white/90 hover:border-gray-300';
 
   useEffect(() => {
     if (!user) navigate('/login', { replace: true });
@@ -146,19 +162,19 @@ export function ProjectsPage() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-5 sm:p-8 mb-6 shadow-xl"
+            className={`${glass} rounded-2xl p-5 sm:p-8 mb-6 shadow-xl`}
           >
             <button
               onClick={() => navigate('/')}
-              className="text-white/70 hover:text-white mb-4 inline-flex items-center gap-2 text-sm transition-colors"
+              className={`${sub} ${isDark ? 'hover:text-white' : 'hover:text-gray-900'} mb-4 inline-flex items-center gap-2 text-sm transition-colors`}
             >
               <Home className="w-4 h-4" /> Back to Home
             </button>
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h1 className="text-white text-3xl sm:text-4xl font-bold mb-1">Projects</h1>
-                <p className="text-white/70 text-sm sm:text-base max-w-2xl">
+                <h1 className={`${heading} text-3xl sm:text-4xl font-bold mb-1`}>Projects</h1>
+                <p className={`${sub} text-sm sm:text-base max-w-2xl`}>
                   Explore our portfolio of innovative solutions and successful collaborations
                 </p>
               </div>
@@ -183,24 +199,42 @@ export function ProjectsPage() {
 
           {/* ── Project cards ── */}
           <div className="space-y-5">
-            {filteredProjects.length === 0 && (
+            {/* Loading skeleton while projects are being fetched */}
+            {projectsLoading && (
+              <div className="space-y-5">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className={`${glass} rounded-2xl overflow-hidden shadow-xl animate-pulse`}>
+                    <div className="flex flex-col sm:flex-row">
+                      <div className={`w-full sm:w-48 h-32 ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
+                      <div className="flex-1 p-5 space-y-3">
+                        <div className={`h-5 w-48 rounded ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
+                        <div className={`h-4 w-72 rounded ${isDark ? 'bg-white/8' : 'bg-gray-150'}`} />
+                        <div className={`h-4 w-32 rounded ${isDark ? 'bg-white/8' : 'bg-gray-150'}`} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!projectsLoading && filteredProjects.length === 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-10 text-center"
+                className={`${glass} rounded-2xl p-10 text-center`}
               >
-                <Filter className="w-10 h-10 text-white/30 mx-auto mb-3" />
-                <h3 className="text-white/70 text-lg mb-1">No projects match your filters</h3>
-                <p className="text-white/50 text-sm mb-4">Try adjusting your criteria to see more results.</p>
+                <Filter className={`w-10 h-10 ${faint} mx-auto mb-3`} />
+                <h3 className={`${sub} text-lg mb-1`}>No projects match your filters</h3>
+                <p className={`${dim} text-sm mb-4`}>Try adjusting your criteria to see more results.</p>
                 <button
                   onClick={() => setActiveFilters({ company: [], status: [], dateRange: [], industry: [], projectLead: [], tags: [] })}
-                  className="text-teal-300 hover:text-teal-200 text-sm underline underline-offset-2 transition-colors"
+                  className={`${isDark ? 'text-teal-300 hover:text-teal-200' : 'text-teal-600 hover:text-teal-700'} text-sm underline underline-offset-2 transition-colors`}
                 >
                   Clear all filters
                 </button>
               </motion.div>
             )}
 
-            {filteredProjects.map((project, index) => {
+            {!projectsLoading && filteredProjects.map((project, index) => {
               const userCanEdit = canUserEdit(project, user);
               const alreadyRequested = sessionRequested.has(project.id) || hasUserRequestedEdit(project, user);
               const status = getProjectStatus(project);
@@ -212,7 +246,7 @@ export function ProjectsPage() {
                   initial={{ opacity: 0, y: 24 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.08, duration: 0.45 }}
-                  className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl overflow-hidden shadow-xl hover:bg-white/[0.13] hover:border-white/30 transition-all duration-300"
+                  className={`${glass} rounded-2xl overflow-hidden shadow-xl ${cardHover} transition-all duration-300`}
                 >
                   {/* ── Two-column layout: image | content ── */}
                   <div className={`flex flex-col md:flex-row md:h-[360px] ${
@@ -257,7 +291,7 @@ export function ProjectsPage() {
 
                       {/* Row 1: client + action buttons */}
                       <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex items-center gap-1.5 text-white/60 text-xs min-w-0">
+                        <div className={`flex items-center gap-1.5 ${muted} text-xs min-w-0`}>
                           <Briefcase className="w-3.5 h-3.5 shrink-0" />
                           <span className="truncate">{project.client}</span>
                         </div>
@@ -291,17 +325,17 @@ export function ProjectsPage() {
                       </div>
 
                       {/* Row 2: project name */}
-                      <h2 className="text-white text-xl sm:text-2xl font-bold leading-tight mb-2 line-clamp-1">
+                      <h2 className={`${heading} text-xl sm:text-2xl font-bold leading-tight mb-2 line-clamp-1`}>
                         {project.name}
                       </h2>
 
                       {/* Row 3: description */}
-                      <p className="text-white/75 text-sm leading-relaxed mb-1 line-clamp-2">
+                      <p className={`${bright} text-sm leading-relaxed mb-1 line-clamp-2`}>
                         {project.description}
                       </p>
 
                       {/* Row 4: details */}
-                      <p className="text-white/55 text-xs leading-relaxed mb-4 line-clamp-2">
+                      <p className={`${mid} text-xs leading-relaxed mb-4 line-clamp-2`}>
                         {project.details}
                       </p>
 
@@ -309,22 +343,22 @@ export function ProjectsPage() {
                       <div className="flex-1" />
 
                       {/* Row 5: meta info grid */}
-                      <div className="grid grid-cols-3 gap-3 pb-4 mb-4 border-b border-white/15">
+                      <div className={`grid grid-cols-3 gap-3 pb-4 mb-4 border-b ${bdr}`}>
                         <div>
-                          <p className="text-white/40 text-[0.6rem] uppercase tracking-wider mb-0.5">Industry</p>
-                          <p className="text-white text-xs font-medium truncate">{project.industry || '—'}</p>
+                          <p className={`${faint} text-[0.6rem] uppercase tracking-wider mb-0.5`}>Industry</p>
+                          <p className={`${heading} text-xs font-medium truncate`}>{project.industry || '—'}</p>
                         </div>
                         <div>
-                          <p className="text-white/40 text-[0.6rem] uppercase tracking-wider mb-0.5 flex items-center gap-0.5">
+                          <p className={`${faint} text-[0.6rem] uppercase tracking-wider mb-0.5 flex items-center gap-0.5`}>
                             <Calendar className="w-2.5 h-2.5" /> Duration
                           </p>
-                          <p className="text-white text-xs font-medium">{project.duration || '—'}</p>
+                          <p className={`${heading} text-xs font-medium`}>{project.duration || '—'}</p>
                         </div>
                         <div>
-                          <p className="text-white/40 text-[0.6rem] uppercase tracking-wider mb-0.5 flex items-center gap-0.5">
+                          <p className={`${faint} text-[0.6rem] uppercase tracking-wider mb-0.5 flex items-center gap-0.5`}>
                             <Users className="w-2.5 h-2.5" /> Team
                           </p>
-                          <p className="text-white text-xs font-medium">{project.teamSize}</p>
+                          <p className={`${heading} text-xs font-medium`}>{project.teamSize}</p>
                         </div>
                       </div>
 
@@ -334,7 +368,7 @@ export function ProjectsPage() {
                         whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.985 }}
                         className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                           isCancelled
-                            ? 'bg-white/10 border border-white/20 text-white/70 hover:bg-white/15'
+                            ? `${isDark ? 'bg-white/10 border border-white/20 text-white/70 hover:bg-white/15' : 'bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200'}`
                             : 'text-white shadow-lg hover:brightness-110'
                         }`}
                         style={isCancelled ? {} : { background: '#0BA4AA' }}
@@ -370,9 +404,9 @@ export function ProjectsPage() {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5, duration: 0.5 }}
-            className="mt-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 sm:p-10 shadow-xl"
+            className={`mt-10 ${glass} rounded-2xl p-6 sm:p-10 shadow-xl`}
           >
-            <h3 className="text-white text-xl sm:text-2xl font-bold text-center mb-8">
+            <h3 className={`${heading} text-xl sm:text-2xl font-bold text-center mb-8`}>
               Why Choose Brandtelligence?
             </h3>
             <div className={`gap-6 ${isDualScreen || isSquarish ? 'fold-auto-grid' : 'grid grid-cols-2 md:grid-cols-4'}`}>
@@ -393,7 +427,7 @@ export function ProjectsPage() {
                   <div className={`text-4xl sm:text-5xl font-extrabold mb-1.5 bg-gradient-to-r ${stat.from} ${stat.to} bg-clip-text text-transparent`}>
                     {stat.value}
                   </div>
-                  <div className="text-white/70 text-sm">{stat.label}</div>
+                  <div className={`${sub} text-sm`}>{stat.label}</div>
                 </motion.div>
               ))}
             </div>

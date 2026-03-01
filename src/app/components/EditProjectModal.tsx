@@ -9,6 +9,7 @@ import {
   Project, TeamMember, countryCodes, availableTeamMembers,
   generateRouteSlug, calculateDuration, getProjectStatus,
 } from '../contexts/ProjectsContext';
+import { useDashboardTheme } from './saas/DashboardThemeContext';
 
 interface EditProjectModalProps {
   project: Project;
@@ -21,6 +22,7 @@ interface EditProjectModalProps {
 }
 
 export function EditProjectModal({ project, onSave, onClose, showCancelProject = false, mode = 'edit' }: EditProjectModalProps) {
+  const { isDark } = useDashboardTheme();
   const [form, setForm] = useState<Project>({
     ...project,
     clientProjectLead: project.clientProjectLead ?? {

@@ -40,15 +40,20 @@ export function TenantUsersPage() {
     setLoading(true);
 
     // Send Welcome Employee email via server → Supabase generateLink + nodemailer
+    // P3-FIX-12: Also pass tenantId, role, userName so server stamps user_metadata
     let emailOk = true;
+    const inviteName = inviteEmail.split('@')[0];
     try {
       const res  = await fetch(`${SERVER}/auth/invite-user`, {
         method: 'POST', headers: await getAuthHeaders(true),
         body: JSON.stringify({
           email:      inviteEmail,
           templateId: 'welcome_employee',
+          tenantId:   user?.tenantId,
+          role:       inviteRole,
+          userName:   inviteName,
           vars: {
-            employeeName: inviteEmail.split('@')[0],
+            employeeName: inviteName,
             companyName:  user?.company || 'Brandtelligence',
             role:         inviteRole === 'TENANT_ADMIN' ? 'Tenant Admin' : 'Employee',
             adminName:    `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Admin',
@@ -64,12 +69,20 @@ export function TenantUsersPage() {
       console.log(`[invite] Email error: ${err.message}`);
     }
 
+    // P3-FIX-13: Persist user to Postgres via createTenantUser (was local-state only)
     const newUser: TenantUser = {
       id: crypto.randomUUID(), tenantId: user?.tenantId ?? 't1',
-      name: inviteEmail.split('@')[0], email: inviteEmail,
+      name: inviteName, email: inviteEmail,
       role: inviteRole, status: 'pending_invite', joinedAt: new Date().toISOString().slice(0, 10),
     };
-    setUsers(prev => [...prev, newUser]);
+    try {
+      const persisted = await createTenantUser(newUser);
+      setUsers(prev => [...prev, persisted]);
+    } catch (err: any) {
+      console.error(`[invite] Failed to persist user to DB: ${err.message}`);
+      // Still add locally so UI isn't empty — will re-fetch on next mount
+      setUsers(prev => [...prev, newUser]);
+    }
     setLoading(false);
     setInviteOpen(false);
     setInviteEmail('');
@@ -82,28 +95,42 @@ export function TenantUsersPage() {
     }
   };
 
+  // P3-FIX-14: Persist role change to Postgres (was local-state-only with fake delay)
   const handleRoleChange = async (newRole: RoleType) => {
     if (!selected) return;
     setLoading(true);
-    await new Promise(r => setTimeout(r, 500));
-    setUsers(prev => prev.map(u => u.id === selected.id ? { ...u, role: newRole } : u));
-    setSelected(prev => prev ? { ...prev, role: newRole } : null);
-    setLoading(false);
-    setEditOpen(false);
-    toast.success(`Role updated to ${newRole}`);
+    try {
+      await updateTenantUser(selected.id, { role: newRole });
+      setUsers(prev => prev.map(u => u.id === selected.id ? { ...u, role: newRole } : u));
+      setSelected(prev => prev ? { ...prev, role: newRole } : null);
+      toast.success(`Role updated to ${newRole}`);
+    } catch (err: any) {
+      toast.error(`Failed to update role: ${err.message}`);
+    } finally {
+      setLoading(false);
+      setEditOpen(false);
+    }
   };
 
+  // P3-FIX-15: Persist status toggle to Postgres (was local-state-only with fake delay)
   const handleDeactivate = async () => {
     if (!selected) return;
     setLoading(true);
-    await new Promise(r => setTimeout(r, 500));
-    setUsers(prev => prev.map(u => u.id === selected.id ? { ...u, status: u.status === 'inactive' ? 'active' : 'inactive' } : u));
-    setLoading(false);
-    setDeleteDialog(false);
-    toast.success(`User ${selected.status === 'inactive' ? 'reactivated' : 'deactivated'}`);
-    setSelected(null);
+    const newStatus = selected.status === 'inactive' ? 'active' : 'inactive';
+    try {
+      await updateTenantUser(selected.id, { status: newStatus });
+      setUsers(prev => prev.map(u => u.id === selected.id ? { ...u, status: newStatus } : u));
+      toast.success(`User ${newStatus === 'active' ? 'reactivated' : 'deactivated'}`);
+    } catch (err: any) {
+      toast.error(`Failed to update status: ${err.message}`);
+    } finally {
+      setLoading(false);
+      setDeleteDialog(false);
+      setSelected(null);
+    }
   };
 
+  // P3-FIX-12b: Also pass tenantId/role on resend so user_metadata is stamped
   const handleResendInvite = async (u: TenantUser) => {
     try {
       const res  = await fetch(`${SERVER}/auth/invite-user`, {
@@ -111,6 +138,9 @@ export function TenantUsersPage() {
         body: JSON.stringify({
           email:      u.email,
           templateId: 'welcome_employee',
+          tenantId:   user?.tenantId,
+          role:       u.role,
+          userName:   u.name,
           vars: {
             employeeName: u.name,
             companyName:  user?.company || 'Brandtelligence',

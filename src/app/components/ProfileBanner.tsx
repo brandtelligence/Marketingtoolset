@@ -4,6 +4,8 @@ import { Mail, Building2, Briefcase, CalendarDays, Clock, AlertTriangle, Zap } f
 import { useAuth } from './AuthContext';
 import { useContent } from '../contexts/ContentContext';
 import { availableTeamMembers } from '../contexts/ProjectsContext';
+import { useDashboardTheme } from './saas/DashboardThemeContext';
+import { employeeTheme } from '../utils/employeeTheme';
 
 // ─── Date helper (local calendar, not UTC) ────────────────────────────────────
 function getLocalDateString(): string {
@@ -18,6 +20,8 @@ const TODAY_BANNER = getLocalDateString();
 export function ProfileBanner() {
   const { user }   = useAuth();
   const { cards }  = useContent();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
 
   if (!user) return null;
 
@@ -63,12 +67,12 @@ export function ProfileBanner() {
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.2 }}
-      className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 md:p-5 shadow-xl h-full"
+      className={`${et.glass} p-4 md:p-5 h-full`}
     >
       <div className="flex items-center gap-4">
         {/* Profile Image */}
         <div className="shrink-0">
-          <div className="w-12 h-12 md:w-14 md:h-14 rounded-full border-2 border-white/40 shadow-lg overflow-hidden">
+          <div className={`w-12 h-12 md:w-14 md:h-14 rounded-full border-2 shadow-lg overflow-hidden ${isDark ? 'border-white/40' : 'border-gray-200'}`}>
             <img
               src={user.profileImage}
               alt={`${user.firstName} ${user.lastName}`}
@@ -79,10 +83,10 @@ export function ProfileBanner() {
 
         {/* User Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="text-white font-semibold text-base md:text-lg truncate">
+          <h3 className={`font-semibold text-base md:text-lg truncate ${et.text}`}>
             {user.firstName} {user.lastName}
           </h3>
-          <div className="flex items-center gap-1.5 text-white/70 text-xs">
+          <div className={`flex items-center gap-1.5 text-xs ${et.textMd}`}>
             <Briefcase className="w-3 h-3 shrink-0" />
             <span className="truncate">{user.jobTitle}</span>
           </div>
@@ -90,7 +94,7 @@ export function ProfileBanner() {
       </div>
 
       {/* Details row */}
-      <div className="mt-3 pt-3 border-t border-white/15 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-white/70">
+      <div className={`mt-3 pt-3 border-t grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs ${et.border} ${et.textMd}`}>
         <div className="flex items-center gap-1.5">
           <Building2 className="w-3 h-3 shrink-0" />
           <span className="truncate">{user.company}</span>
@@ -111,7 +115,7 @@ export function ProfileBanner() {
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
           transition={{ delay: 0.4, duration: 0.3 }}
-          className="mt-3 pt-3 border-t border-white/10 flex flex-wrap gap-2"
+          className={`mt-3 pt-3 border-t flex flex-wrap gap-2 ${et.border}`}
         >
           {/* Pending approvals */}
           {myPendingCount > 0 && (

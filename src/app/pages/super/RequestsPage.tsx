@@ -43,6 +43,21 @@ export function RequestsPage() {
     })();
   }, []);
 
+  const refreshData = async () => {
+    setLoadingData(true);
+    try {
+      const [reqs, mods] = await Promise.all([fetchRequests(), fetchModules()]);
+      setRequests(reqs);
+      setModules(mods);
+      toast.success('Data refreshed');
+    } catch (err: any) {
+      console.error('[RequestsPage] refresh error:', err);
+      toast.error(`Refresh failed: ${err.message}`);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
   const openDetail  = (r: PendingRequest) => { setSelected(r); setDrawerOpen(true); };
   const openApprove = (r: PendingRequest) => { setSelected(r); setSelectedModules(r.requestedModules); setApproveDrawer(true); };
 
@@ -127,7 +142,7 @@ export function RequestsPage() {
       <PageHeader
         title="Access Requests"
         subtitle="Review and approve new tenant onboarding requests"
-        actions={<PrimaryBtn variant="ghost" onClick={() => toast.info('Refreshed')}><RefreshCw className="w-4 h-4" />Refresh</PrimaryBtn>}
+        actions={<PrimaryBtn variant="ghost" onClick={refreshData}><RefreshCw className="w-4 h-4" />Refresh</PrimaryBtn>}
       />
 
       {/* Stats */}

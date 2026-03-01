@@ -1,5 +1,8 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { UserProfile } from '../components/AuthContext';
+import { useAuth } from '../components/AuthContext';
+import { IS_PRODUCTION } from '../config/appConfig';
+import { fetchProjects, syncProjects } from '../utils/apiClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -186,7 +189,7 @@ export const hasUserRequestedEdit = (project: Project, user: UserProfile | null)
   return project.editRequests.includes(user.email);
 };
 
-// ─── Initial Data ─────────────────────────────────────────────────────────────
+// ─── Initial Data (demo / seed fallback) ──────────────────────────────────────
 
 const initialProjects: Project[] = [
   {
@@ -293,34 +296,102 @@ interface ProjectsContextType {
   addProject: (project: Project) => void;
   updateProject: (project: Project) => void;
   requestEditAccess: (projectId: string, userEmail: string) => void;
+  isLoading: boolean;
 }
 
 const ProjectsContext = createContext<ProjectsContextType | undefined>(undefined);
 
 export function ProjectsProvider({ children }: { children: ReactNode }) {
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasFetchedForTenant = useRef<string | null>(null);
 
-  const addProject = (project: Project) => {
-    setProjects(prev => [project, ...prev]);
-  };
+  // ── Debounced sync to server ──────────────────────────────────────────────
+  const debouncedSync = useCallback((updatedProjects: Project[]) => {
+    if (!IS_PRODUCTION || !user?.tenantId) return;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      syncProjects(updatedProjects, user.tenantId!).catch(err => {
+        console.error('[ProjectsContext] sync error:', err);
+      });
+    }, 800);
+  }, [user?.tenantId]);
 
-  const updateProject = (updated: Project) => {
-    setProjects(prev => prev.map(p => (p.id === updated.id ? updated : p)));
-  };
+  // ── Load projects on mount / user change ──────────────────────────────────
+  useEffect(() => {
+    if (!user) {
+      setProjects([]);
+      setIsLoading(false);
+      hasFetchedForTenant.current = null;
+      return;
+    }
 
-  const requestEditAccess = (projectId: string, userEmail: string) => {
-    setProjects(prev =>
-      prev.map(p => {
+    // Demo mode: seed from initialProjects (in-memory only)
+    if (!IS_PRODUCTION) {
+      setProjects(initialProjects);
+      setIsLoading(false);
+      return;
+    }
+
+    // Production mode: fetch from server
+    // Guard: skip if already fetched for this specific tenant (handles impersonation switches)
+    if (!user.tenantId || hasFetchedForTenant.current === user.tenantId) return;
+    hasFetchedForTenant.current = user.tenantId;
+
+    (async () => {
+      try {
+        const serverProjects = await fetchProjects(user.tenantId!);
+        if (serverProjects.length > 0) {
+          setProjects(serverProjects);
+        } else {
+          // First-time setup: seed with initial projects and sync to server
+          setProjects(initialProjects);
+          await syncProjects(initialProjects, user.tenantId!).catch(err => {
+            console.error('[ProjectsContext] initial seed sync error:', err);
+          });
+        }
+      } catch (err) {
+        console.error('[ProjectsContext] fetch error, falling back to seed data:', err);
+        setProjects(initialProjects);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [user]);
+
+  const addProject = useCallback((project: Project) => {
+    setProjects(prev => {
+      const next = [project, ...prev];
+      debouncedSync(next);
+      return next;
+    });
+  }, [debouncedSync]);
+
+  const updateProject = useCallback((updated: Project) => {
+    setProjects(prev => {
+      const next = prev.map(p => (p.id === updated.id ? updated : p));
+      debouncedSync(next);
+      return next;
+    });
+  }, [debouncedSync]);
+
+  const requestEditAccess = useCallback((projectId: string, userEmail: string) => {
+    setProjects(prev => {
+      const next = prev.map(p => {
         if (p.id !== projectId) return p;
         const existing = p.editRequests ?? [];
         if (existing.includes(userEmail)) return p;
         return { ...p, editRequests: [...existing, userEmail] };
-      })
-    );
-  };
+      });
+      debouncedSync(next);
+      return next;
+    });
+  }, [debouncedSync]);
 
   return (
-    <ProjectsContext.Provider value={{ projects, addProject, updateProject, requestEditAccess }}>
+    <ProjectsContext.Provider value={{ projects, addProject, updateProject, requestEditAccess, isLoading }}>
       {children}
     </ProjectsContext.Provider>
   );
@@ -335,6 +406,7 @@ export function useProjects(): ProjectsContextType {
       addProject: () => {},
       updateProject: () => {},
       requestEditAccess: () => {},
+      isLoading: false,
     };
   }
   return ctx;

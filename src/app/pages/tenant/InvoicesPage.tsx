@@ -10,6 +10,30 @@ import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { fetchInvoices, updateInvoice, type Invoice } from '../../utils/apiClient';
 
+// ── Invoice PDF generator (opens print-friendly window → Save as PDF) ────
+function generateInvoicePdf(inv: Invoice) {
+  const fmtRM = (n: number) => n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const linesHtml = inv.lines.map(l =>
+    `<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${l.description}</td>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${l.quantity}</td>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">RM ${fmtRM(l.unitPrice)}</td>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">RM ${fmtRM(l.total)}</td></tr>`
+  ).join('');
+  const html = `<!DOCTYPE html><html><head><title>${inv.invoiceNumber}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:40px;color:#1f2937;max-width:800px;margin:0 auto}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #14b8a6}.logo{font-size:24px;font-weight:800;color:#14b8a6}.logo span{color:#6b7280;font-weight:400;font-size:14px;display:block;margin-top:2px}.inv-num{text-align:right}.inv-num h2{font-size:20px;color:#374151;margin-bottom:4px}.inv-num p{font-size:12px;color:#6b7280}.meta{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px}.meta-block h4{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#9ca3af;margin-bottom:6px}.meta-block p{font-size:13px;color:#374151;margin-bottom:2px}table{width:100%;border-collapse:collapse;margin-bottom:20px}thead tr{background:#f9fafb}th{padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb}th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:right}th:nth-child(2){text-align:center}.totals{display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-bottom:24px}.totals .row{display:flex;gap:32px;font-size:13px;color:#6b7280}.totals .row span:last-child{min-width:100px;text-align:right}.totals .total-row{font-size:16px;font-weight:700;color:#1f2937;border-top:2px solid #14b8a6;padding-top:8px;margin-top:4px}.status{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase}.status-paid{background:#d1fae5;color:#065f46}.status-sent{background:#dbeafe;color:#1e40af}.status-overdue{background:#fee2e2;color:#991b1b}.status-draft{background:#f3f4f6;color:#6b7280}.footer{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center}.notes{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:#92400e}@media print{body{padding:20px}button{display:none!important}}</style></head><body>
+<div class="header"><div class="logo">Brandtelligence<span>AI-Powered Content Platform</span></div><div class="inv-num"><h2>${inv.invoiceNumber}</h2><p>Issued: ${inv.issuedAt}</p><p>Due: ${inv.dueDate}</p></div></div>
+<div class="meta"><div class="meta-block"><h4>Bill To</h4><p style="font-weight:600">${inv.tenantName}</p><p>Period: ${inv.period}</p></div><div class="meta-block" style="text-align:right"><h4>Status</h4><span class="status status-${inv.status}">${inv.status}</span>${inv.paidAt ? `<p style="margin-top:6px;font-size:12px;color:#065f46">Paid: ${inv.paidAt}</p>` : ''}</div></div>
+${inv.notes ? `<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+<table><thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${linesHtml}</tbody></table>
+<div class="totals"><div class="row"><span>Subtotal</span><span>RM ${fmtRM(inv.subtotal)}</span></div><div class="row"><span>SST (6%)</span><span>RM ${fmtRM(inv.tax)}</span></div><div class="row total-row"><span>Total Due</span><span>RM ${fmtRM(inv.total)}</span></div></div>
+<div class="footer"><p>Brandtelligence Sdn Bhd · SSM 202401000001 · SST ID W10-2401-32000001</p><p style="margin-top:4px">Thank you for your business. Payment terms: Net 30 days.</p></div>
+<div style="text-align:center;margin-top:24px"><button onclick="window.print()" style="padding:10px 28px;background:#14b8a6;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Print / Save as PDF</button></div>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=820,height=900');
+  if (w) { w.document.write(html); w.document.close(); }
+  else { toast.error('Popup blocked — please allow popups for PDF download'); }
+}
+
 export function TenantInvoicesPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
@@ -31,25 +55,36 @@ export function TenantInvoicesPage() {
 
   const openInvoice = (inv: Invoice) => { setSelected(inv); setDrawerOpen(true); };
 
+  // P3-FIX-16: Persist gateway payment to Postgres (was local-state-only with fake delay)
   const handleGatewayPay = async (inv: Invoice) => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
-    setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, status: 'paid', paidAt: new Date().toISOString().slice(0, 10), paymentMethod: 'gateway' } : i));
-    setSelected(prev => prev?.id === inv.id ? { ...prev, status: 'paid', paidAt: new Date().toISOString().slice(0, 10), paymentMethod: 'gateway' } : prev);
-    setLoading(false);
-    toast.success(`✅ Payment successful for ${inv.invoiceNumber}`);
+    const patch = { status: 'paid' as const, paidAt: new Date().toISOString().slice(0, 10), paymentMethod: 'gateway' as const };
+    try {
+      await updateInvoice(inv.id, patch);
+      setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, ...patch } : i));
+      setSelected(prev => prev?.id === inv.id ? { ...prev, ...patch } : prev);
+      toast.success(`Payment successful for ${inv.invoiceNumber}`);
+    } catch (err: any) {
+      toast.error(`Payment failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // P3-FIX-17: Persist bank transfer to Postgres (was local-state-only with fake delay)
   const handleBankTransferSubmit = async () => {
     if (!selected) return;
     if (!uploadedFile) { toast.error('Please upload your payment proof'); return; }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setInvoices(prev => prev.map(i => i.id === selected.id
-      ? { ...i, paymentMethod: 'bank_transfer', notes: `Bank transfer submitted. Proof: ${uploadedFile.name}. Note: ${transferNote}` }
-      : i
-    ));
-    setLoading(false);
+    const patch = { paymentMethod: 'bank_transfer' as const, notes: `Bank transfer submitted. Proof: ${uploadedFile.name}. Note: ${transferNote}` };
+    try {
+      await updateInvoice(selected.id, patch);
+      setInvoices(prev => prev.map(i => i.id === selected.id ? { ...i, ...patch } : i));
+    } catch (err: any) {
+      toast.error(`Submission failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
     setBankModal(false);
     setUploadedFile(null);
     setTransferNote('');
@@ -70,7 +105,7 @@ export function TenantInvoicesPage() {
       render: i => (
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <button onClick={() => openInvoice(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`}><Eye className="w-4 h-4" /></button>
-          <button onClick={() => toast.info(`Downloading ${i.invoiceNumber}`)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`}><Download className="w-4 h-4" /></button>
+          <button onClick={() => generateInvoicePdf(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`} title="Download PDF"><Download className="w-4 h-4" /></button>
           {(i.status === 'sent' || i.status === 'overdue') && (
             <PrimaryBtn size="sm" variant="teal" onClick={() => { setSelected(i); setDrawerOpen(true); }}>Pay</PrimaryBtn>
           )}
@@ -131,7 +166,7 @@ export function TenantInvoicesPage() {
             </>
           ) : (
             <div className="flex gap-2 w-full">
-              <PrimaryBtn variant="ghost" onClick={() => toast.info(`Downloading ${selected?.invoiceNumber}`)}><Download className="w-4 h-4" />Download PDF</PrimaryBtn>
+              <PrimaryBtn variant="ghost" onClick={() => selected && generateInvoicePdf(selected)}><Download className="w-4 h-4" />Download PDF</PrimaryBtn>
               <div className="flex-1" />
               <PrimaryBtn variant="ghost" onClick={() => setDrawerOpen(false)}>Close</PrimaryBtn>
             </div>

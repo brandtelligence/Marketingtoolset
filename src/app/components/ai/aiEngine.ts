@@ -102,6 +102,8 @@ export {
   fetchContentHistory,
   deleteContentHistory,
   fetchContentGenUsage,
+  generateImage,
+  refineContent,
 } from '../../utils/apiClient';
 
 export type {
@@ -109,6 +111,10 @@ export type {
   GenerateContentResult,
   GenerationRecord,
   ContentGenUsageSummary,
+  GenerateImageParams,
+  GenerateImageResult,
+  RefineContentParams,
+  RefineContentResult,
 } from '../../utils/apiClient';
 
 // ─── AI Response Generator (Mock) ──────────────────────────────────────────────

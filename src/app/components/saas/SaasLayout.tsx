@@ -4,7 +4,6 @@ import { NavLink, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogOut, ChevronLeft, ChevronRight, Menu, ShieldAlert, Sun, Moon, FlaskConical } from 'lucide-react';
 import { useAuth } from '../AuthContext';
-import { RoleBadge } from './StatusBadge';
 import { useDashboardTheme } from './DashboardThemeContext';
 import { NotificationsPanel } from './NotificationsPanel';
 import { toast } from 'sonner';
@@ -83,7 +82,7 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-4 px-2 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 py-4 px-2 space-y-0.5 overflow-y-auto" aria-label="Main navigation">
         {navItems.map(item => (
           <NavLink
             key={item.path}
@@ -129,7 +128,7 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
                 className="w-10 h-10 rounded-full object-cover ring-2 ring-offset-1 ring-indigo-400/40"
                 style={{ ringOffsetColor: t.isDark ? '#1e1b2e' : '#f9fafb' }}
               />
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-white dark:border-gray-900 ring-1 ring-emerald-300/50" />
+              <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 ring-1 ring-emerald-300/50 ${t.isDark ? 'border-gray-900' : 'border-white'}`} />
             </div>
 
             {/* Name + badge */}
@@ -177,6 +176,13 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
 
   return (
     <div className={`min-h-screen flex flex-col ${t.pageBg} ${t.text}`} style={bgStyle}>
+      {/* WCAG 2.1 skip-to-content link — visible on focus for keyboard users */}
+      <a
+        href="#dashboard-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-white focus:text-gray-900 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-semibold"
+      >
+        Skip to main content
+      </a>
 
       {/* ── Demo Mode Ribbon (ONLY shown in demo mode; hidden in production) ── */}
       {SHOW_DEMO_RIBBON && (
@@ -211,11 +217,13 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
           animate={{ width: collapsed ? 64 : 220 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30 }}
           className={`hidden md:flex flex-col shrink-0 border-r ${t.sidebarBorder} ${t.sidebarBg} backdrop-blur-md relative`}
+          aria-label="Sidebar navigation"
         >
           <SidebarContent />
           {/* Collapse toggle */}
           <button
             onClick={() => setCollapsed(c => !c)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             className={`absolute -right-3 top-20 w-6 h-6 rounded-full border flex items-center justify-center z-10 transition-colors ${t.collapseBg}`}
           >
             {collapsed
@@ -251,6 +259,7 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
           <header className={`h-14 flex items-center gap-3 px-4 sm:px-6 border-b ${t.sidebarBorder} ${t.sidebarBg} backdrop-blur-md shrink-0`}>
             <button
               onClick={() => setMobileOpen(true)}
+              aria-label="Open navigation menu"
               className={`md:hidden p-2 rounded-lg ${t.hover} ${t.textMd} transition-colors`}
             >
               <Menu className="w-5 h-5" />
@@ -275,7 +284,7 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
           </header>
 
           {/* Page content */}
-          <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <main id="dashboard-content" className="flex-1 overflow-y-auto p-4 sm:p-6">
             {children}
           </main>
         </div>

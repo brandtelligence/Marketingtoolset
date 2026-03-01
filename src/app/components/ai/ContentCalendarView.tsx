@@ -10,6 +10,8 @@ import {
   SiTelegram,
 } from 'react-icons/si';
 import { type ContentCard } from '../../contexts/ContentContext';
+import { useDashboardTheme } from '../saas/DashboardThemeContext';
+import { employeeTheme } from '../../utils/employeeTheme';
 
 // ─── Platform metadata ────────────────────────────────────────────────────────
 
@@ -123,6 +125,8 @@ interface ContentCalendarViewProps {
 
 export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarViewProps) {
   const _nowInit = new Date();
+  const { isDark } = useDashboardTheme();
+  const et = employeeTheme(isDark);
 
   const [displayYear,  setDisplayYear]  = useState(_nowInit.getFullYear());
   const [displayMonth, setDisplayMonth] = useState(_nowInit.getMonth());
@@ -210,18 +214,18 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={prevMonth}
-            className="p-2 rounded-xl bg-white/8 border border-white/15 text-white/60 hover:text-white hover:bg-white/12 transition-all"
+            className={`p-2 rounded-xl ${et.surfaceAlt} border ${et.border} ${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} ${et.hover} transition-all`}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <span className="text-white font-semibold text-base min-w-[11rem] text-center">
+          <span className={`${et.text} font-semibold text-base min-w-[11rem] text-center`}>
             {MONTH_NAMES[displayMonth]} {displayYear}
           </span>
 
           <button
             onClick={nextMonth}
-            className="p-2 rounded-xl bg-white/8 border border-white/15 text-white/60 hover:text-white hover:bg-white/12 transition-all"
+            className={`p-2 rounded-xl ${et.surfaceAlt} border ${et.border} ${et.textMd} hover:${isDark ? 'text-white' : 'text-gray-900'} ${et.hover} transition-all`}
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -239,7 +243,7 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
         {/* Stats pills */}
         <div className="flex flex-wrap gap-1.5 sm:ml-auto">
           {mTotal === 0 ? (
-            <span className="text-white/25 text-[10px] italic py-1">No content scheduled this month</span>
+            <span className={`${et.textFaint} text-[10px] italic py-1`}>No content scheduled this month</span>
           ) : (
             <>
               {mScheduled > 0 && (
@@ -274,7 +278,7 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
       {/* ── Day-of-week headers ── */}
       <div className="grid grid-cols-7 gap-1">
         {DOW_LABELS.map(dow => (
-          <div key={dow} className="text-center text-white/30 text-[10px] sm:text-xs font-semibold pb-1">
+          <div key={dow} className={`text-center ${et.textFaint} text-[10px] sm:text-xs font-semibold pb-1`}>
             <span className="hidden sm:inline">{dow}</span>
             <span className="sm:hidden">{dow.charAt(0)}</span>
           </div>
@@ -291,7 +295,7 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
                 return (
                   <div
                     key={`empty-${wi}-${di}`}
-                    className="min-h-[4rem] sm:min-h-[5.5rem] rounded-xl bg-white/2 border border-white/5 opacity-20"
+                    className={`min-h-[4rem] sm:min-h-[5.5rem] rounded-xl border opacity-20 ${isDark ? 'bg-white/2 border-white/5' : 'bg-gray-50/50 border-gray-200/30'}`}
                   />
                 );
               }
@@ -319,9 +323,9 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
               } else if (hasOverdue) {
                 cellCls = 'border-orange-400/30 bg-orange-500/5 hover:bg-orange-500/10';
               } else if (dayCells.length > 0) {
-                cellCls = 'border-white/12 bg-white/5 hover:bg-white/8';
+                cellCls = isDark ? 'border-white/12 bg-white/5 hover:bg-white/8' : 'border-gray-200 bg-white hover:bg-gray-50';
               } else {
-                cellCls = 'border-white/8 bg-white/2 hover:bg-white/5';
+                cellCls = isDark ? 'border-white/8 bg-white/2 hover:bg-white/5' : 'border-gray-100 bg-gray-50/50 hover:bg-gray-100/80';
               }
 
               // Day number colour
@@ -330,8 +334,8 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
                 : isToday
                   ? 'text-teal-300'
                   : dayCells.length > 0
-                    ? 'text-white/80'
-                    : 'text-white/25';
+                    ? (isDark ? 'text-white/80' : 'text-gray-800')
+                    : (isDark ? 'text-white/25' : 'text-gray-400');
 
               return (
                 <motion.button
@@ -361,7 +365,7 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
                         />
                       ))}
                       {overflow > 0 && (
-                        <span className="text-[8px] sm:text-[9px] text-white/35 leading-tight self-end">
+                        <span className={`text-[8px] sm:text-[9px] ${et.textFaint} leading-tight self-end`}>
                           +{overflow}
                         </span>
                       )}
@@ -375,14 +379,14 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
       </div>
 
       {/* ── Legend ── */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-2 border-t border-white/8">
+      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-2 border-t ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
         {LEGEND.map(({ label, cls }) => (
           <div key={label} className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full ${cls} shrink-0`} />
-            <span className="text-white/30 text-[10px]">{label}</span>
+            <span className={`${et.textFaint} text-[10px]`}>{label}</span>
           </div>
         ))}
-        <span className="text-white/15 text-[10px] ml-auto hidden sm:block">
+        <span className={`${isDark ? 'text-white/15' : 'text-gray-300'} text-[10px] ml-auto hidden sm:block`}>
           Click a date to see its cards below
         </span>
       </div>
@@ -396,20 +400,20 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.2 }}
-            className="bg-white/5 border border-purple-400/20 rounded-2xl overflow-hidden"
+            className={`${isDark ? 'bg-white/5' : 'bg-white'} border border-purple-400/20 rounded-2xl overflow-hidden`}
           >
             {/* Panel header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/8 bg-purple-500/5">
+            <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? 'border-white/8' : 'border-gray-200'} bg-purple-500/5`}>
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-purple-400 shrink-0" />
-                <span className="text-white font-semibold text-sm">{formattedSelectedDate}</span>
-                <span className="text-white/30 text-xs">
+                <span className={`${et.text} font-semibold text-sm`}>{formattedSelectedDate}</span>
+                <span className={`${et.textFaint} text-xs`}>
                   · {selectedDayCards.length} card{selectedDayCards.length !== 1 ? 's' : ''}
                 </span>
               </div>
               <button
                 onClick={() => setSelectedDate(null)}
-                className="text-white/25 hover:text-white/60 text-[11px] transition-colors px-2 py-1 rounded-lg hover:bg-white/8"
+                className={`${et.textFaint} hover:${isDark ? 'text-white/60' : 'text-gray-600'} text-[11px] transition-colors px-2 py-1 rounded-lg ${et.hover}`}
               >
                 ✕ Close
               </button>
@@ -418,14 +422,14 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
             {/* Card list */}
             {selectedDayCards.length === 0 ? (
               <div className="py-10 text-center">
-                <FileText className="w-8 h-8 text-white/12 mx-auto mb-2" />
-                <p className="text-white/35 text-sm">No content cards scheduled for this date</p>
-                <p className="text-white/20 text-[11px] mt-1">
+                <FileText className={`w-8 h-8 ${isDark ? 'text-white/12' : 'text-gray-200'} mx-auto mb-2`} />
+                <p className={`${et.textFaint} text-sm`}>No content cards scheduled for this date</p>
+                <p className={`${isDark ? 'text-white/20' : 'text-gray-300'} text-[11px] mt-1`}>
                   Cards appear here when their scheduled date matches
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-white/5">
+              <div className={`divide-y ${isDark ? 'divide-white/5' : 'divide-gray-100'}`}>
                 {selectedDayCards.map((card, idx) => {
                   const PIcon     = platformIcons[card.platform];
                   const iconCls   = platformIconColors[card.platform] || 'text-white/40';
@@ -442,27 +446,27 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
                       initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: idx * 0.04 }}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-white/4 transition-all"
+                      className={`flex items-center gap-3 px-4 py-3 ${et.hover} transition-all`}
                     >
                       {/* Platform icon badge */}
-                      <div className="shrink-0 w-8 h-8 rounded-lg bg-white/8 border border-white/10 flex items-center justify-center">
+                      <div className={`shrink-0 w-8 h-8 rounded-lg ${et.surfaceAlt} border ${et.border} flex items-center justify-center`}>
                         {PIcon
                           ? <PIcon className={`w-4 h-4 ${iconCls}`} />
-                          : <FileText className="w-4 h-4 text-white/30" />
+                          : <FileText className={`w-4 h-4 ${et.textFaint}`} />
                         }
                       </div>
 
                       {/* Title + meta */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-white/90 text-sm font-medium truncate">{card.title}</p>
+                        <p className={`${et.text} text-sm font-medium truncate`}>{card.title}</p>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-white/35 text-[10px]">
+                          <span className={`${et.textFaint} text-[10px]`}>
                             {platformNames[card.platform] || card.platform}
                           </span>
                           {card.scheduledTime && (
                             <>
-                              <span className="text-white/15">·</span>
-                              <span className="flex items-center gap-0.5 text-white/35 text-[10px]">
+                              <span className={`${isDark ? 'text-white/15' : 'text-gray-300'}`}>·</span>
+                              <span className={`flex items-center gap-0.5 ${et.textFaint} text-[10px]`}>
                                 <Clock className="w-2.5 h-2.5" />
                                 {card.scheduledTime}
                               </span>
@@ -470,8 +474,8 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
                           )}
                           {card.createdBy && (
                             <>
-                              <span className="text-white/15">·</span>
-                              <span className="text-white/25 text-[10px] truncate max-w-[6rem]">
+                              <span className={`${isDark ? 'text-white/15' : 'text-gray-300'}`}>·</span>
+                              <span className={`${isDark ? 'text-white/25' : 'text-gray-400'} text-[10px] truncate max-w-[6rem]`}>
                                 {card.createdBy}
                               </span>
                             </>
@@ -487,7 +491,7 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
                       {/* Open detail */}
                       <button
                         onClick={() => onOpenDetail(card)}
-                        className="shrink-0 flex items-center gap-1 text-[11px] text-white/25 hover:text-teal-300 px-2 py-1.5 rounded-lg hover:bg-teal-500/10 transition-all border border-transparent hover:border-teal-400/20"
+                        className={`shrink-0 flex items-center gap-1 text-[11px] ${et.textFaint} hover:text-teal-300 px-2 py-1.5 rounded-lg hover:bg-teal-500/10 transition-all border border-transparent hover:border-teal-400/20`}
                       >
                         <ExternalLink className="w-3 h-3" />
                         <span className="hidden sm:inline">Details</span>
