@@ -27,6 +27,7 @@ import { PageHeader, Card, StatCard } from '../../components/saas/SaasLayout';
 import { formatRM } from '../../utils/format';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import {
   fetchUsageData, fetchTenants, fetchTenantAIBudget, fetchContentGenUsage,
   fetchContentHistory,
@@ -145,6 +146,8 @@ function AISectionHeader({ loading }: { loading: boolean }) {
 export function TenantUsagePage() {
   const th = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Usage Analytics', description: 'Monitor your team\'s AI token usage, content output, and API consumption.', noindex: true });
 
   // Existing state
   const [period,    setPeriod]    = useState('Recent');

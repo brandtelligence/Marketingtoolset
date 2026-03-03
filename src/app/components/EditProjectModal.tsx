@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Save, Upload, AlertCircle, UserPlus, Trash2,
@@ -10,6 +10,7 @@ import {
   generateRouteSlug, calculateDuration, getProjectStatus,
 } from '../contexts/ProjectsContext';
 import { useDashboardTheme } from './saas/DashboardThemeContext';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface EditProjectModalProps {
   project: Project;
@@ -23,6 +24,8 @@ interface EditProjectModalProps {
 
 export function EditProjectModal({ project, onSave, onClose, showCancelProject = false, mode = 'edit' }: EditProjectModalProps) {
   const { isDark } = useDashboardTheme();
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const uid = useId();
   const [form, setForm] = useState<Project>({
     ...project,
     clientProjectLead: project.clientProjectLead ?? {
@@ -32,6 +35,57 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
   const [imageUploadError, setImageUploadError] = useState('');
 
   const status = getProjectStatus(form);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  // ── Theme-aware style tokens ────────────────────────────────────────────────
+  const panelCls = isDark
+    ? 'bg-white/10 backdrop-blur-xl border border-white/20'
+    : 'bg-white border border-gray-200 shadow-xl';
+  const headerBorder = isDark ? 'border-white/20' : 'border-gray-200';
+  const headingCls = isDark ? 'text-white' : 'text-gray-900';
+  const labelCls = isDark ? 'text-white/90' : 'text-gray-700';
+  const inputCls = isDark
+    ? 'bg-white/10 border border-white/20 text-white placeholder-white/50 focus:border-white/40'
+    : 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#0BA4AA]';
+  const readonlyInputCls = isDark
+    ? 'bg-white/5 border border-white/10 text-white/70'
+    : 'bg-gray-100 border border-gray-200 text-gray-500';
+  const mutedCls = isDark ? 'text-white/50' : 'text-gray-400';
+  const subtleCls = isDark ? 'text-white/60' : 'text-gray-500';
+  const dividerCls = isDark ? 'bg-white/20' : 'bg-gray-200';
+  const cardBg = isDark ? 'bg-white/10 border border-white/20' : 'bg-gray-50 border border-gray-200';
+  const cardBgFaint = isDark ? 'bg-white/5 border border-white/20' : 'bg-gray-50/50 border border-gray-200';
+  const sectionBg = isDark ? 'bg-white/5 border-2 border-white/30' : 'bg-gray-50 border-2 border-gray-200';
+  const badgeCls = isDark ? 'text-white/70 bg-white/10 border-white/20' : 'text-gray-600 bg-gray-100 border-gray-200';
+  const addCardCls = isDark
+    ? 'bg-white/5 border border-white/20 hover:bg-white/15 hover:border-white/30'
+    : 'bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300';
+  const uploadBtnCls = isDark
+    ? 'bg-white/10 border border-white/20 text-white hover:bg-white/20'
+    : 'bg-gray-100 border border-gray-300 text-gray-700 hover:bg-gray-200';
+  const footerBtnSecondaryCls = isDark
+    ? 'bg-white/10 border border-white/20 text-white hover:bg-white/20'
+    : 'bg-gray-100 border border-gray-300 text-gray-700 hover:bg-gray-200';
+  const footerBtnPrimaryCls = isDark
+    ? 'bg-white text-teal-600 hover:shadow-2xl shadow-lg'
+    : 'bg-[#0BA4AA] text-white hover:bg-[#099ca2] shadow-lg';
+  const cancelProjectCls = isDark
+    ? 'bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30'
+    : 'bg-red-50 border border-red-200 text-red-600 hover:bg-red-100';
+  const iconCls = isDark ? 'text-white' : 'text-gray-700';
+  const dateScheme = isDark ? '[color-scheme:dark]' : '[color-scheme:light]';
 
   // Standard card image dimensions (16:9 landscape)
   const STANDARD_WIDTH = 800;
@@ -57,11 +111,9 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
           let sx = 0, sy = 0, sw = img.width, sh = img.height;
 
           if (imgRatio > targetRatio) {
-            // Image is wider — crop sides
             sw = img.height * targetRatio;
             sx = (img.width - sw) / 2;
           } else {
-            // Image is taller — crop top/bottom
             sh = img.width / targetRatio;
             sy = (img.height - sh) / 2;
           }
@@ -97,7 +149,6 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
     cropImageToStandard(file)
       .then(croppedDataUrl => setForm({ ...form, image: croppedDataUrl }))
       .catch(() => {
-        // Fallback to raw data URL if cropping fails
         const reader = new FileReader();
         reader.onloadend = () => setForm({ ...form, image: reader.result as string });
         reader.readAsDataURL(file);
@@ -141,12 +192,16 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
         transition={{ type: 'spring', duration: 0.5 }}
-        className="fixed inset-2 sm:inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-4xl md:max-h-[90vh] bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl sm:rounded-3xl shadow-2xl z-50 flex flex-col fold-modal-safe"
+        className={`fixed inset-2 sm:inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-4xl md:max-h-[90vh] ${panelCls} rounded-2xl sm:rounded-3xl z-50 flex flex-col fold-modal-safe`}
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={mode === 'create' ? 'Add New Project' : `Edit Project: ${form.name}`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 md:p-8 border-b border-white/20 flex-shrink-0">
+        <div className={`flex items-center justify-between p-6 md:p-8 border-b ${headerBorder} flex-shrink-0`}>
           <div className="flex items-center gap-4">
-            <h2 className="text-2xl md:text-3xl font-bold text-white">
+            <h2 className={`text-2xl md:text-3xl font-bold ${headingCls}`}>
               {mode === 'create' ? 'Add New Project' : 'Edit Project'}
             </h2>
             {mode === 'edit' && (
@@ -155,7 +210,7 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white transition-colors">
+          <button onClick={onClose} className={`${isDark ? 'text-white/80 hover:text-white' : 'text-gray-400 hover:text-gray-700'} transition-colors`} aria-label="Close dialog">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -166,48 +221,48 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
 
             {/* Project Name */}
             <div>
-              <label className="block text-white/90 mb-2 text-sm font-medium">Project Name</label>
+              <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Project Name</label>
               <input
                 type="text"
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                 placeholder="Enter project name"
               />
             </div>
 
             {/* Client */}
             <div>
-              <label className="block text-white/90 mb-2 text-sm font-medium">Client</label>
+              <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Client</label>
               <input
                 type="text"
                 value={form.client}
                 onChange={e => setForm({ ...form, client: e.target.value })}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                 placeholder="Enter client name"
               />
             </div>
 
             {/* Description */}
             <div>
-              <label className="block text-white/90 mb-2 text-sm font-medium">Description</label>
+              <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Description</label>
               <input
                 type="text"
                 value={form.description}
                 onChange={e => setForm({ ...form, description: e.target.value })}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                 placeholder="Enter short description"
               />
             </div>
 
             {/* Details */}
             <div>
-              <label className="block text-white/90 mb-2 text-sm font-medium">Details</label>
+              <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Details</label>
               <textarea
                 value={form.details}
                 onChange={e => setForm({ ...form, details: e.target.value })}
                 rows={4}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all resize-none"
+                className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all resize-none ${inputCls}`}
                 placeholder="Enter detailed description"
               />
             </div>
@@ -215,29 +270,31 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
             {/* Industry + Duration */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium">Industry</label>
+                <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Industry</label>
                 <input
                   type="text"
                   value={form.industry}
                   onChange={e => setForm({ ...form, industry: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                  className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                   placeholder="e.g., Technology"
                 />
               </div>
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium">
+                <label className={`block ${labelCls} mb-2 text-sm font-medium`}>
                   Duration
                   {form.startDate && form.endDate && (
-                    <span className="ml-2 text-white/50 font-normal text-xs">(auto-calculated)</span>
+                    <span id={`${uid}-duration-hint`} className={`ml-2 ${mutedCls} font-normal text-xs`}>(auto-calculated)</span>
                   )}
                 </label>
                 <input
                   type="text"
                   value={form.duration}
                   onChange={e => setForm({ ...form, duration: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                  className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                   placeholder="e.g., 6 months"
                   readOnly={!!(form.startDate && form.endDate)}
+                  aria-describedby={form.startDate && form.endDate ? `${uid}-duration-hint` : undefined}
+                  aria-readonly={!!(form.startDate && form.endDate)}
                 />
               </div>
             </div>
@@ -245,7 +302,7 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
             {/* Start Date + End Date */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium">Start Date</label>
+                <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Start Date</label>
                 <input
                   type="date"
                   value={form.startDate || ''}
@@ -253,11 +310,11 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
                     const d = calculateDuration(e.target.value, form.endDate);
                     setForm({ ...form, startDate: e.target.value, duration: d || form.duration });
                   }}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/40 transition-all [color-scheme:dark]"
+                  className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls} ${dateScheme}`}
                 />
               </div>
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium">End Date</label>
+                <label className={`block ${labelCls} mb-2 text-sm font-medium`}>End Date</label>
                 <input
                   type="date"
                   value={form.endDate || ''}
@@ -265,7 +322,7 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
                     const d = calculateDuration(form.startDate, e.target.value);
                     setForm({ ...form, endDate: e.target.value, duration: d || form.duration });
                   }}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/40 transition-all [color-scheme:dark]"
+                  className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls} ${dateScheme}`}
                 />
               </div>
             </div>
@@ -273,16 +330,16 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
             {/* Team Members */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <label className="block text-white/90 text-sm font-medium">Team Members</label>
-                <div className="text-sm text-white/70 bg-white/10 px-3 py-1 rounded-lg border border-white/20">
+                <label className={`block ${labelCls} text-sm font-medium`}>Team Members</label>
+                <div className={`text-sm px-3 py-1 rounded-lg border ${badgeCls}`}>
                   {form.teamMembers.length} {form.teamMembers.length === 1 ? 'member' : 'members'}
                 </div>
               </div>
 
               {/* Selected */}
-              <div className="mb-4 max-h-64 overflow-y-auto space-y-2 bg-white/5 border border-white/20 rounded-xl p-4">
+              <div className={`mb-4 max-h-64 overflow-y-auto space-y-2 rounded-xl p-4 ${cardBgFaint}`}>
                 {form.teamMembers.length === 0 ? (
-                  <div className="text-white/50 text-sm text-center py-4">No team members selected</div>
+                  <div className={`${mutedCls} text-sm text-center py-4`}>No team members selected</div>
                 ) : (
                   form.teamMembers.map(memberId => {
                     const member = availableTeamMembers.find(m => m.id === memberId);
@@ -292,19 +349,20 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
                         key={member.id}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
-                        className="flex items-center justify-between bg-white/10 border border-white/20 rounded-xl p-3"
+                        className={`flex items-center justify-between rounded-xl p-3 ${cardBg}`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-gradient-to-br from-teal-400 to-purple-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
                             {member.firstName[0]}{member.lastName[0]}
                           </div>
                           <div>
-                            <div className="text-white font-medium text-sm">{member.firstName} {member.lastName}</div>
-                            <div className="text-white/60 text-xs">{member.jobTitle}</div>
+                            <div className={`${headingCls} font-medium text-sm`}>{member.firstName} {member.lastName}</div>
+                            <div className={`${subtleCls} text-xs`}>{member.jobTitle}</div>
                           </div>
                         </div>
                         <button
                           onClick={() => removeMember(member.id)}
+                          aria-label={`Remove ${member.firstName} ${member.lastName} from team`}
                           className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-2 rounded-lg transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -316,8 +374,8 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
               </div>
 
               {/* Available to add */}
-              <div className="bg-white/10 border border-white/20 rounded-xl p-4">
-                <div className="text-white/90 text-sm font-medium mb-3 flex items-center gap-2">
+              <div className={`rounded-xl p-4 ${cardBg}`}>
+                <div className={`${labelCls} text-sm font-medium mb-3 flex items-center gap-2`}>
                   <UserPlus className="w-4 h-4" />
                   Add Team Members
                 </div>
@@ -328,133 +386,148 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
                       <button
                         key={member.id}
                         onClick={() => addMember(member)}
-                        className="flex items-center gap-3 bg-white/5 border border-white/20 rounded-xl p-3 hover:bg-white/15 hover:border-white/30 transition-all text-left"
+                        aria-label={`Add ${member.firstName} ${member.lastName} to team`}
+                        className={`flex items-center gap-3 rounded-xl p-3 transition-all text-left ${addCardCls}`}
                       >
                         <div className="w-8 h-8 bg-gradient-to-br from-teal-400 to-purple-500 rounded-full flex items-center justify-center text-white font-semibold text-xs flex-shrink-0">
                           {member.firstName[0]}{member.lastName[0]}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-white font-medium text-sm truncate">{member.firstName} {member.lastName}</div>
-                          <div className="text-white/60 text-xs truncate">{member.jobTitle}</div>
+                          <div className={`${headingCls} font-medium text-sm truncate`}>{member.firstName} {member.lastName}</div>
+                          <div className={`${subtleCls} text-xs truncate`}>{member.jobTitle}</div>
                         </div>
                       </button>
                     ))}
                 </div>
                 {availableTeamMembers.filter(m => !form.teamMembers.includes(m.id)).length === 0 && (
-                  <div className="text-white/50 text-sm text-center py-4">All team members already added</div>
+                  <div className={`${mutedCls} text-sm text-center py-4`}>All team members already added</div>
                 )}
               </div>
             </div>
 
             {/* Image Upload */}
             <div>
-              <label className="block text-white/90 mb-3 text-sm font-medium">Project Image</label>
+              <label className={`block ${labelCls} mb-3 text-sm font-medium`}>Project Image</label>
               {form.image && (
-                <div className="mb-4 rounded-xl overflow-hidden bg-white/5 border border-white/20">
+                <div className={`mb-4 rounded-xl overflow-hidden ${cardBgFaint}`}>
                   <img src={form.image} alt="Preview" className="w-full h-48 object-cover" />
                 </div>
               )}
               <div className="space-y-3">
                 <div className="flex items-center gap-4">
-                  <input type="file" accept="image/jpeg,image/jpg,image/png" onChange={handleImageUpload} className="hidden" id="editImageUpload" />
-                  <label htmlFor="editImageUpload" className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 border border-white/20 text-white rounded-xl font-semibold hover:bg-white/20 transition-all cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    id={`editImageUpload-${uid}`}
+                    aria-describedby={`${uid}-img-hint${imageUploadError ? ` ${uid}-img-error` : ''}`}
+                  />
+                  <label htmlFor={`editImageUpload-${uid}`} className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all cursor-pointer ${uploadBtnCls}`}>
                     <Upload className="w-5 h-5" />
                     Upload Image
                   </label>
-                  <span className="text-white/60 text-xs">Max 1MB, JPEG or PNG — auto-cropped to 800×450 (16:9)</span>
+                  <span id={`${uid}-img-hint`} className={`${subtleCls} text-xs`}>Max 1MB, JPEG or PNG — auto-cropped to 800×450 (16:9)</span>
                 </div>
                 {imageUploadError && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
+                    id={`${uid}-img-error`}
                     className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3"
+                    role="alert"
                   >
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     {imageUploadError}
                   </motion.div>
                 )}
                 <div className="flex items-center gap-4 my-2">
-                  <div className="flex-1 h-px bg-white/20" />
-                  <span className="text-white/60 text-sm font-medium">OR</span>
-                  <div className="flex-1 h-px bg-white/20" />
+                  <div className={`flex-1 h-px ${dividerCls}`} />
+                  <span className={`${subtleCls} text-sm font-medium`}>OR</span>
+                  <div className={`flex-1 h-px ${dividerCls}`} />
                 </div>
               </div>
             </div>
 
             {/* Image URL */}
             <div>
-              <label className="block text-white/90 mb-2 text-sm font-medium">Image URL</label>
+              <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Image URL</label>
               <input
                 type="text"
                 value={form.image}
                 onChange={e => setForm({ ...form, image: e.target.value })}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                 placeholder="https://..."
               />
             </div>
 
             {/* Route (auto-generated) */}
             <div>
-              <label className="block text-white/90 mb-2 text-sm font-medium">
-                Route <span className="text-white/50 font-normal">(auto-generated from project name)</span>
+              <label htmlFor={`${uid}-route`} className={`block ${labelCls} mb-2 text-sm font-medium`}>
+                Route <span id={`${uid}-route-hint`} className={`${mutedCls} font-normal`}>(auto-generated from project name)</span>
               </label>
               <input
+                id={`${uid}-route`}
                 type="text"
                 value={generateRouteSlug(form.name)}
                 readOnly
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white/70 cursor-not-allowed focus:outline-none"
+                aria-describedby={`${uid}-route-hint`}
+                aria-readonly="true"
+                className={`w-full rounded-xl px-4 py-3 cursor-not-allowed focus:outline-none ${readonlyInputCls}`}
               />
             </div>
 
             {/* Tags */}
             <div>
-              <label className="block text-white/90 mb-2 text-sm font-medium">Tags (comma-separated)</label>
+              <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Tags (comma-separated)</label>
               <input
                 type="text"
                 value={form.tags.join(', ')}
                 onChange={e => handleTagsChange(e.target.value)}
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                 placeholder="Tag 1, Tag 2, Tag 3"
               />
             </div>
 
             {/* Client Project Lead */}
-            <div className="bg-white/5 border-2 border-white/30 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-3 pb-4 border-b border-white/20">
-                <div className="p-2 bg-white/10 rounded-lg">
-                  <User className="w-5 h-5 text-white" />
+            <div className={`${sectionBg} rounded-2xl p-6 space-y-5`}>
+              <div className={`flex items-center gap-3 pb-4 border-b ${headerBorder}`}>
+                <div className={`p-2 rounded-lg ${isDark ? 'bg-white/10' : 'bg-gray-100'}`}>
+                  <User className={`w-5 h-5 ${iconCls}`} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white">Client Project Lead</h3>
-                  <p className="text-xs text-white/60">All fields are mandatory</p>
+                  <h3 className={`text-lg font-semibold ${headingCls}`}>Client Project Lead</h3>
+                  <p className={`text-xs ${subtleCls}`}>All fields are mandatory</p>
                 </div>
               </div>
 
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium">Full Name <span className="text-red-400">*</span></label>
+                <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Full Name <span className="text-red-400" aria-hidden="true">*</span><span className="sr-only"> (required)</span></label>
                 <input
                   type="text"
                   value={form.clientProjectLead.name}
                   onChange={e => setForm({ ...form, clientProjectLead: { ...form.clientProjectLead, name: e.target.value } })}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                  className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                   placeholder="Enter full name"
+                  required
                 />
               </div>
 
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium">Job Title <span className="text-red-400">*</span></label>
+                <label className={`block ${labelCls} mb-2 text-sm font-medium`}>Job Title <span className="text-red-400" aria-hidden="true">*</span><span className="sr-only"> (required)</span></label>
                 <input
                   type="text"
                   value={form.clientProjectLead.jobTitle}
                   onChange={e => setForm({ ...form, clientProjectLead: { ...form.clientProjectLead, jobTitle: e.target.value } })}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                  className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                   placeholder="e.g., Project Manager"
+                  required
                 />
               </div>
 
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium flex items-center gap-2">
-                  <Phone className="w-4 h-4" /> Mobile Phone <span className="text-red-400">*</span>
+                <label className={`block ${labelCls} mb-2 text-sm font-medium flex items-center gap-2`}>
+                  <Phone className="w-4 h-4" aria-hidden="true" /> Mobile Phone <span className="text-red-400" aria-hidden="true">*</span><span className="sr-only"> (required)</span>
                 </label>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1">
@@ -469,23 +542,25 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
                       type="tel"
                       value={form.clientProjectLead.phoneNumber}
                       onChange={e => setForm({ ...form, clientProjectLead: { ...form.clientProjectLead, phoneNumber: e.target.value } })}
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                      className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                       placeholder="1234567890"
+                      required
                     />
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="block text-white/90 mb-2 text-sm font-medium flex items-center gap-2">
-                  <Mail className="w-4 h-4" /> Email Address <span className="text-red-400">*</span>
+                <label className={`block ${labelCls} mb-2 text-sm font-medium flex items-center gap-2`}>
+                  <Mail className="w-4 h-4" aria-hidden="true" /> Email Address <span className="text-red-400" aria-hidden="true">*</span><span className="sr-only"> (required)</span>
                 </label>
                 <input
                   type="email"
                   value={form.clientProjectLead.email}
                   onChange={e => setForm({ ...form, clientProjectLead: { ...form.clientProjectLead, email: e.target.value } })}
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-all"
+                  className={`w-full rounded-xl px-4 py-3 focus:outline-none transition-all ${inputCls}`}
                   placeholder="email@example.com"
+                  required
                 />
               </div>
             </div>
@@ -494,14 +569,14 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
         </div>
 
         {/* Footer — responsive: stacked on mobile, row on sm+ */}
-        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 border-t border-white/20 flex-shrink-0">
+        <div className={`flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 border-t ${headerBorder} flex-shrink-0`}>
           <div>
             {mode === 'edit' && showCancelProject && form.status === 'active' && (
               <motion.button
                 onClick={handleCancelProject}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-red-500/20 border border-red-500/40 text-red-300 rounded-xl hover:bg-red-500/30 transition-all inline-flex items-center justify-center gap-2 min-h-[2.75rem]"
+                className={`w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl transition-all inline-flex items-center justify-center gap-2 min-h-[2.75rem] ${cancelProjectCls}`}
               >
                 <X className="w-4 h-4 sm:w-5 sm:h-5" />
                 Cancel Project
@@ -513,7 +588,7 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
               onClick={onClose}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="flex-1 sm:flex-none px-4 sm:px-6 py-2.5 sm:py-3 bg-white/10 border border-white/20 text-white rounded-xl hover:bg-white/20 transition-all min-h-[2.75rem]"
+              className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl transition-all min-h-[2.75rem] ${footerBtnSecondaryCls}`}
             >
               Cancel
             </motion.button>
@@ -521,7 +596,7 @@ export function EditProjectModal({ project, onSave, onClose, showCancelProject =
               onClick={handleSave}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="flex-1 sm:flex-none px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-teal-600 rounded-xl hover:shadow-2xl transition-all shadow-lg inline-flex items-center justify-center gap-2 min-h-[2.75rem]"
+              className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl transition-all inline-flex items-center justify-center gap-2 min-h-[2.75rem] ${footerBtnPrimaryCls}`}
             >
               <Save className="w-4 h-4 sm:w-5 sm:h-5" />
               {mode === 'create' ? 'Create Project' : 'Save Changes'}

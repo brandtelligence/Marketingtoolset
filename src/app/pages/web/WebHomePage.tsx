@@ -2,7 +2,7 @@
  * WebHomePage — High-conversion marketing homepage
  * Hero · Trust logos · USPs · Product preview · Stats · Testimonials · Pricing · Blog · CTA
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import {
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 
 import { useSEO, webPageSchema } from '../../hooks/useSEO';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,17 @@ const LOGOS = ['Apex Financial', 'Luxe Commerce', 'Meridian Agency', 'Nova Brand
 
 export function WebHomePage() {
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+
+  // Focus trap for video modal
+  const videoTrapRef = useFocusTrap<HTMLDivElement>(videoModalOpen);
+
+  // Close video modal on Escape
+  useEffect(() => {
+    if (!videoModalOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setVideoModalOpen(false); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [videoModalOpen]);
 
   useSEO({
     title:       'AI-Powered Marketing Intelligence Platform',
@@ -505,9 +517,15 @@ export function WebHomePage() {
 
       {/* Video modal */}
       {videoModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl" onClick={() => setVideoModalOpen(false)}>
-          <div className="w-full max-w-3xl bg-white/5 border border-white/15 rounded-2xl p-8 text-center" onClick={e => e.stopPropagation()}>
-            <Play className="w-16 h-16 text-bt-teal mx-auto mb-4" />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl"
+          onClick={() => setVideoModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Product Demo"
+        >
+          <div className="w-full max-w-3xl bg-white/5 border border-white/15 rounded-2xl p-8 text-center" ref={videoTrapRef} onClick={e => e.stopPropagation()}>
+            <Play className="w-16 h-16 text-bt-teal mx-auto mb-4" aria-hidden="true" />
             <h3 className="text-white font-bold text-xl mb-2">Product Demo</h3>
             <p className="text-white/50 text-sm mb-4">Full video demo coming soon. Book a live walkthrough with our team.</p>
             <Link to="/contact" onClick={() => setVideoModalOpen(false)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-bt-teal text-white font-bold text-sm">

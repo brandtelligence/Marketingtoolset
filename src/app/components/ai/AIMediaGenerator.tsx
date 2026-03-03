@@ -410,14 +410,14 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
           transition={{ type: 'spring', stiffness: 320, damping: 26 }}
         >
           {/* ── Header ─────────────────────────────────────────────────── */}
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-white/8 shrink-0">
+          <div className={`flex items-center gap-3 px-6 py-4 border-b shrink-0 ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
             <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${platformGrad} flex items-center justify-center shrink-0`}>
               <Sparkles className="w-4.5 h-4.5 text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-white font-bold text-base leading-tight">AI Media Generator</h2>
-              <p className="text-white/40 text-xs truncate mt-0.5">
-                For&nbsp;<span className="text-white/60 font-medium">{card.title || 'Untitled Card'}</span>
+              <h2 className={`font-bold text-base leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>AI Media Generator</h2>
+              <p className={`text-xs truncate mt-0.5 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                For&nbsp;<span className={`font-medium ${isDark ? 'text-white/60' : 'text-gray-600'}`}>{card.title || 'Untitled Card'}</span>
                 &nbsp;·&nbsp;
                 <span className={`capitalize font-medium text-transparent bg-clip-text bg-gradient-to-r ${platformGrad}`}>{card.platform}</span>
               </p>
@@ -427,7 +427,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                 Demo Mode
               </span>
             )}
-            <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/6 hover:bg-white/12 flex items-center justify-center text-white/50 hover:text-white transition-all shrink-0">
+            <button onClick={onClose} className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shrink-0 ${isDark ? 'bg-white/6 hover:bg-white/12 text-white/50 hover:text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-gray-700'}`}>
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -445,7 +445,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all disabled:opacity-40
                   ${tab === id
                     ? 'bg-teal-500/20 border-teal-400/40 text-teal-300'
-                    : 'bg-white/4 border-white/8 text-white/40 hover:text-white/70 hover:bg-white/8'}`}
+                    : isDark ? 'bg-white/4 border-white/8 text-white/40 hover:text-white/70 hover:bg-white/8' : 'bg-gray-50 border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
               >
                 <Icon className="w-4 h-4" />
                 <span>{label}</span>
@@ -458,20 +458,19 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
           <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
 
             {/* ── LEFT: Controls ────────────────────────────────────────── */}
-            <div className="lg:w-[42%] flex flex-col gap-4 p-6 overflow-y-auto border-r border-white/6 shrink-0">
-
+            <div className={`flex-1 flex flex-col gap-4 p-6 overflow-y-auto border-r shrink-0 lg:w-[42%] ${isDark ? 'border-white/6' : 'border-gray-200'}`}>
               {/* Platform chip */}
               <div className="flex items-center gap-2">
                 <div className={`px-3 py-1 rounded-full bg-gradient-to-r ${platformGrad} text-white text-xs font-semibold`}>
                   {card.platform.charAt(0).toUpperCase() + card.platform.slice(1)}
                 </div>
-                <span className="text-white/30 text-xs">context applied to prompt</span>
+                <span className={`text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>context applied to prompt</span>
               </div>
 
               {/* Prompt */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-white/50 text-xs uppercase tracking-wider font-semibold">Prompt</label>
+                  <label className={`text-xs uppercase tracking-wider font-semibold ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Prompt</label>
                   <button
                     onClick={handleAutoFill}
                     className="flex items-center gap-1 text-[10px] text-teal-400 hover:text-teal-300 px-2 py-1 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 transition-all"
@@ -485,26 +484,26 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                   rows={4}
                   placeholder={`Describe the ${tab === 'image' ? 'image' : 'video scene'} you want to generate…`}
                   disabled={isGenerating}
-                  className="w-full bg-white/5 border border-white/12 rounded-xl px-3.5 py-2.5 text-white text-sm placeholder-white/25
-                    focus:outline-none focus:border-teal-400/40 focus:bg-white/8 transition-all resize-none
-                    disabled:opacity-50 disabled:cursor-not-allowed leading-relaxed"
+                  className={`w-full border rounded-xl px-3.5 py-2.5 text-sm
+                    focus:outline-none transition-all resize-none
+                    disabled:opacity-50 disabled:cursor-not-allowed leading-relaxed ${isDark ? 'bg-white/5 border-white/12 text-white placeholder-white/25 focus:border-teal-400/40 focus:bg-white/8' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-teal-400/60 focus:bg-white'}`}
                 />
-                <p className="text-white/20 text-[10px] mt-1">{prompt.length} chars</p>
+                <p className={`text-[10px] mt-1 ${isDark ? 'text-white/20' : 'text-gray-400'}`}>{prompt.length} chars</p>
               </div>
 
               {/* ── Recent Prompts ── */}
               {promptHistory.length > 0 && (
-                <div className="border border-white/8 rounded-xl overflow-hidden">
+                <div className={`border rounded-xl overflow-hidden ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
                   <button
                     onClick={() => setShowHistory(v => !v)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 bg-white/4 hover:bg-white/7 transition-all"
+                    className={`w-full flex items-center justify-between px-3 py-2.5 transition-all ${isDark ? 'bg-white/4 hover:bg-white/7' : 'bg-gray-50 hover:bg-gray-100'}`}
                   >
                     <div className="flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-white/40" />
-                      <span className="text-white/50 text-xs font-semibold">Recent Prompts</span>
-                      <span className="px-1.5 py-0.5 bg-white/10 rounded-full text-white/30 text-[9px]">{Math.min(promptHistory.length, 5)}</span>
+                      <Clock className={`w-3.5 h-3.5 ${isDark ? 'text-white/40' : 'text-gray-400'}`} />
+                      <span className={`text-xs font-semibold ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Recent Prompts</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${isDark ? 'bg-white/10 text-white/30' : 'bg-gray-200 text-gray-400'}`}>{Math.min(promptHistory.length, 5)}</span>
                     </div>
-                    {showHistory ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
+                    {showHistory ? <ChevronUp className={`w-3.5 h-3.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`} /> : <ChevronDown className={`w-3.5 h-3.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`} />}
                   </button>
 
                   <AnimatePresence>
@@ -514,26 +513,26 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                         className="overflow-hidden"
                         transition={{ duration: 0.2 }}
                       >
-                        <div className="divide-y divide-white/5">
+                        <div className={`divide-y ${isDark ? 'divide-white/5' : 'divide-gray-100'}`}>
                           {promptHistory.slice(0, 5).map(entry => (
                             <button
                               key={entry.id}
                               onClick={() => applyHistory(entry)}
                               disabled={isGenerating}
-                              className="w-full flex items-start gap-2.5 px-3 py-2.5 hover:bg-white/6 text-left transition-all disabled:opacity-40"
+                              className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-all disabled:opacity-40 ${isDark ? 'hover:bg-white/6' : 'hover:bg-gray-50'}`}
                             >
                               <span className="text-sm mt-0.5 shrink-0">{entry.tab === 'image' ? '📷' : '🎬'}</span>
                               <div className="flex-1 min-w-0">
-                                <p className="text-white/60 text-[11px] leading-snug line-clamp-2">{entry.prompt}</p>
+                                <p className={`text-[11px] leading-snug line-clamp-2 ${isDark ? 'text-white/60' : 'text-gray-600'}`}>{entry.prompt}</p>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-white/25 text-[9px] capitalize">{entry.style}</span>
-                                  <span className="text-white/15 text-[9px]">·</span>
-                                  <span className="text-white/25 text-[9px]">{entry.aspectRatio}</span>
-                                  <span className="text-white/15 text-[9px]">·</span>
-                                  <span className="text-white/25 text-[9px]">{timeAgo(entry.generatedAt)}</span>
+                                  <span className={`text-[9px] capitalize ${isDark ? 'text-white/25' : 'text-gray-400'}`}>{entry.style}</span>
+                                  <span className={`text-[9px] ${isDark ? 'text-white/15' : 'text-gray-300'}`}>·</span>
+                                  <span className={`text-[9px] ${isDark ? 'text-white/25' : 'text-gray-400'}`}>{entry.aspectRatio}</span>
+                                  <span className={`text-[9px] ${isDark ? 'text-white/15' : 'text-gray-300'}`}>·</span>
+                                  <span className={`text-[9px] ${isDark ? 'text-white/25' : 'text-gray-400'}`}>{timeAgo(entry.generatedAt)}</span>
                                 </div>
                               </div>
-                              <ChevronRight className="w-3 h-3 text-white/20 shrink-0 mt-1" />
+                              <ChevronRight className={`w-3 h-3 shrink-0 mt-1 ${isDark ? 'text-white/20' : 'text-gray-300'}`} />
                             </button>
                           ))}
                         </div>
@@ -545,7 +544,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
 
               {/* ── Style grid ── */}
               <div>
-                <label className="text-white/50 text-xs uppercase tracking-wider font-semibold mb-2 block">
+                <label className={`text-xs uppercase tracking-wider font-semibold mb-2 block ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
                   {tab === 'image' ? 'Visual Style' : 'Motion Style'}
                 </label>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -558,7 +557,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                         disabled={isGenerating}
                         title={s.hint}
                         className={`flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl border text-center transition-all disabled:opacity-40
-                          ${active ? 'bg-teal-500/20 border-teal-400/40 text-teal-200' : 'bg-white/4 border-white/8 text-white/40 hover:bg-white/8 hover:text-white/70'}`}
+                          ${active ? 'bg-teal-500/20 border-teal-400/40 text-teal-200' : isDark ? 'bg-white/4 border-white/8 text-white/40 hover:bg-white/8 hover:text-white/70' : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
                       >
                         <span className="text-base leading-none">{s.emoji}</span>
                         <span className="text-[10px] font-semibold leading-tight">{s.label}</span>
@@ -570,7 +569,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
 
               {/* ── Aspect ratio (both tabs) ── */}
               <div>
-                <label className="text-white/50 text-xs uppercase tracking-wider font-semibold mb-2 block">
+                <label className={`text-xs uppercase tracking-wider font-semibold mb-2 block ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
                   {tab === 'image' ? 'Aspect Ratio' : 'Target Aspect Ratio'}
                 </label>
                 <div className="flex gap-1.5">
@@ -580,18 +579,18 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                       onClick={() => setAspectRatio(ar.id)}
                       disabled={isGenerating}
                       className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-xl border text-center transition-all disabled:opacity-40
-                        ${aspectRatio === ar.id ? 'bg-teal-500/20 border-teal-400/40 text-teal-200' : 'bg-white/4 border-white/8 text-white/40 hover:bg-white/8 hover:text-white/70'}`}
+                        ${aspectRatio === ar.id ? 'bg-teal-500/20 border-teal-400/40 text-teal-200' : isDark ? 'bg-white/4 border-white/8 text-white/40 hover:bg-white/8 hover:text-white/70' : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
                     >
                       {/* Mini aspect ratio icon */}
                       <span
-                        className={`border-2 rounded-[3px] transition-all ${aspectRatio === ar.id ? 'border-teal-400' : 'border-white/30'}`}
+                        className={`border-2 rounded-[3px] transition-all ${aspectRatio === ar.id ? 'border-teal-400' : isDark ? 'border-white/30' : 'border-gray-300'}`}
                         style={{
                           width:  ar.id === '9:16' ? 10 : ar.id === '1:1' ? 14 : 20,
                           height: ar.id === '9:16' ? 16 : ar.id === '1:1' ? 14 : 12,
                         }}
                       />
                       <span className="text-[10px] font-bold">{ar.id}</span>
-                      <span className="text-[9px] text-white/30 leading-tight">{ar.label}</span>
+                      <span className={`text-[9px] leading-tight ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{ar.label}</span>
                     </button>
                   ))}
                 </div>
@@ -630,7 +629,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                 }
               </button>
 
-              <p className="text-white/18 text-[10px] text-center">
+              <p className={`text-[10px] text-center ${isDark ? 'text-white/18' : 'text-gray-400'}`}>
                 {tab === 'image' ? '~$0.08 USD per HD image (DALL-E 3)' : '~$0.45–0.60 USD per video (Replicate minimax)'}
               </p>
             </div>
@@ -641,21 +640,21 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
               {/* IDLE */}
               {phase === 'idle' && (
                 <motion.div className="flex-1 flex flex-col items-center justify-center gap-4 text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-teal-500/20 to-purple-500/20 border border-white/8 flex items-center justify-center">
-                    {tab === 'image' ? <ImageIcon className="w-9 h-9 text-white/20" /> : <Video className="w-9 h-9 text-white/20" />}
+                  <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br from-teal-500/20 to-purple-500/20 border flex items-center justify-center ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
+                    {tab === 'image' ? <ImageIcon className={`w-9 h-9 ${isDark ? 'text-white/20' : 'text-gray-300'}`} /> : <Video className={`w-9 h-9 ${isDark ? 'text-white/20' : 'text-gray-300'}`} />}
                   </div>
                   <div>
-                    <p className="text-white/40 font-semibold text-sm">Preview appears here</p>
-                    <p className="text-white/20 text-xs mt-1">Configure your prompt and style, then click Generate</p>
+                    <p className={`font-semibold text-sm ${isDark ? 'text-white/40' : 'text-gray-400'}`}>Preview appears here</p>
+                    <p className={`text-xs mt-1 ${isDark ? 'text-white/20' : 'text-gray-400'}`}>Configure your prompt and style, then click Generate</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 w-full max-w-xs mt-2">
                     {(tab === 'image'
                       ? ['HD 1024 px output', 'DALL-E 3 model', '6 visual styles', 'Stored securely']
                       : ['~6-10 s video', 'minimax/video-01', '4 motion styles', 'Crop guide overlay']
                     ).map(feat => (
-                      <div key={feat} className="flex items-center gap-2 p-2 bg-white/4 rounded-lg border border-white/6">
+                      <div key={feat} className={`flex items-center gap-2 p-2 rounded-lg border ${isDark ? 'bg-white/4 border-white/6' : 'bg-gray-50 border-gray-200'}`}>
                         <Check className="w-3 h-3 text-teal-400 shrink-0" />
-                        <span className="text-white/50 text-[10px]">{feat}</span>
+                        <span className={`text-[10px] ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{feat}</span>
                       </div>
                     ))}
                   </div>
@@ -684,27 +683,27 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                     />
                   </div>
                   <div className="text-center">
-                    <motion.p key={progMsg} className="text-white/70 text-sm font-semibold" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                    <motion.p key={progMsg} className={`text-sm font-semibold ${isDark ? 'text-white/70' : 'text-gray-600'}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
                       {progMsg}
                     </motion.p>
-                    <p className="text-white/30 text-xs mt-1">{tab === 'image' ? 'DALL-E 3 · HD quality' : 'Replicate · minimax/video-01'}</p>
+                    <p className={`text-xs mt-1 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{tab === 'image' ? 'DALL-E 3 · HD quality' : 'Replicate · minimax/video-01'}</p>
                   </div>
                   <div className="w-full max-w-xs">
-                    <div className="flex justify-between text-[10px] text-white/30 mb-1.5">
+                    <div className={`flex justify-between text-[10px] mb-1.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
                       <span>Progress</span><span>{progress}%</span>
                     </div>
-                    <div className="h-1.5 bg-white/8 rounded-full overflow-hidden">
+                    <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-white/8' : 'bg-gray-200'}`}>
                       <motion.div
                         className="h-full rounded-full bg-gradient-to-r from-teal-400 to-teal-500"
                         animate={{ width: `${progress}%` }}
                         transition={{ duration: 0.6, ease: 'easeOut' }}
                       />
                     </div>
-                    {tab === 'video' && <p className="text-white/20 text-[9px] mt-1.5 text-center">Keep this panel open — video takes 1–2 minutes</p>}
+                    {tab === 'video' && <p className={`text-[9px] mt-1.5 text-center ${isDark ? 'text-white/20' : 'text-gray-400'}`}>Keep this panel open — video takes 1–2 minutes</p>}
                   </div>
                   <button
                     onClick={() => { setPhase('idle'); setPredictionId(null); setProgress(0); }}
-                    className="text-white/30 hover:text-white/60 text-xs flex items-center gap-1.5 transition-all"
+                    className={`text-xs flex items-center gap-1.5 transition-all ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'}`}
                   >
                     <X className="w-3 h-3" /> Cancel
                   </button>
@@ -778,15 +777,15 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
 
                   {/* Revised prompt */}
                   {revisedPrompt && (
-                    <div className="p-3 bg-white/4 border border-white/8 rounded-xl">
-                      <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">DALL-E 3 Revised Prompt</p>
-                      <p className="text-white/50 text-xs leading-relaxed italic">{revisedPrompt}</p>
+                    <div className={`p-3 border rounded-xl ${isDark ? 'bg-white/4 border-white/8' : 'bg-gray-50 border-gray-200'}`}>
+                      <p className={`text-[10px] uppercase tracking-wider mb-1 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>DALL-E 3 Revised Prompt</p>
+                      <p className={`text-xs leading-relaxed italic ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{revisedPrompt}</p>
                     </div>
                   )}
 
                   {/* Prompt used */}
                   {media.promptUsed && (
-                    <p className="text-white/20 text-[10px] truncate">
+                    <p className={`text-[10px] truncate ${isDark ? 'text-white/20' : 'text-gray-400'}`}>
                       📝 <span className="italic">{media.promptUsed.slice(0, 90)}{media.promptUsed.length > 90 ? '…' : ''}</span>
                     </p>
                   )}
@@ -795,7 +794,7 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                   <div className="flex items-center gap-3 mt-auto pt-2">
                     <button
                       onClick={() => { setPhase('idle'); setMedia(null); setRevisedPrompt(''); setProgress(0); setIsPlaying(false); }}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/12 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-sm font-semibold transition-all"
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${isDark ? 'border-white/12 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white' : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-700'}`}
                     >
                       <RefreshCw className="w-3.5 h-3.5" /> Regenerate
                     </button>
@@ -820,12 +819,12 @@ export function AIMediaGenerator({ card, promptHistory = [], onAttach, onClose }
                     <AlertCircle className="w-7 h-7 text-red-400" />
                   </div>
                   <div>
-                    <p className="text-red-300 font-semibold text-sm">Generation failed</p>
-                    <p className="text-white/30 text-xs mt-1 max-w-xs mx-auto leading-relaxed">{errorMsg}</p>
+                    <p className={`font-semibold text-sm ${isDark ? 'text-red-300' : 'text-red-500'}`}>Generation failed</p>
+                    <p className={`text-xs mt-1 max-w-xs mx-auto leading-relaxed ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{errorMsg}</p>
                   </div>
                   <button
                     onClick={() => { setPhase('idle'); setErrorMsg(''); setProgress(0); }}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/8 border border-white/12 hover:bg-white/12 text-white/70 hover:text-white text-sm font-semibold transition-all"
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-semibold transition-all ${isDark ? 'bg-white/8 border-white/12 hover:bg-white/12 text-white/70 hover:text-white' : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-500 hover:text-gray-700'}`}
                   >
                     <RefreshCw className="w-3.5 h-3.5" /> Try Again
                   </button>

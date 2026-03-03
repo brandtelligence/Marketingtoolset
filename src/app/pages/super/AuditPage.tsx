@@ -25,6 +25,7 @@ import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { DataTable, Column } from '../../components/saas/DataTable';
 import { StatusBadge, RoleBadge } from '../../components/saas/StatusBadge';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { PenTestChecklist } from '../../components/saas/PenTestChecklist';
 import { BrowserQAChecklist, QA_TOTAL_ITEMS } from '../../components/saas/BrowserQAChecklist';
 import {
@@ -92,32 +93,34 @@ function downloadCsv(filename: string, headers: string[], rows: string[][]) {
 
 // ─── Security Event Action Colors ─────────────────────────────────────────────
 
-const ACTION_COLORS: Record<string, string> = {
-  AUTH_SUCCESS:           'bg-emerald-500/15 text-emerald-600 border-emerald-500/25',
-  AUTH_FAIL:              'bg-red-500/15 text-red-600 border-red-500/25',
-  ROLE_DENIED:            'bg-red-500/15 text-red-600 border-red-500/25',
-  TENANT_MISMATCH:        'bg-amber-500/15 text-amber-600 border-amber-500/25',
-  RATE_LIMITED:            'bg-orange-500/15 text-orange-600 border-orange-500/25',
-  CSRF_INVALID:            'bg-red-500/15 text-red-600 border-red-500/25',
-  HMAC_INVALID:            'bg-red-500/15 text-red-600 border-red-500/25',
-  SESSION_EXPIRED:         'bg-amber-500/15 text-amber-600 border-amber-500/25',
-  SECURITY_LOG_VIEWED:     'bg-sky-500/15 text-sky-600 border-sky-500/25',
-  RETENTION_POLICY_CHANGED:'bg-purple-500/15 text-purple-600 border-purple-500/25',
-  ALERT_RECIPIENTS_UPDATED:'bg-orange-500/15 text-orange-600 border-orange-500/25',
-  AUDIT_INTEGRITY_OK:      'bg-emerald-500/15 text-emerald-600 border-emerald-500/25',
-  AUDIT_INTEGRITY_WARNING: 'bg-amber-500/15 text-amber-600 border-amber-500/25',
-  INTEGRITY_CHECK_MANUAL:  'bg-sky-500/15 text-sky-600 border-sky-500/25',
-  PENTEST_RESULTS_UPDATED: 'bg-orange-500/15 text-orange-600 border-orange-500/25',
-  ZERO_DEMO_CHECK_PASS:        'bg-emerald-500/15 text-emerald-600 border-emerald-500/25',
-  ZERO_DEMO_CHECK_FAIL:        'bg-red-500/15 text-red-600 border-red-500/25',
-  UAT_SIGNOFF_UPDATED:         'bg-emerald-500/15 text-emerald-600 border-emerald-500/25',
-  SCHEMA_HEALTH_SAVED:         'bg-teal-500/15 text-teal-600 border-teal-500/25',
-  DEPLOYMENT_STEP_UPDATED:     'bg-sky-500/15 text-sky-600 border-sky-500/25',
-  DEPLOYMENT_GO_LIVE_APPROVED: 'bg-emerald-600/20 text-emerald-700 border-emerald-600/30',
-  DEPLOYMENT_SEQ_RESET:        'bg-orange-500/15 text-orange-600 border-orange-500/25',
-};
-
-const DEFAULT_ACTION_CLS = 'bg-gray-500/15 text-gray-600 border-gray-500/25';
+function actionColor(action: string, isDark: boolean): string {
+  const d = isDark;
+  const map: Record<string, string> = {
+    AUTH_SUCCESS:            d ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    AUTH_FAIL:               d ? 'bg-red-500/15 text-red-400 border-red-500/25'             : 'bg-red-50 text-red-700 border-red-200',
+    ROLE_DENIED:             d ? 'bg-red-500/15 text-red-400 border-red-500/25'             : 'bg-red-50 text-red-700 border-red-200',
+    TENANT_MISMATCH:         d ? 'bg-amber-500/15 text-amber-400 border-amber-500/25'       : 'bg-amber-50 text-amber-700 border-amber-200',
+    RATE_LIMITED:             d ? 'bg-orange-500/15 text-orange-400 border-orange-500/25'    : 'bg-orange-50 text-orange-700 border-orange-200',
+    CSRF_INVALID:            d ? 'bg-red-500/15 text-red-400 border-red-500/25'             : 'bg-red-50 text-red-700 border-red-200',
+    HMAC_INVALID:            d ? 'bg-red-500/15 text-red-400 border-red-500/25'             : 'bg-red-50 text-red-700 border-red-200',
+    SESSION_EXPIRED:         d ? 'bg-amber-500/15 text-amber-400 border-amber-500/25'       : 'bg-amber-50 text-amber-700 border-amber-200',
+    SECURITY_LOG_VIEWED:     d ? 'bg-sky-500/15 text-sky-400 border-sky-500/25'             : 'bg-sky-50 text-sky-700 border-sky-200',
+    RETENTION_POLICY_CHANGED:d ? 'bg-purple-500/15 text-purple-400 border-purple-500/25'    : 'bg-purple-50 text-purple-700 border-purple-200',
+    ALERT_RECIPIENTS_UPDATED:d ? 'bg-orange-500/15 text-orange-400 border-orange-500/25'    : 'bg-orange-50 text-orange-700 border-orange-200',
+    AUDIT_INTEGRITY_OK:      d ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    AUDIT_INTEGRITY_WARNING: d ? 'bg-amber-500/15 text-amber-400 border-amber-500/25'       : 'bg-amber-50 text-amber-700 border-amber-200',
+    INTEGRITY_CHECK_MANUAL:  d ? 'bg-sky-500/15 text-sky-400 border-sky-500/25'             : 'bg-sky-50 text-sky-700 border-sky-200',
+    PENTEST_RESULTS_UPDATED: d ? 'bg-orange-500/15 text-orange-400 border-orange-500/25'    : 'bg-orange-50 text-orange-700 border-orange-200',
+    ZERO_DEMO_CHECK_PASS:    d ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    ZERO_DEMO_CHECK_FAIL:    d ? 'bg-red-500/15 text-red-400 border-red-500/25'             : 'bg-red-50 text-red-700 border-red-200',
+    UAT_SIGNOFF_UPDATED:     d ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    SCHEMA_HEALTH_SAVED:     d ? 'bg-teal-500/15 text-teal-400 border-teal-500/25'          : 'bg-teal-50 text-teal-700 border-teal-200',
+    DEPLOYMENT_STEP_UPDATED: d ? 'bg-sky-500/15 text-sky-400 border-sky-500/25'             : 'bg-sky-50 text-sky-700 border-sky-200',
+    DEPLOYMENT_GO_LIVE_APPROVED: d ? 'bg-emerald-600/20 text-emerald-400 border-emerald-600/30' : 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    DEPLOYMENT_SEQ_RESET:    d ? 'bg-orange-500/15 text-orange-400 border-orange-500/25'    : 'bg-orange-50 text-orange-700 border-orange-200',
+  };
+  return map[action] ?? (d ? 'bg-gray-500/15 text-gray-400 border-gray-500/25' : 'bg-gray-100 text-gray-600 border-gray-200');
+}
 
 type TabKey = 'readiness' | 'compliance' | 'app' | 'security' | 'retention' | 'pentest' | 'qa';
 
@@ -127,6 +130,9 @@ type TabKey = 'readiness' | 'compliance' | 'app' | 'security' | 'retention' | 'p
 
 export function AuditPage() {
   const t = useDashboardTheme();
+
+  useSEO({ title: 'Security Audit', description: 'Platform security audit — readiness checklist, pen-test results, and QA verification.', noindex: true });
+
   const [activeTab, setActiveTab] = useState<TabKey>('readiness');
 
   // ── Pen test + QA fail counts from localStorage (lightweight, no API call) ──
@@ -234,26 +240,37 @@ export function AuditPage() {
 
 type GateStatus = 'passed' | 'blocked' | 'pending';
 
-const GATE_CONFIG: Record<GateStatus, { cls: string; badge: string; icon: React.ReactNode; label: string }> = {
-  passed:  { cls: 'bg-emerald-500/10 border-emerald-500/25', badge: 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30',  icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />, label: 'PASSED' },
-  blocked: { cls: 'bg-red-500/10 border-red-500/25',         badge: 'bg-red-500/15 text-red-700 border-red-500/30',             icon: <XCircle className="w-5 h-5 text-red-500" />,          label: 'BLOCKED' },
-  pending: { cls: 'bg-amber-500/8 border-amber-500/20',      badge: 'bg-amber-500/15 text-amber-700 border-amber-500/30',       icon: <HelpCircle className="w-5 h-5 text-amber-500" />,     label: 'PENDING' },
-};
+function gateConfig(isDark: boolean): Record<GateStatus, { cls: string; badge: string; icon: React.ReactNode; label: string }> {
+  const d = isDark;
+  return {
+    passed:  { cls: 'bg-emerald-500/10 border-emerald-500/25', badge: d ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-200',  icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />, label: 'PASSED' },
+    blocked: { cls: 'bg-red-500/10 border-red-500/25',         badge: d ? 'bg-red-500/15 text-red-400 border-red-500/30'             : 'bg-red-50 text-red-700 border-red-200',             icon: <XCircle className="w-5 h-5 text-red-500" />,          label: 'BLOCKED' },
+    pending: { cls: 'bg-amber-500/8 border-amber-500/20',      badge: d ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'       : 'bg-amber-50 text-amber-700 border-amber-200',       icon: <HelpCircle className="w-5 h-5 text-amber-500" />,     label: 'PENDING' },
+  };
+}
 
-const ROLE_COLORS: Record<string, string> = {
-  'SUPER_ADMIN':  'bg-purple-500/15 text-purple-700 border-purple-500/25',
-  'TENANT_ADMIN': 'bg-sky-500/15 text-sky-700 border-sky-500/25',
-  'EMPLOYEE':     'bg-teal-500/15 text-teal-700 border-teal-500/25',
-  'PUBLIC':       'bg-gray-500/15 text-gray-600 border-gray-300',
-  'ALL':          'bg-orange-500/15 text-orange-700 border-orange-500/25',
-};
+function roleColor(role: string, isDark: boolean): string {
+  const d = isDark;
+  const map: Record<string, string> = {
+    'SUPER_ADMIN':  d ? 'bg-purple-500/15 text-purple-400 border-purple-500/25' : 'bg-purple-50 text-purple-700 border-purple-200',
+    'TENANT_ADMIN': d ? 'bg-sky-500/15 text-sky-400 border-sky-500/25'          : 'bg-sky-50 text-sky-700 border-sky-200',
+    'EMPLOYEE':     d ? 'bg-teal-500/15 text-teal-400 border-teal-500/25'       : 'bg-teal-50 text-teal-700 border-teal-200',
+    'PUBLIC':       d ? 'bg-gray-500/15 text-gray-400 border-gray-500/25'       : 'bg-gray-100 text-gray-600 border-gray-200',
+    'ALL':          d ? 'bg-orange-500/15 text-orange-400 border-orange-500/25'  : 'bg-orange-50 text-orange-700 border-orange-200',
+  };
+  return map[role] ?? map.ALL;
+}
 
-const STATUS_COLORS: Record<UatScenarioEntry['status'], string> = {
-  pending: 'bg-gray-500/15 text-gray-500 border-gray-300',
-  pass:    'bg-emerald-500/15 text-emerald-700 border-emerald-500/30',
-  fail:    'bg-red-500/15 text-red-700 border-red-500/30',
-  blocked: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
-};
+function statusColor(status: string, isDark: boolean): string {
+  const d = isDark;
+  const map: Record<string, string> = {
+    pending: d ? 'bg-gray-500/15 text-gray-400 border-gray-500/25'        : 'bg-gray-100 text-gray-600 border-gray-200',
+    pass:    d ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    fail:    d ? 'bg-red-500/15 text-red-400 border-red-500/30'             : 'bg-red-50 text-red-700 border-red-200',
+    blocked: d ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'       : 'bg-amber-50 text-amber-700 border-amber-200',
+  };
+  return map[status] ?? map.pending;
+}
 
 function DeploymentReadinessTab({ onNavigateToTab }: { onNavigateToTab: (tab: TabKey) => void }) {
   const t = useDashboardTheme();
@@ -460,7 +477,7 @@ function DeploymentReadinessTab({ onNavigateToTab }: { onNavigateToTab: (tab: Ta
       {/* ── 6 Gate cards ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
         {gates.map(gate => {
-          const gc = GATE_CONFIG[gate.status];
+          const gc = gateConfig(t.isDark)[gate.status];
           return (
             <div key={gate.id} className={`rounded-2xl border p-4 ${gc.cls}`}>
               <div className="flex items-start justify-between gap-2 mb-3">
@@ -1282,8 +1299,8 @@ function UatSignoffMatrix({ payload, onSave }: UatSignoffMatrixProps) {
         {payload.definitions.map(def => {
           const entry = scenarios[def.id] ?? { status: 'pending', tester: '', note: '', signedAt: null };
           const isExpanded = expandedId === def.id;
-          const rc = ROLE_COLORS[def.role] ?? ROLE_COLORS.ALL;
-          const sc = STATUS_COLORS[entry.status];
+          const rc = roleColor(def.role, t.isDark);
+          const sc = statusColor(entry.status, t.isDark);
 
           return (
             <div key={def.id} className={`rounded-xl border transition-all ${t.s1} ${t.border}`}>
@@ -1320,7 +1337,7 @@ function UatSignoffMatrix({ payload, onSave }: UatSignoffMatrixProps) {
                         key={s}
                         onClick={() => update(def.id, { status: s, signedAt: s !== 'pending' ? new Date().toISOString() : null })}
                         className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${
-                          entry.status === s ? STATUS_COLORS[s] + ' ring-2 ring-offset-1 ring-current' : t.isDark ? 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10' : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
+                          entry.status === s ? statusColor(s, t.isDark) + ' ring-2 ring-offset-1 ring-current' : t.isDark ? 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10' : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
                         }`}
                       >
                         {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -2633,7 +2650,7 @@ function SecurityAuditTab() {
     {
       key: 'action', header: 'Action',
       render: e => (
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${ACTION_COLORS[e.action] ?? DEFAULT_ACTION_CLS}`}>
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${actionColor(e.action, t.isDark)}`}>
           {e.action}
         </span>
       ),

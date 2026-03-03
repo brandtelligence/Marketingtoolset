@@ -7,6 +7,7 @@ import { StatusBadge, RoleBadge } from '../../components/saas/StatusBadge';
 import { DrawerForm, Field, Input, Select, ConfirmDialog } from '../../components/saas/DrawerForm';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import {
@@ -19,6 +20,9 @@ const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe6
 export function TenantUsersPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Team Users', description: 'Manage team members — invite, edit roles, and deactivate user accounts.', noindex: true });
+
   const [users,       setUsers]       = useState<TenantUser[]>([]);
   const [inviteOpen,  setInviteOpen]  = useState(false);
   const [editOpen,    setEditOpen]    = useState(false);

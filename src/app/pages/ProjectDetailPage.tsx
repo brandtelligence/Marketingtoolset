@@ -24,31 +24,15 @@ import {
 import { useFoldableLayout } from '../hooks/useFoldableLayout';
 import { FoldableContainer } from '../components/FoldableContainer';
 import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
-
-/**
- * ProjectDetailPage
- * ─────────────────────────────────────────────────────────
- * Detailed view for a single project with hero image,
- * info panels, team sidebar, and content board.
- *
- * Responsive strategy (mobile-first):
- * - Base (320px+): single column, compact padding
- * - sm (640px+): wider spacing
- * - md (768px+): hero image taller, side-by-side info panels
- * - lg (1024px+): 3-col grid (2 + sidebar)
- * - Touch: all action buttons ≥ 44px
- *
- * Foldable / Dual-Screen:
- * - Uses FoldableContainer for explicit dual-pane: info panels on left, sidebar+content board on right
- * - Single-screen fallback uses standard grid with fold-auto-grid on squarish viewports
- * - Cancelled project banner spans across segments safely
- * - Content board grid uses auto-fit for flexible aspect ratios
- */
+import { useSEO } from '../hooks/useSEO';
 
 export function ProjectDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  useSEO({ title: slug ? `Project — ${slug}` : 'Project Details', description: 'View project details, content board, and collaboration settings.', noindex: true });
+
   const { projects, updateProject, requestEditAccess } = useProjects();
   const { isDualScreen, isSquarish, spanningMode } = useFoldableLayout();
   const { isDark } = useDashboardTheme();

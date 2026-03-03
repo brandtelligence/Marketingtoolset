@@ -8,6 +8,8 @@ import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { Field, Input } from '../../components/saas/DrawerForm';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useSEO } from '../../hooks/useSEO';
 import {
   DEFAULT_EMAIL_TEMPLATES, TEMPLATE_TAGS,
   EmailTemplate, EmailTemplateTag,
@@ -32,6 +34,8 @@ const TAG_ICONS: Record<string, string> = {
 export function EmailTemplatesPage() {
   const t = useDashboardTheme();
 
+  useSEO({ title: 'Email Templates', description: 'Manage system email templates for onboarding, billing, security, and notifications.', noindex: true });
+
   // Merge default templates with any KV-saved customisations
   const [templates, setTemplates]       = useState<(EmailTemplate & { savedAt?: string; customised?: boolean })[]>(
     DEFAULT_EMAIL_TEMPLATES.map(tpl => ({ ...tpl }))
@@ -42,6 +46,7 @@ export function EmailTemplatesPage() {
   // Editor drawer
   const [editing, setEditing]           = useState<EmailTemplate | null>(null);
   const [drawerOpen, setDrawerOpen]     = useState(false);
+  const drawerTrapRef = useFocusTrap<HTMLDivElement>(drawerOpen && !!editing);
   const [editorTab, setEditorTab]       = useState<'edit' | 'preview'>('edit');
   const [editSubject, setEditSubject]   = useState('');
   const [editHtml, setEditHtml]         = useState('');
@@ -53,6 +58,7 @@ export function EmailTemplatesPage() {
 
   // Test send modal
   const [testOpen, setTestOpen]         = useState(false);
+  const testTrapRef = useFocusTrap<HTMLDivElement>(testOpen);
   const [testEmail, setTestEmail]       = useState('it@brandtelligence.com.my');
   const [testing, setTesting]           = useState(false);
 
@@ -402,6 +408,10 @@ export function EmailTemplatesPage() {
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', stiffness: 320, damping: 32 }}
               className={`fixed right-0 top-0 h-full w-full max-w-4xl ${t.isDark ? 'bg-[#13131f]' : 'bg-white'} shadow-2xl z-50 flex flex-col`}
+              ref={drawerTrapRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Edit email template: ${editing.name}`}
             >
               {/* Drawer Header */}
               <div className={`flex items-start justify-between gap-4 px-6 py-4 border-b ${t.border} shrink-0`}>
@@ -417,17 +427,19 @@ export function EmailTemplatesPage() {
                     </div>
                   </div>
                 </div>
-                <button onClick={() => setDrawerOpen(false)} className={`${t.hover} ${t.textFaint} p-2 rounded-xl transition-colors mt-0.5`}>
+                <button onClick={() => setDrawerOpen(false)} className={`${t.hover} ${t.textFaint} p-2 rounded-xl transition-colors mt-0.5`} aria-label="Close template editor">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Tabs */}
-              <div className={`flex border-b ${t.border} shrink-0 px-6`}>
+              <div className={`flex border-b ${t.border} shrink-0 px-6`} role="tablist" aria-label="Editor view mode">
                 {(['edit', 'preview'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => setEditorTab(tab)}
+                    role="tab"
+                    aria-selected={editorTab === tab}
                     className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${
                       editorTab === tab
                         ? 'border-purple-500 text-purple-500'
@@ -666,7 +678,13 @@ export function EmailTemplatesPage() {
               transition={{ type: 'spring', stiffness: 350, damping: 28 }}
               className={`fixed inset-0 flex items-center justify-center z-[70] pointer-events-none`}
             >
-              <div className={`pointer-events-auto w-full max-w-md mx-4 ${t.isDark ? 'bg-[#16162a]' : 'bg-white'} rounded-2xl shadow-2xl border ${t.border} overflow-hidden`}>
+              <div
+                ref={testTrapRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Send test email preview"
+                className={`pointer-events-auto w-full max-w-md mx-4 ${t.isDark ? 'bg-[#16162a]' : 'bg-white'} rounded-2xl shadow-2xl border ${t.border} overflow-hidden`}
+              >
                 <div className={`px-6 py-4 border-b ${t.border} flex items-center justify-between`}>
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-purple-500/20 flex items-center justify-center">
@@ -677,7 +695,7 @@ export function EmailTemplatesPage() {
                       <p className={`${t.textFaint} text-xs`}>{editing?.name}</p>
                     </div>
                   </div>
-                  <button onClick={() => setTestOpen(false)} className={`${t.hover} ${t.textFaint} p-1.5 rounded-lg`}>
+                  <button onClick={() => setTestOpen(false)} className={`${t.hover} ${t.textFaint} p-1.5 rounded-lg`} aria-label="Close test send dialog">
                     <X className="w-4 h-4" />
                   </button>
                 </div>

@@ -14,6 +14,7 @@ import { useFoldableLayout } from '../hooks/useFoldableLayout';
 import { FoldableContainer } from '../components/FoldableContainer';
 import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
 import { employeeTheme } from '../utils/employeeTheme';
+import { useSEO } from '../hooks/useSEO';
 
 /**
  * VCardProject
@@ -40,6 +41,9 @@ type View = 'calendar' | 'mockups' | 'content-board';
 export function VCardProject() {
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  useSEO({ title: 'VCard Project', description: 'Manage your virtual card content calendar, mockups, and content board.', noindex: true });
+
   const [activeView, setActiveView] = useState<View>('calendar');
   const [showContentWizard, setShowContentWizard] = useState(false);
   const { isDualScreen, isSquarish } = useFoldableLayout();

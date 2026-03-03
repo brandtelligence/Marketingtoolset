@@ -6,6 +6,7 @@ import { DataTable, Column } from '../../components/saas/DataTable';
 import { StatusBadge, RoleBadge } from '../../components/saas/StatusBadge';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { fetchAuditLogs, type AuditLog } from '../../utils/apiClient';
 
 // ── CSV Export helper ───────────────────────────────────────────────────────
@@ -27,6 +28,9 @@ function downloadCsv(filename: string, rows: Record<string, any>[], columns: { k
 export function TenantAuditPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Audit Logs', description: 'View detailed audit trail of all tenant actions, changes, and security events.', noindex: true });
+
   const [logs, setLogs] = useState<AuditLog[]>([]);
 
   useEffect(() => {

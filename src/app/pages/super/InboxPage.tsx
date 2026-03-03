@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { StatusBadge } from '../../components/saas/StatusBadge';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { projectId } from '/utils/supabase/info';
 
@@ -35,6 +36,9 @@ type TabType = 'upgrade' | 'contact';
 
 export function InboxPage() {
   const t = useDashboardTheme();
+
+  useSEO({ title: 'Inbox', description: 'Manage upgrade requests and contact form submissions from website visitors.', noindex: true });
+
   const [tab, setTab] = useState<TabType>('upgrade');
   const [upgrades, setUpgrades] = useState<UpgradeRequest[]>([]);
   const [contacts, setContacts] = useState<ContactSubmission[]>([]);

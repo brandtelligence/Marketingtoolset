@@ -39,6 +39,7 @@ import { buildProfileFromSupabaseUser, useAuth } from '../components/AuthContext
 import { toast } from 'sonner';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../utils/authHeaders';
+import { useSEO } from '../hooks/useSEO';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -60,6 +61,8 @@ type Phase =
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
+
+  useSEO({ title: 'Verifying Invite', description: 'Verifying your Brandtelligence invite link.', noindex: true });
 
   const [phase,           setPhase]           = useState<Phase>('loading');
   const [flowLabel,       setFlowLabel]       = useState<'invite' | 'recovery'>('invite');

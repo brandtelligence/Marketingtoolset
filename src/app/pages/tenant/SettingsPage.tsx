@@ -5,6 +5,7 @@ import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { Field, Input } from '../../components/saas/DrawerForm';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { useSlaConfig } from '../../hooks/useSlaConfig';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
@@ -83,6 +84,9 @@ function useAiMediaUsage(tenantId: string | undefined) {
 export function TenantSettingsPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Tenant Settings', description: 'Configure notification preferences, SLA thresholds, and account security settings.', noindex: true });
+
   const { warningHours, breachHours, isLoading: slaLoading, isSaving: slaSaving, saveConfig } = useSlaConfig(user?.tenantId ?? undefined);
   const aiUsage = useAiMediaUsage(user?.tenantId ?? undefined);
 

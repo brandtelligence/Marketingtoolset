@@ -4,7 +4,7 @@ import { MOCK_MODULES } from '../../data/mockSaasData';
 import { formatRM } from '../../utils/format';
 
 /**
- * LandingModules — Full 18-module catalog with category filter tabs.
+ * LandingModules — Full 16-module catalog with category filter tabs.
  * Shows icon, name, description, category badge, and monthly price.
  */
 

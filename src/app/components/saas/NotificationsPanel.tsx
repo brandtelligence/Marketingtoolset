@@ -331,6 +331,9 @@ export function NotificationsPanel() {
         onClick={() => setOpen(o => !o)}
         className={`p-2 rounded-lg ${t.hover} ${t.textMd} transition-colors relative`}
         title="Notifications"
+        aria-label={`Notifications${unread > 0 ? `, ${unread} unread` : ''}`}
+        aria-expanded={open}
+        aria-haspopup="true"
       >
         <Bell className={`w-5 h-5 ${open ? (isSuperAdmin ? 'text-purple-500' : 'text-teal-500') : ''} transition-colors`} />
         {unread > 0 && (
@@ -350,6 +353,8 @@ export function NotificationsPanel() {
             transition={{ duration: 0.15, ease: 'easeOut' }}
             className={`absolute right-0 top-full mt-2 w-[360px] max-h-[520px] flex flex-col rounded-2xl border ${t.border} shadow-2xl z-50 overflow-hidden ${panelBg}`}
             style={{ boxShadow: t.isDark ? '0 25px 60px rgba(0,0,0,0.6)' : '0 25px 60px rgba(0,0,0,0.15)' }}
+            role="region"
+            aria-label="Notifications panel"
           >
             {/* Header */}
             <div className={`flex items-center justify-between px-4 py-3 border-b ${t.border} shrink-0`}>
@@ -365,6 +370,7 @@ export function NotificationsPanel() {
                   onClick={markAllRead}
                   className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs ${t.textMd} ${t.hover} transition-colors`}
                   title="Mark all as read"
+                  aria-label="Mark all notifications as read"
                 >
                   <CheckCheck className="w-3.5 h-3.5" />
                   Mark all read

@@ -26,6 +26,7 @@ import {
 } from 'recharts';
 import { PageHeader, Card, StatCard } from '../../components/saas/SaasLayout';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import {
   fetchUsageData, fetchTenants, fetchPlatformAIUsage,
   type UsageDataPoint, type PlatformAIUsageResult, type TenantAIUsageSummary,
@@ -47,11 +48,17 @@ function shortMonth(period: string): string {
 }
 
 /** Plan badge colours */
-function planStyle(plan: string): string {
+function planStyle(plan: string, isDark: boolean): string {
   const p = plan?.toLowerCase();
-  if (p === 'enterprise') return 'bg-purple-500/15 text-purple-400 border-purple-500/25';
-  if (p === 'growth')     return 'bg-[#0BA4AA]/15 text-[#0BA4AA] border-[#0BA4AA]/25';
-  return 'bg-gray-500/15 text-gray-400 border-gray-500/25';
+  if (p === 'enterprise') return isDark
+    ? 'bg-purple-500/15 text-purple-400 border-purple-500/25'
+    : 'bg-purple-50 text-purple-700 border-purple-200';
+  if (p === 'growth') return isDark
+    ? 'bg-[#0BA4AA]/15 text-[#0BA4AA] border-[#0BA4AA]/25'
+    : 'bg-teal-50 text-teal-700 border-teal-200';
+  return isDark
+    ? 'bg-gray-500/15 text-gray-400 border-gray-500/25'
+    : 'bg-gray-100 text-gray-600 border-gray-200';
 }
 
 /** Status dot */
@@ -64,12 +71,12 @@ function statusDot(status: string) {
 
 // ─── AI section separator ─────────────────────────────────────────────────────
 
-function AISectionHeader({ loading }: { loading: boolean }) {
+function AISectionHeader({ loading, isDark }: { loading: boolean; isDark: boolean }) {
   return (
     <div className="flex items-center gap-3 my-6">
-      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#0BA4AA]/30" />
-      <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border"
-        style={{ background: 'rgba(11,164,170,0.08)', borderColor: 'rgba(11,164,170,0.3)' }}>
+      <div className={`h-px flex-1 bg-gradient-to-r ${isDark ? 'from-transparent to-[#0BA4AA]/30' : 'from-transparent to-[#0BA4AA]/20'}`} />
+      <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border ${isDark ? '' : 'shadow-sm'}`}
+        style={{ background: isDark ? 'rgba(11,164,170,0.08)' : 'rgba(11,164,170,0.06)', borderColor: isDark ? 'rgba(11,164,170,0.3)' : 'rgba(11,164,170,0.25)' }}>
         <Sparkles className="w-3.5 h-3.5" style={{ color: '#0BA4AA' }} />
         <span className="text-[0.7rem] font-bold uppercase tracking-widest" style={{ color: '#0BA4AA' }}>
           AI Content Studio — Platform Overview
@@ -78,7 +85,7 @@ function AISectionHeader({ loading }: { loading: boolean }) {
           <span className="w-2.5 h-2.5 rounded-full border-2 border-[#0BA4AA] border-t-transparent animate-spin" />
         )}
       </div>
-      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#0BA4AA]/30" />
+      <div className={`h-px flex-1 bg-gradient-to-l ${isDark ? 'from-transparent to-[#0BA4AA]/30' : 'from-transparent to-[#0BA4AA]/20'}`} />
     </div>
   );
 }
@@ -105,8 +112,8 @@ function Sparkline({ data, color = '#0BA4AA', id }: { data: number[]; color?: st
 
 // ─── Trend arrow ──────────────────────────────────────────────────────────────
 
-function TrendBadge({ cur, prev }: { cur: number; prev: number }) {
-  if (cur === 0 && prev === 0) return <span className="text-[10px] text-gray-400">—</span>;
+function TrendBadge({ cur, prev, isDark }: { cur: number; prev: number; isDark?: boolean }) {
+  if (cur === 0 && prev === 0) return <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>—</span>;
   if (prev === 0) return (
     <span className="flex items-center gap-0.5 text-[10px] text-emerald-400">
       <TrendingUp className="w-2.5 h-2.5" />new
@@ -115,7 +122,7 @@ function TrendBadge({ cur, prev }: { cur: number; prev: number }) {
   const pct = Math.round(((cur - prev) / prev) * 100);
   const up  = pct >= 0;
   return (
-    <span className={`flex items-center gap-0.5 text-[10px] font-medium ${up ? 'text-emerald-400' : 'text-red-400'}`}>
+    <span className={`flex items-center gap-0.5 text-[10px] font-medium ${up ? (isDark ? 'text-emerald-400' : 'text-emerald-600') : (isDark ? 'text-red-400' : 'text-red-600')}`}>
       {up ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
       {up ? '+' : ''}{pct}%
     </span>
@@ -163,11 +170,11 @@ function LeaderboardRow({
           <div className="min-w-0">
             <p className={`${th.text} text-sm font-semibold truncate max-w-[140px]`}>{tenant.name}</p>
             <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-              <span className={`text-[10px] px-1.5 py-0.5 rounded border ${planStyle(tenant.plan)}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded border ${planStyle(tenant.plan, th.isDark)}`}>
                 {tenant.plan}
               </span>
               {isCustomLimit && (
-                <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border bg-[#3E3C70]/20 text-[#a78bfa] border-[#3E3C70]/40"
+                <span className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border ${th.isDark ? 'bg-[#3E3C70]/20 text-[#a78bfa] border-[#3E3C70]/40' : 'bg-purple-50 text-purple-600 border-purple-200'}`}
                   title={`Custom limit: ${effectiveLimit.toLocaleString()} tokens/mo`}>
                   <Settings2 className="w-2.5 h-2.5" />
                   {fmtK(effectiveLimit)}
@@ -213,7 +220,7 @@ function LeaderboardRow({
 
       {/* Trend vs prev month */}
       <td className="px-4 py-3 text-right">
-        <TrendBadge cur={curUsage.tokens} prev={prevUsage.tokens} />
+        <TrendBadge cur={curUsage.tokens} prev={prevUsage.tokens} isDark={th.isDark} />
       </td>
 
       {/* 6-month total */}
@@ -228,6 +235,8 @@ function LeaderboardRow({
 
 export function UsagePage() {
   const th = useDashboardTheme();
+
+  useSEO({ title: 'Platform Usage', description: 'Monitor AI token consumption, API usage, and storage across all tenants.', noindex: true });
 
   // Existing state
   const [period,       setPeriod]       = useState('Recent');
@@ -393,10 +402,10 @@ export function UsagePage() {
       {/* ══════════════════════════════════════════════════════════════════════
           AI CONTENT STUDIO — PLATFORM OVERVIEW
       ══════════════════════════════════════════════════════════════════════ */}
-      <AISectionHeader loading={aiLoading} />
+      <AISectionHeader loading={aiLoading} isDark={th.isDark} />
 
       {aiError && (
-        <div className="mb-6 px-4 py-3 rounded-xl border border-red-500/25 bg-red-500/8 text-red-400 text-sm">
+        <div className={`mb-6 px-4 py-3 rounded-xl border ${th.isDark ? 'border-red-500/25 bg-red-500/8 text-red-400' : 'border-red-200 bg-red-50 text-red-600'} text-sm`}>
           {aiError}
         </div>
       )}
@@ -526,7 +535,7 @@ export function UsagePage() {
                     {curTotal.requests}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <TrendBadge cur={curTotal.tokens} prev={prevTotal.tokens} />
+                    <TrendBadge cur={curTotal.tokens} prev={prevTotal.tokens} isDark={th.isDark} />
                   </td>
                   <td className={`${th.text} px-4 py-2.5 text-sm font-bold tabular-nums text-right`}>
                     {fmtK(Object.values(aiData?.platformTotal ?? {}).reduce((s, u) => s + u.tokens, 0))}
@@ -545,7 +554,7 @@ export function UsagePage() {
             });
             if (hotTenants.length === 0) return null;
             return (
-              <div className="mt-4 pt-4 border-t border-red-500/15 flex items-start gap-2 text-red-400">
+              <div className={`mt-4 pt-4 border-t border-red-500/15 flex items-start gap-2 ${th.isDark ? 'text-red-400' : 'text-red-600'}`}>
                 <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <p className="text-xs">
                   <span className="font-semibold">{hotTenants.map(t => t.name).join(', ')}</span>

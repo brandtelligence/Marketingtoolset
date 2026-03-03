@@ -8,6 +8,7 @@ import { DrawerForm, Field, Textarea } from '../../components/saas/DrawerForm';
 import { formatRM } from '../../utils/format';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { fetchInvoices, updateInvoice, type Invoice } from '../../utils/apiClient';
 
 // ── Invoice PDF generator (opens print-friendly window → Save as PDF) ────
@@ -37,6 +38,9 @@ ${inv.notes ? `<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>` : 
 export function TenantInvoicesPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Invoices & Payments', description: 'View invoices, upload payment proof, and track payment history.', noindex: true });
+
   const [invoices,    setInvoices]    = useState<Invoice[]>([]);
   const [selected,    setSelected]    = useState<Invoice | null>(null);
   const [drawerOpen,  setDrawerOpen]  = useState(false);

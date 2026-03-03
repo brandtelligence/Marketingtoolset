@@ -1,7 +1,8 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useId, cloneElement, isValidElement, Children } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import { useDashboardTheme } from './DashboardThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface DrawerFormProps {
   open: boolean;
@@ -17,6 +18,7 @@ const widthMap = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-2xl' };
 
 export function DrawerForm({ open, onClose, title, subtitle, children, footer, width = 'md' }: DrawerFormProps) {
   const t = useDashboardTheme();
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -44,9 +46,13 @@ export function DrawerForm({ open, onClose, title, subtitle, children, footer, w
             onClick={onClose}
           />
           <motion.div
+            ref={trapRef}
             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
             className={`fixed right-0 top-0 bottom-0 z-50 flex flex-col w-full ${widthMap[width]} ${panelBg} border-l ${t.border} shadow-2xl`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
           >
             {/* Header */}
             <div className={`flex items-start justify-between px-6 pt-6 pb-4 border-b ${t.border} shrink-0`}>
@@ -57,6 +63,7 @@ export function DrawerForm({ open, onClose, title, subtitle, children, footer, w
               <button
                 onClick={onClose}
                 className={`p-2 rounded-lg ${t.hover} ${t.textMd} transition-colors -mt-1 -mr-1`}
+                aria-label="Close drawer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -84,14 +91,36 @@ export function DrawerForm({ open, onClose, title, subtitle, children, footer, w
 interface FieldProps { label: string; required?: boolean; error?: string; children: ReactNode; hint?: string; }
 export function Field({ label, required, error, children, hint }: FieldProps) {
   const t = useDashboardTheme();
+  const baseId = useId();
+  const hintId = `${baseId}-hint`;
+  const errorId = `${baseId}-error`;
+
+  // Determine which IDs describe the input
+  const describedByParts: string[] = [];
+  if (error) describedByParts.push(errorId);
+  else if (hint) describedByParts.push(hintId);
+  const describedBy = describedByParts.length > 0 ? describedByParts.join(' ') : undefined;
+
+  // Clone the child input to inject aria-describedby and aria-invalid
+  const enhancedChildren = Children.map(children, child => {
+    if (isValidElement(child)) {
+      const extraProps: Record<string, unknown> = {};
+      if (describedBy) extraProps['aria-describedby'] = describedBy;
+      if (error) extraProps['aria-invalid'] = true;
+      return cloneElement(child as React.ReactElement<any>, extraProps);
+    }
+    return child;
+  });
+
   return (
     <div className="flex flex-col gap-1.5">
       <label className={`${t.textSm} text-sm font-medium`}>
-        {label}{required && <span className="text-red-400 ml-1">*</span>}
+        {label}{required && <span className="text-red-400 ml-1" aria-hidden="true">*</span>}
+        {required && <span className="sr-only"> (required)</span>}
       </label>
-      {children}
-      {hint && !error && <p className={`${t.textFaint} text-xs`}>{hint}</p>}
-      {error && <p className="text-red-400 text-xs">{error}</p>}
+      {enhancedChildren}
+      {hint && !error && <p id={hintId} className={`${t.textFaint} text-xs`}>{hint}</p>}
+      {error && <p id={errorId} className="text-red-400 text-xs" role="alert">{error}</p>}
     </div>
   );
 }
@@ -127,15 +156,30 @@ interface ConfirmDialogProps {
 }
 export function ConfirmDialog({ open, onClose, onConfirm, title, description, confirmLabel = 'Confirm', confirmVariant = 'danger', loading, children }: ConfirmDialogProps) {
   const t = useDashboardTheme();
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const panelBg = t.isDark ? 'bg-[rgba(15,10,40,0.98)]' : 'bg-white';
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
         <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-          <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}
+          <motion.div
+            ref={trapRef}
+            initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}
             className={`fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm ${panelBg} border ${t.border} rounded-2xl shadow-2xl p-6`}
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={title}
           >
             <h3 className={`${t.text} font-semibold text-base mb-2`}>{title}</h3>
             {description && <p className={`${t.textMd} text-sm mb-4`}>{description}</p>}
@@ -152,7 +196,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, description, co
                     : 'bg-purple-500/80 hover:bg-purple-500 text-white'
                 }`}
               >
-                {loading ? 'Processing…' : confirmLabel}
+                {loading ? 'Processing...' : confirmLabel}
               </button>
             </div>
           </motion.div>

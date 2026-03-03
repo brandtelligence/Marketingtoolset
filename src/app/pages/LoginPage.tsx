@@ -33,6 +33,7 @@ import { useAuth, buildProfileFromSupabaseUser, type UserProfile } from '../comp
 import { BackgroundLayout } from '../components/BackgroundLayout';
 import { MFAChallengeModal } from '../components/saas/MFAChallengeModal';
 import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
+import { useSEO } from '../hooks/useSEO';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { getAuthHeaders } from '../utils/authHeaders';
@@ -76,6 +77,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const { login, user, sessionLoading } = useAuth();
   const { isDark } = useDashboardTheme();
+
+  useSEO({ title: 'Sign In', description: 'Sign in to your Brandtelligence dashboard.', noindex: true });
 
   // ── View state ─────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('login');
@@ -576,17 +579,17 @@ export function LoginPage() {
                   {authTab === 'password' && (
                     <form onSubmit={handleLogin} className="space-y-5">
                       <div>
-                        <label className={`block ${labelText} mb-2 text-sm font-medium`}>Email address</label>
+                        <label className={`block ${labelText} mb-2 text-sm font-medium`} htmlFor="login-email">Email address</label>
                         <div className="relative">
                           <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 ${iconColor}`} />
-                          <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required autoComplete="email" />
+                          <input id="login-email" type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className={inputWithIconCls} placeholder="you@brandtelligence.com" required autoComplete="email" aria-describedby={loginError ? (linkExpired ? 'login-error-expired' : 'login-error') : undefined} aria-invalid={!!loginError || undefined} />
                         </div>
                       </div>
                       <div>
-                        <label className={labelText + ' mb-2 text-sm font-medium'}>Password</label>
+                        <label className={labelText + ' mb-2 text-sm font-medium'} htmlFor="login-password">Password</label>
                         <div className="relative">
                           <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 ${iconColor}`} />
-                          <input type={showPassword ? 'text' : 'password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputWithIconToggleCls} placeholder="••••••••" required autoComplete="current-password" />
+                          <input id="login-password" type={showPassword ? 'text' : 'password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className={inputWithIconToggleCls} placeholder="••••••••" required autoComplete="current-password" aria-describedby={loginError ? (linkExpired ? 'login-error-expired' : 'login-error') : undefined} aria-invalid={!!loginError || undefined} />
                           <button type="button" onClick={() => setShowPassword(!showPassword)} className={`absolute right-3 top-1/2 -translate-y-1/2 ${iconColor} ${isDark ? 'hover:text-white/70' : 'hover:text-gray-600'} transition-colors p-1`}>
                             {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                           </button>
@@ -594,18 +597,18 @@ export function LoginPage() {
                       </div>
 
                       {loginError && !linkExpired && (
-                        <div className="flex items-start gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
+                        <div className="flex items-start gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm" id="login-error" role="alert">
                           <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" /><span>{loginError}</span>
                         </div>
                       )}
                       {loginError && linkExpired && (
-                        <div className="bg-amber-500/15 border border-amber-400/40 rounded-xl px-4 py-3 text-sm space-y-1">
+                        <div className="bg-amber-500/15 border border-amber-400/40 rounded-xl px-4 py-3 text-sm space-y-1" id="login-error-expired" role="alert">
                           <div className="flex items-center gap-2 text-amber-300 font-medium"><Clock className="w-4 h-4 shrink-0" /> Invite link expired</div>
                           <p className="text-amber-200/80 leading-snug pl-6">{loginError}</p>
                         </div>
                       )}
                       {loginCaptchaError && (
-                        <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm">
+                        <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/40 rounded-xl px-4 py-3 text-red-300 text-sm" id="login-captcha-error" role="alert">
                           <ShieldCheck className="w-4 h-4 shrink-0" />Security verification failed.
                         </div>
                       )}

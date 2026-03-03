@@ -16,9 +16,10 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router';
 import {
   Puzzle, Lock, Zap, ChevronDown, ChevronUp, Send,
-  CheckCircle, Clock, XCircle, Loader2,
+  CheckCircle, Clock, XCircle, Loader2, ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '../../components/AuthContext';
 import { BackgroundLayout } from '../../components/BackgroundLayout';
@@ -31,7 +32,9 @@ import {
 } from '../../utils/apiClient';
 import { formatRM } from '../../utils/format';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { employeeTheme } from '../../utils/employeeTheme';
+import { useSEO } from '../../hooks/useSEO';
 
 // ── Tiny RequestDrawer (inline, not using DrawerForm to keep this file self-contained)
 function RequestDrawer({
@@ -45,8 +48,16 @@ function RequestDrawer({
   const { user } = useAuth();
   const { isDark } = useDashboardTheme();
   const et = employeeTheme(isDark);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   const [useCase, setUseCase] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   const handleSubmit = async () => {
     if (!useCase.trim()) { toast.error('Please describe your use case'); return; }
@@ -89,6 +100,10 @@ function RequestDrawer({
         exit={{ opacity: 0, y: 40, scale: 0.96 }}
         transition={{ type: 'spring', stiffness: 300, damping: 28 }}
         className={`w-full max-w-md rounded-2xl p-6 shadow-2xl ${isDark ? 'bg-[#1a1a3e] border border-white/20' : 'bg-white border border-gray-200'}`}
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Request ${m.name}`}
       >
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center text-xl shrink-0">
@@ -159,8 +174,17 @@ function ModuleCard({
 }) {
   const { isDark } = useDashboardTheme();
   const et = employeeTheme(isDark);
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const moduleFeatures = features.filter(f => f.moduleId === m.id);
+
+  // Modules that have a dedicated channel dashboard
+  const HAS_DASHBOARD = new Set([
+    'seo_toolkit', 'sem', 'email_marketing', 'content_marketing',
+    'display_advertising', 'affiliate_marketing', 'video_marketing',
+    'mobile_marketing', 'programmatic_ads', 'influencer',
+  ]);
+  const hasDashboard = HAS_DASHBOARD.has(m.key);
 
   const RequestStatus = () => {
     if (!request) return null;
@@ -183,11 +207,15 @@ function ModuleCard({
   };
 
   return (
-    <div className={`rounded-2xl border transition-all ${
-      active
-        ? 'bg-teal-500/10 border-teal-500/25'
-        : isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200 shadow-sm'
-    }`}>
+    <div
+      className={`rounded-2xl border transition-all ${
+        active
+          ? 'bg-teal-500/10 border-teal-500/25'
+          : isDark ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200 shadow-sm'
+      }`}
+      role="article"
+      aria-label={`${m.name} module — ${active ? 'Active' : 'Not subscribed'}, RM ${formatRM(m.basePrice)}/mo`}
+    >
       <div className="p-4">
         <div className="flex items-start gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${
@@ -210,11 +238,22 @@ function ModuleCard({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {hasDashboard && (
+              <button
+                onClick={() => navigate(`/app/modules/${m.key}`)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-all ${isDark ? 'text-white' : 'text-teal-700'}`}
+                style={{ background: isDark ? 'rgba(11,164,170,0.3)' : 'rgba(11,164,170,0.12)', border: `1px solid ${isDark ? 'rgba(11,164,170,0.4)' : 'rgba(11,164,170,0.3)'}` }}
+                aria-label={`Open ${m.name} dashboard`}
+              >
+                <ExternalLink className="w-3 h-3" aria-hidden="true" /> Dashboard
+              </button>
+            )}
             {!active && !request && (
               <button
                 onClick={onRequest}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isDark ? 'text-white' : 'text-teal-700'}`}
                 style={{ background: isDark ? 'rgba(11,164,170,0.3)' : 'rgba(11,164,170,0.12)', border: `1px solid ${isDark ? 'rgba(11,164,170,0.4)' : 'rgba(11,164,170,0.3)'}` }}
+                aria-label={`Request access to ${m.name}`}
               >
                 Request
               </button>
@@ -224,6 +263,8 @@ function ModuleCard({
                 onClick={() => setExpanded(v => !v)}
                 className={`transition-colors p-1 ${isDark ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600'}`}
                 title={expanded ? 'Hide features' : 'Show features'}
+                aria-expanded={expanded}
+                aria-label={`${expanded ? 'Hide' : 'Show'} ${m.name} features`}
               >
                 {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
@@ -264,6 +305,12 @@ export function EmployeeModulesPage() {
   const { user } = useAuth();
   const { isDark } = useDashboardTheme();
   const et = employeeTheme(isDark);
+
+  useSEO({
+    title:       'My Modules',
+    description: 'View active marketing modules, request new ones, and access channel dashboards.',
+    noindex:     true,
+  });
 
   const [modules,   setModules]   = useState<Module[]>([]);
   const [features,  setFeatures]  = useState<any[]>([]);

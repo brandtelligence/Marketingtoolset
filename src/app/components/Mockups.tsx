@@ -1,22 +1,19 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Instagram, Facebook, Linkedin, Twitter, Download } from 'lucide-react';
-import { SiTiktok, SiTelegram } from 'react-icons/si';
-import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useContent, type ContentCard } from '../contexts/ContentContext';
 import { useDashboardTheme } from './saas/DashboardThemeContext';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useFoldableLayout } from '../hooks/useFoldableLayout';
 
 // ─── Platform Visuals ─────────────────────────────────────────────────────────
 
-type PlatformKey = 'instagram' | 'facebook' | 'linkedin' | 'twitter' | 'tiktok' | 'telegram';
+type PlatformKey = 'instagram' | 'facebook' | 'linkedin' | 'twitter';
 
 const platformColors: Record<PlatformKey, string> = {
   instagram: 'bg-gradient-to-br from-purple-500 via-pink-500 to-orange-500',
   facebook: 'bg-blue-600',
   linkedin: 'bg-blue-700',
   twitter: 'bg-sky-500',
-  tiktok: 'bg-black',
-  telegram: 'bg-sky-500',
 };
 
 const platformIcons: Record<PlatformKey, React.ComponentType<{ className?: string }>> = {
@@ -24,13 +21,11 @@ const platformIcons: Record<PlatformKey, React.ComponentType<{ className?: strin
   facebook: Facebook,
   linkedin: Linkedin,
   twitter: Twitter,
-  tiktok: SiTiktok,
-  telegram: SiTelegram,
 };
 
 const platformDisplayNames: Record<string, string> = {
   instagram: 'Instagram', facebook: 'Facebook', linkedin: 'LinkedIn',
-  twitter: 'X (Twitter)', tiktok: 'TikTok', telegram: 'Telegram',
+  twitter: 'X (Twitter)',
 };
 
 // Stock images used for mockup visuals when no card media is available
@@ -75,6 +70,28 @@ export function Mockups() {
 
   const selectedPost = selectedMockup ? weekOnePosts.find(c => c.id === selectedMockup) : null;
 
+  // ── Focus trap + Escape for mockup modal ──
+  const modalTrapRef = useFocusTrap<HTMLDivElement>(!!selectedPost);
+  useEffect(() => {
+    if (!selectedPost) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedMockup(null); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [selectedPost]);
+
+  // ── Modal right-panel theme tokens ──
+  const mTitleCls    = isDark ? 'text-white'                 : 'text-gray-900';
+  const mSubCls      = isDark ? 'text-white/60'              : 'text-gray-500';
+  const mCloseCls    = isDark ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100';
+  const mLabelCls    = isDark ? 'text-white/80'              : 'text-gray-700';
+  const mCaptionBg   = isDark ? 'text-white/80 bg-white/5 border-white/10' : 'text-gray-800 bg-gray-50 border-gray-200';
+  const mScheduleBg  = isDark ? 'bg-teal-500/10 border-teal-400/20'        : 'bg-teal-50 border-teal-200';
+  const mSchedHead   = isDark ? 'text-teal-300'              : 'text-teal-700';
+  const mSchedBody   = isDark ? 'text-teal-200/80'           : 'text-teal-600';
+  const mHashCls     = isDark ? 'text-teal-300 bg-teal-500/15 border-teal-400/20 hover:bg-teal-500/25' : 'text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100';
+  const mVisualBg    = isDark ? 'text-white/70 bg-purple-500/10 border-purple-400/15' : 'text-purple-800 bg-purple-50 border-purple-200';
+  const mCtaBg       = isDark ? 'text-emerald-300 bg-emerald-500/10 border-emerald-400/15' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+
   // Resolve an image for a card (prefer card media, fall back to stock)
   const getCardImage = (card: ContentCard, index: number) =>
     card.mediaUrl || stockImages[index % stockImages.length];
@@ -113,9 +130,9 @@ export function Mockups() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 shadow-xl">
-        <h2 className="text-2xl font-semibold text-white mb-2">Week 1 Social Media Mockups</h2>
-        <p className="text-white/60">
+      <div className={`backdrop-blur-md border rounded-2xl p-6 shadow-xl ${isDark ? 'bg-white/10 border-white/20' : 'bg-gray-50 border-gray-200'}`}>
+        <h2 className={`text-2xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>Week 1 Social Media Mockups</h2>
+        <p className={isDark ? 'text-white/60' : 'text-gray-500'}>
           {weekOnePosts.length > 0
             ? `${new Date(weekOnePosts[0].scheduledDate!).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} – ${new Date(weekOnePosts[weekOnePosts.length - 1].scheduledDate!).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · Click any post to see details`
             : 'No scheduled posts yet'}
@@ -199,7 +216,7 @@ export function Mockups() {
         })}
       </div>
 
-      {/* ── Full Mockup Modal ─────────────────────────────────────────────── */}
+      {/* ── Full Mockup Modal ──────────────────────────���──────────────────── */}
       {selectedPost && (() => {
         const pKey = selectedPost.platform as PlatformKey;
         const Icon = platformIcons[pKey] || Instagram;
@@ -210,11 +227,15 @@ export function Mockups() {
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
             onClick={() => setSelectedMockup(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Content mockup preview"
           >
             <div
               className={`backdrop-blur-xl border rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl fold-modal-safe ${isDark ? 'border-white/20' : 'border-gray-200'}`}
               style={{ background: isDark ? 'rgba(26,16,53,0.95)' : 'rgba(255,255,255,0.98)' }}
               onClick={e => e.stopPropagation()}
+              ref={modalTrapRef}
             >
               <div className="grid md:grid-cols-2">
                 {/* Left: Phone mockup */}
@@ -277,15 +298,16 @@ export function Mockups() {
                         <Icon className="w-6 h-6" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className={`text-xl font-bold ${mTitleCls}`}>
                           {platformDisplayNames[selectedPost.platform] || selectedPost.platform}
                         </h3>
-                        <p className="text-sm text-white/60">{selectedPost.postType || selectedPost.title}</p>
+                        <p className={`text-sm ${mSubCls}`}>{selectedPost.postType || selectedPost.title}</p>
                       </div>
                     </div>
                     <button
                       onClick={() => setSelectedMockup(null)}
-                      className="text-white/40 hover:text-white text-3xl leading-none transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10"
+                      aria-label="Close mockup preview"
+                      className={`${mCloseCls} text-3xl leading-none transition-colors w-8 h-8 flex items-center justify-center rounded-lg min-h-[2.75rem] min-w-[2.75rem]`}
                     >
                       ×
                     </button>
@@ -296,12 +318,12 @@ export function Mockups() {
 
                   <div className="space-y-5">
                     {/* Schedule */}
-                    <div className="bg-teal-500/10 border border-teal-400/20 rounded-xl p-4">
-                      <div className="flex items-center gap-2 text-teal-300 mb-1">
-                        <span className="text-lg">📅</span>
+                    <div className={`${mScheduleBg} border rounded-xl p-4`}>
+                      <div className={`flex items-center gap-2 ${mSchedHead} mb-1`}>
+                        <span className="text-lg" aria-hidden="true">📅</span>
                         <span className="font-semibold">Scheduled Post</span>
                       </div>
-                      <p className="text-sm text-teal-200/80">
+                      <p className={`text-sm ${mSchedBody}`}>
                         {new Date(selectedPost.scheduledDate!).toLocaleDateString('en-US', {
                           weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
                         })}{' '}
@@ -311,22 +333,22 @@ export function Mockups() {
 
                     {/* Caption */}
                     <div>
-                      <label className="text-sm font-semibold text-white/80 block mb-2">Caption</label>
-                      <p className="text-white/80 whitespace-pre-wrap text-sm leading-relaxed bg-white/5 rounded-xl p-4 border border-white/10">
+                      <label className={`text-sm font-semibold ${mLabelCls} block mb-2`}>Caption</label>
+                      <p className={`whitespace-pre-wrap text-sm leading-relaxed rounded-xl p-4 border ${mCaptionBg}`}>
                         {selectedPost.caption}
                       </p>
                     </div>
 
                     {/* Hashtags */}
                     <div>
-                      <label className="text-sm font-semibold text-white/80 block mb-2">
+                      <label className={`text-sm font-semibold ${mLabelCls} block mb-2`}>
                         Hashtags ({selectedPost.hashtags.length})
                       </label>
                       <div className="flex flex-wrap gap-2">
                         {selectedPost.hashtags.map((tag, idx) => (
                           <span
                             key={idx}
-                            className="text-sm text-teal-300 bg-teal-500/15 px-3 py-1.5 rounded-full border border-teal-400/20 hover:bg-teal-500/25 transition-colors"
+                            className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${mHashCls}`}
                           >
                             #{tag}
                           </span>
@@ -337,8 +359,8 @@ export function Mockups() {
                     {/* Visual Description */}
                     {selectedPost.visualDescription && (
                       <div>
-                        <label className="text-sm font-semibold text-white/80 block mb-2">Visual Concept</label>
-                        <p className="text-sm text-white/70 bg-purple-500/10 rounded-xl p-4 border border-purple-400/15">
+                        <label className={`text-sm font-semibold ${mLabelCls} block mb-2`}>Visual Concept</label>
+                        <p className={`text-sm rounded-xl p-4 border ${mVisualBg}`}>
                           {selectedPost.visualDescription}
                         </p>
                       </div>
@@ -347,8 +369,8 @@ export function Mockups() {
                     {/* CTA */}
                     {selectedPost.callToAction && (
                       <div>
-                        <label className="text-sm font-semibold text-white/80 block mb-2">Call to Action</label>
-                        <p className="text-sm font-medium text-emerald-300 bg-emerald-500/10 rounded-xl p-4 border border-emerald-400/15">
+                        <label className={`text-sm font-semibold ${mLabelCls} block mb-2`}>Call to Action</label>
+                        <p className={`text-sm font-medium rounded-xl p-4 border ${mCtaBg}`}>
                           {selectedPost.callToAction}
                         </p>
                       </div>
@@ -368,8 +390,8 @@ export function Mockups() {
       })()}
 
       {/* Week Summary */}
-      <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl p-6">
-        <h3 className="text-xl font-bold text-white mb-4">Week 1 Summary</h3>
+      <div className={`backdrop-blur-md border rounded-2xl shadow-xl p-6 ${isDark ? 'bg-white/10 border-white/20' : 'bg-gray-50 border-gray-200'}`}>
+        <h3 className={`text-xl font-bold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>Week 1 Summary</h3>
         <div className={`gap-4 ${
           isDualScreen || isSquarish
             ? 'fold-auto-grid'
@@ -381,11 +403,11 @@ export function Mockups() {
             { value: `~${summaryStats.hashtags}`, label: 'Hashtags Used', gradient: 'from-orange-400 to-amber-400' },
             { value: String(summaryStats.totalAll), label: 'Total Scheduled', gradient: 'from-green-400 to-emerald-400' },
           ].map((stat, idx) => (
-            <div key={idx} className="bg-white/10 border border-white/15 rounded-xl p-4 backdrop-blur-sm text-center">
+            <div key={idx} className={`border rounded-xl p-4 backdrop-blur-sm text-center ${isDark ? 'bg-white/10 border-white/15' : 'bg-white border-gray-200'}`}>
               <p className={`text-3xl font-bold mb-1 bg-gradient-to-r ${stat.gradient} bg-clip-text text-transparent`}>
                 {stat.value}
               </p>
-              <p className="text-sm text-white/60">{stat.label}</p>
+              <p className={`text-sm ${isDark ? 'text-white/60' : 'text-gray-500'}`}>{stat.label}</p>
             </div>
           ))}
         </div>

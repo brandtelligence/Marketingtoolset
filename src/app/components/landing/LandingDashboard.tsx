@@ -174,7 +174,7 @@ function AIContentView() {
     },
     {
       type: 'Facebook Post',
-      preview: 'Exciting announcement! We\'re thrilled to share that our AI-powered platform has now helped 200+ SMEs worldwide achieve more with less. Here\'s how the magic works: one platform, 18 modules, zero tab-switching…',
+      preview: 'Exciting announcement! We\'re thrilled to share that our AI-powered platform has now helped 200+ SMEs worldwide achieve more with less. Here\'s how the magic works: one platform, 16 modules, zero tab-switching…',
       status: 'pending', statusIcon: Clock, statusColor: 'text-amber-400 bg-amber-500/15 border-amber-500/25',
       aiScore: '87%', scoreColor: 'text-amber-300',
     },

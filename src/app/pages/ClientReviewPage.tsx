@@ -27,6 +27,8 @@ import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../utils/authHeaders';
 import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 
+import { useSEO } from '../hooks/useSEO';
+
 const API  = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
 
@@ -238,6 +240,8 @@ function ReviewCardItem({
 
 export function ClientReviewPage() {
   const { token } = useParams<{ token: string }>();
+
+  useSEO({ title: 'Client Review', description: 'Review and approve marketing content shared by your team.', noindex: true });
 
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);

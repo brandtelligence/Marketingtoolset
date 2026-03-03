@@ -181,8 +181,6 @@ const DEFAULT_MODULES = [
   { id:"m12", key:"mobile_marketing",    name:"Mobile Marketing",             description:"SMS, push notifications, in-app advertising, and mobile-first campaigns.",              global_enabled:true,  base_price:200, icon:"📲", category:"communication" },
   { id:"m13", key:"programmatic_ads",    name:"Programmatic Advertising",     description:"Automated ad buying across networks using DSPs and real-time bidding.",                 global_enabled:true,  base_price:400, icon:"🤖", category:"marketing"     },
   { id:"m14", key:"influencer",          name:"Influencer Marketing",         description:"Influencer partnerships, UGC campaigns, and brand ambassador programmes.",               global_enabled:true,  base_price:280, icon:"⭐", category:"marketing"     },
-  { id:"m15", key:"podcast_audio",       name:"Podcast & Audio Marketing",    description:"Podcast production, audio ads, and Spotify / Apple Music campaigns.",                   global_enabled:true,  base_price:250, icon:"🎙️", category:"marketing"     },
-  { id:"m16", key:"webinars_events",     name:"Webinars & Virtual Events",    description:"Live webinars, virtual conferences, and online workshop content.",                      global_enabled:true,  base_price:300, icon:"🎥", category:"marketing"     },
   { id:"m17", key:"pr_media",            name:"Public Relations & Media",     description:"Press releases, media outreach, and brand reputation management.",                      global_enabled:true,  base_price:350, icon:"📰", category:"communication" },
   { id:"m18", key:"content_scrapper",    name:"Content Scrapper",             description:"Scrape, curate, and repurpose content from the web to fuel your pipeline.",             global_enabled:true,  base_price:180, icon:"🕷️", category:"marketing"     },
 ];
@@ -195,6 +193,50 @@ const DEFAULT_FEATURES = [
   { id:"f4", key:"content_approval", name:"Multi-step Approval Workflow", description:"Route content through reviewer and approver stages.",     module_id:"m2", rollout_note:"100% rollout", global_enabled:true  },
   { id:"f5", key:"gpt4_gen",         name:"GPT-4 Content Generation",     description:"Use GPT-4 to generate long-form and social content.",     module_id:"m2", rollout_note:"Staged – 20%", global_enabled:false },
   { id:"f6", key:"custom_reports",   name:"Custom Report Builder",        description:"Build and export custom analytics reports.",              module_id:"m3", rollout_note:"100% rollout", global_enabled:true  },
+  // m5 — Email Marketing
+  { id:"f7",  key:"email_drip",           name:"Drip Sequence Builder",       description:"Build automated email drip sequences.",                   module_id:"m5", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f8",  key:"email_ab_test",        name:"A/B Subject Line Testing",    description:"Split-test email subject lines for higher open rates.",    module_id:"m5", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f9",  key:"email_deliverability", name:"Deliverability Monitor",      description:"Track inbox placement, bounce rates, and spam scores.",    module_id:"m5", rollout_note:"Beta – 70%",   global_enabled:true  },
+  { id:"f10", key:"email_templates",      name:"AI Email Template Library",   description:"AI-generated email templates for campaigns.",              module_id:"m5", rollout_note:"100% rollout", global_enabled:true  },
+  // m6 — SEO Toolkit
+  { id:"f11", key:"seo_keyword",      name:"AI Keyword Research",         description:"AI-powered keyword discovery and gap analysis.",           module_id:"m6", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f12", key:"seo_rank_tracker", name:"SERP Rank Tracker",           description:"Daily SERP position tracking across target keywords.",     module_id:"m6", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f13", key:"seo_audit",        name:"On-Page SEO Audit",           description:"Automated on-page SEO checks and recommendations.",       module_id:"m6", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f14", key:"seo_backlink",     name:"Backlink Analyser",           description:"Monitor and analyse your backlink profile.",               module_id:"m6", rollout_note:"Beta – 60%",   global_enabled:true  },
+  // m7 — SEM
+  { id:"f15", key:"sem_campaign",      name:"Campaign Builder",           description:"Build and manage paid search campaigns.",                  module_id:"m7", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f16", key:"sem_bid_optimizer", name:"AI Bid Optimiser",           description:"AI-driven bid adjustments for maximum ROI.",               module_id:"m7", rollout_note:"Beta – 50%",   global_enabled:true  },
+  { id:"f17", key:"sem_ad_copy",      name:"Ad Copy Generator",           description:"Generate high-converting ad copy with AI.",                module_id:"m7", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f18", key:"sem_quality_score", name:"Quality Score Dashboard",    description:"Monitor and improve Google Ads quality scores.",            module_id:"m7", rollout_note:"100% rollout", global_enabled:true  },
+  // m8 — Content Marketing
+  { id:"f19", key:"cm_blog_gen",      name:"AI Blog Post Generator",      description:"Generate SEO-optimised blog posts with AI.",               module_id:"m8", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f20", key:"cm_whitepaper",    name:"Whitepaper Builder",          description:"Create professional whitepapers and case studies.",         module_id:"m8", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f21", key:"cm_editorial_cal", name:"Editorial Calendar",          description:"Plan and schedule content across all channels.",            module_id:"m8", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f22", key:"cm_seo_score",     name:"Content SEO Scorer",          description:"Score content readability and SEO effectiveness.",          module_id:"m8", rollout_note:"Staged – 30%", global_enabled:false },
+  // m9 — Display Advertising
+  { id:"f23", key:"da_banner_gen",      name:"AI Banner Generator",        description:"Generate display ad banners with AI.",                     module_id:"m9", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f24", key:"da_audience_target", name:"Audience Targeting Engine",  description:"Build and refine audience segments for display ads.",       module_id:"m9", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f25", key:"da_retargeting",     name:"Retargeting Pixel Manager",  description:"Manage retargeting pixels and conversion tracking.",       module_id:"m9", rollout_note:"Beta – 50%",   global_enabled:true  },
+  // m10 — Affiliate Marketing
+  { id:"f26", key:"af_partner_portal", name:"Partner Portal",             description:"Self-service portal for affiliate partners.",               module_id:"m10", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f27", key:"af_commission",     name:"Commission Tracker",         description:"Track affiliate commissions and payouts.",                  module_id:"m10", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f28", key:"af_link_gen",       name:"Affiliate Link Generator",   description:"Generate and manage tracking links for affiliates.",        module_id:"m10", rollout_note:"100% rollout", global_enabled:true  },
+  // m11 — Video Marketing
+  { id:"f29", key:"vm_script_gen",  name:"AI Video Script Writer",      description:"Generate video scripts optimised for engagement.",          module_id:"m11", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f30", key:"vm_thumbnail",   name:"Thumbnail Generator",         description:"AI-generated video thumbnails for higher CTR.",             module_id:"m11", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f31", key:"vm_seo_tags",    name:"Video SEO Tag Optimiser",     description:"Optimise video tags, titles, and descriptions for SEO.",    module_id:"m11", rollout_note:"Beta – 60%",   global_enabled:true  },
+  // m12 — Mobile Marketing
+  { id:"f32", key:"mob_sms",    name:"Bulk SMS Campaign Builder",   description:"Build and send bulk SMS campaigns.",                        module_id:"m12", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f33", key:"mob_push",   name:"Push Notification Manager",   description:"Manage mobile push notification campaigns.",                 module_id:"m12", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f34", key:"mob_in_app", name:"In-App Ad Builder",           description:"Create in-app advertising placements.",                      module_id:"m12", rollout_note:"Beta – 40%",   global_enabled:true  },
+  // m13 — Programmatic Advertising
+  { id:"f35", key:"prog_dsp",      name:"DSP Integration Manager",     description:"Connect and manage demand-side platforms.",                 module_id:"m13", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f36", key:"prog_rtb",      name:"Real-Time Bidding Dashboard", description:"Monitor real-time bidding performance and spend.",          module_id:"m13", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f37", key:"prog_audience", name:"Audience Segment Builder",    description:"Build audience segments for programmatic targeting.",        module_id:"m13", rollout_note:"Beta – 50%",   global_enabled:true  },
+  // m14 — Influencer Marketing
+  { id:"f38", key:"inf_discovery", name:"Influencer Discovery Engine", description:"Discover and vet influencers by niche, reach, and ROI.",   module_id:"m14", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f39", key:"inf_campaign",  name:"Campaign Brief Builder",      description:"Create structured influencer campaign briefs.",             module_id:"m14", rollout_note:"100% rollout", global_enabled:true  },
+  { id:"f40", key:"inf_roi",       name:"Influencer ROI Tracker",      description:"Track influencer campaign ROI and engagement.",             module_id:"m14", rollout_note:"Beta – 60%",   global_enabled:true  },
 ];
 
 // Returns the verified row counts after upserting.
@@ -4361,7 +4403,7 @@ app.delete("/make-server-309fe679/ai/content-history/:id", async (c) => {
   }
 });
 
-// ── GET /ai/content-usage ───────────────────────────��─────────────────────────
+// ── GET /ai/content-usage ───────────────────────────��───────────���─────────────
 
 app.get("/make-server-309fe679/ai/content-usage", async (c) => {
   try {
@@ -6412,11 +6454,13 @@ app.post("/make-server-309fe679/ai/refine-content", async (c) => {
     const openAIKey = Deno.env.get("OPENAI_API_KEY");
     if (!openAIKey) return c.json({ error: "OPENAI_API_KEY not configured." }, 500);
 
-    const systemPrompt = `You are a senior marketing content editor. The user is reviewing social media content for "${projectName || 'their brand'}" across these platforms: ${(platforms as string[]).join(', ') || 'multiple platforms'}. They want to make refinements.
+    const platformList = (platforms as string[]).join(', ') || 'multiple platforms';
+    const systemPrompt = `You are a senior marketing content editor. The user is reviewing marketing content for "${projectName || 'their brand'}" across these channels/platforms: ${platformList}. They want to make refinements.
 
 IMPORTANT RESPONSE FORMAT:
-- If the user's instruction modifies captions, you MUST return the full updated caption for each affected platform using this exact format (one per line):
-  **PlatformName:** the full updated caption text here
+- If the user's instruction modifies captions, you MUST return the full updated caption for each affected channel/platform using this exact format (one per line):
+  **ChannelOrPlatformName:** the full updated caption text here
+  Use the EXACT channel/platform names from the list above (e.g. "Search Engine Optimization (SEO)", "Email Marketing", "Instagram").
 - After listing the updated captions, you may add a brief 1-2 sentence summary of what changed.
 - If the user asks a question or the instruction doesn't change any caption text, respond naturally.
 - If the instruction says "Return ONLY the rewritten caption", return ONLY the caption text with absolutely no commentary.

@@ -432,12 +432,12 @@ export function ContentCalendarView({ cards, onOpenDetail }: ContentCalendarView
               <div className={`divide-y ${isDark ? 'divide-white/5' : 'divide-gray-100'}`}>
                 {selectedDayCards.map((card, idx) => {
                   const PIcon     = platformIcons[card.platform];
-                  const iconCls   = platformIconColors[card.platform] || 'text-white/40';
+                  const iconCls   = platformIconColors[card.platform] || (isDark ? 'text-white/40' : 'text-gray-400');
                   const isOverdue = card.status === 'scheduled' && card.scheduledDate! < TODAY_CAL;
 
                   const badgeCls   = isOverdue
                     ? 'bg-orange-500/15 text-orange-300 border-orange-400/15'
-                    : statusBadgeClasses[card.status] || 'bg-white/10 text-white/60 border-white/10';
+                    : statusBadgeClasses[card.status] || (isDark ? 'bg-white/10 text-white/60 border-white/10' : 'bg-gray-100 text-gray-500 border-gray-200');
                   const badgeLabel = isOverdue ? 'Overdue' : (statusLabels[card.status] || card.status);
 
                   return (

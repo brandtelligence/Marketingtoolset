@@ -26,6 +26,7 @@ import {
 } from './aiEngine';
 import { useContent, createCardId, type ContentCard } from '../../contexts/ContentContext';
 import { useAuth } from '../AuthContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { toast } from 'sonner';
 
 // ─── Brand icon mapping ────────────────────────────────────────────────────────
@@ -157,6 +158,9 @@ const actionIconMap: Record<string, React.ReactNode> = {
   music: <Music className="w-5 h-5" />,
 };
 
+// Escape special regex characters in a string (for dynamic RegExp construction)
+const escRx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export function CreateContentWizard({ projectId, projectName, projectDescription, onClose }: CreateContentWizardProps) {
   const [step, setStep] = useState<WizardStep>('channel');
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
@@ -179,6 +183,59 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
   const [captionUndoStack, setCaptionUndoStack] = useState<Record<string, string[]>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Whether the selected channel uses platform selection (only social-media)
+  const isSocialChannel = selectedChannel === 'social-media';
+
+  // Channel-aware content action name/description overrides for non-social channels
+  const getChannelAwareAction = useCallback((action: typeof contentActions[number]) => {
+    if (isSocialChannel || !selectedChannel) return action;
+    const channelName = marketingChannels.find(c => c.id === selectedChannel)?.name || selectedChannel;
+    const overrides: Record<string, { name: string; description: string }> = {
+      'calendar': {
+        name: `${channelName} Calendar`,
+        description: `Generate a structured ${channelName.toLowerCase()} calendar with scheduling, content types, and status tracking`,
+      },
+      'content-plan': {
+        name: `${channelName} Content Plan`,
+        description: `Strategic content plan with themes, topics, messaging pillars, and ${channelName.toLowerCase()} frequency`,
+      },
+      'copywriting': {
+        name: `${channelName} Copywriting`,
+        description: `Channel-optimized copy, headlines, CTAs, and messaging for ${channelName.toLowerCase()} campaigns`,
+      },
+    };
+    const override = overrides[action.id];
+    return override ? { ...action, ...override } : action;
+  }, [isSocialChannel, selectedChannel]);
+
+  // Channel → recommended action IDs (actions not listed are dimmed but still selectable)
+  const channelRecommendedActions: Record<string, string[]> = {
+    'social-media': ['calendar', 'content-plan', 'copywriting', 'image-creation', 'video-creation', 'voiceover', 'animation', 'music', 'research'],
+    'seo':          ['calendar', 'content-plan', 'copywriting', 'research', 'image-creation'],
+    'sem':          ['copywriting', 'content-plan', 'image-creation', 'research'],
+    'email':        ['calendar', 'content-plan', 'copywriting', 'image-creation', 'research'],
+    'content':      ['calendar', 'content-plan', 'copywriting', 'image-creation', 'video-creation', 'research'],
+    'display':      ['copywriting', 'image-creation', 'animation', 'video-creation', 'research'],
+    'affiliate':    ['content-plan', 'copywriting', 'image-creation', 'research'],
+    'video':        ['calendar', 'content-plan', 'copywriting', 'video-creation', 'voiceover', 'animation', 'music', 'research'],
+    'mobile':       ['copywriting', 'content-plan', 'image-creation', 'research'],
+    'programmatic': ['content-plan', 'copywriting', 'image-creation', 'animation', 'research'],
+    'influencer':   ['content-plan', 'copywriting', 'image-creation', 'video-creation', 'research'],
+  };
+  const isActionRecommended = useCallback((actionId: string): boolean => {
+    if (!selectedChannel) return true;
+    const recommended = channelRecommendedActions[selectedChannel];
+    return !recommended || recommended.includes(actionId);
+  }, [selectedChannel]);
+
+  // ── Focus trap + Escape ──
+  const wizardTrapRef = useFocusTrap<HTMLDivElement>(true);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   const { addCards } = useContent();
   const { user } = useAuth();
@@ -208,11 +265,16 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       ? [...new Set(hashtagMatches.map(h => h.replace('#', '')))]
       : [];
 
-    // Determine action-based title suffix
+    // Build card items: per-platform for social, single channel card otherwise
+    const channelId = selectedChannel || 'social-media';
+    const channelName = marketingChannels.find(c => c.id === channelId)?.name || channelId;
+    const isSocial = channelId === 'social-media';
+
+    // Determine action-based title suffix (generic names — channelName is already in platformName prefix)
     const actionTitles: Record<string, string> = {
-      calendar: 'Content Calendar',
+      calendar: 'Calendar',
       'content-plan': 'Content Plan',
-      copywriting: 'Copywriting',
+      copywriting: isSocial ? 'Copywriting & Captions' : 'Copywriting',
       'image-creation': 'Image Concepts',
       'video-creation': 'Video Scripts',
       voiceover: 'Voice Over Scripts',
@@ -226,22 +288,18 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       .slice(0, 2)
       .join(' + ');
 
-    selectedPlatforms.forEach((platformId) => {
-      const platformName = socialPlatforms.find(p => p.id === platformId)?.name || platformId;
+    const itemIds = isSocial ? selectedPlatforms : [channelId];
 
-      // Prefer user-edited caption from Step 6, fall back to AI extraction
-      let caption = reviewCaptions[platformId]?.trim() || '';
+    itemIds.forEach((itemId) => {
+      const platformName = isSocial
+        ? (socialPlatforms.find(p => p.id === itemId)?.name || itemId)
+        : channelName;
+
+      // Prefer user-edited caption from review step, fall back to AI extraction
+      let caption = reviewCaptions[itemId]?.trim() || '';
       if (!caption) {
-        const platformSection = combinedContent
-          .split(new RegExp(`### ${platformName}`, 'i'));
-        caption = extractedCaption;
-        if (platformSection.length > 1) {
-          const sectionText = platformSection[1].split(/###\s/)[0];
-          const sectionCaptions = sectionText.match(/^>\s*.+$/gm);
-          if (sectionCaptions && sectionCaptions.length > 0) {
-            caption = sectionCaptions.map(l => l.replace(/^>\s*/, '')).join('\n');
-          }
-        }
+        // Fallback: use shared extraction helper (should rarely fire since useEffect initializes captions)
+        caption = extractPreviewForItem(platformName, combinedContent) || extractedCaption;
       }
 
       // Extract hashtags from the caption itself as well
@@ -255,10 +313,10 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       const card: ContentCard = {
         id: createCardId(),
         projectId,
-        platform: platformId,
-        channel: selectedChannel || 'social-media',
+        platform: isSocial ? itemId : 'general',
+        channel: channelId,
         title: `${platformName} — ${actionLabel}`,
-        caption: caption || `AI-generated ${actionLabel.toLowerCase()} for ${projectName} on ${platformName}.`,
+        caption: caption || `AI-generated ${actionLabel.toLowerCase()} for ${projectName} — ${platformName}.`,
         hashtags: uniqueHashtags,
         status: 'draft',
         approvers: [],
@@ -266,7 +324,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
         createdByEmail: userEmail,
         createdAt: now,
         auditLog: [{
-          id: `audit_wizard_${Date.now()}_${platformId}`,
+          id: `audit_wizard_${Date.now()}_${itemId}`,
           action: 'created',
           performedBy: userName,
           performedByEmail: userEmail,
@@ -282,8 +340,11 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       addCards(newCards);
       setSavedToBoard(true);
 
+      const desc = isSocial
+        ? `Created as drafts for ${selectedPlatforms.length} platform${selectedPlatforms.length !== 1 ? 's' : ''}`
+        : `Created as draft for ${channelName}`;
       toast.success(`${newCards.length} content card${newCards.length !== 1 ? 's' : ''} saved to board`, {
-        description: `Created as drafts for ${selectedPlatforms.length} platform${selectedPlatforms.length !== 1 ? 's' : ''}`,
+        description: desc,
         icon: '🎉',
         duration: 5000,
       });
@@ -300,9 +361,33 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     if (step === 'chat') {
       setTimeout(() => inputRef.current?.focus(), 300);
     }
-    // Auto-expand first platform in review step
-    if (step === 'review' && selectedPlatforms.length > 0 && !expandedPlatform) {
-      setExpandedPlatform(selectedPlatforms[0]);
+    // Auto-expand first item & initialize captions in review step
+    if (step === 'review') {
+      if (!expandedPlatform) {
+        if (isSocialChannel && selectedPlatforms.length > 0) {
+          setExpandedPlatform(selectedPlatforms[0]);
+        } else if (!isSocialChannel && selectedChannel) {
+          setExpandedPlatform(selectedChannel);
+        }
+      }
+      // Pre-populate reviewCaptions for any item that hasn't been set yet
+      const aiMsgs = messages.filter(m => m.role === 'assistant');
+      const combined = aiMsgs.map(m => m.content).join('\n');
+      const channelId = selectedChannel || 'social-media';
+      const chName = marketingChannels.find(c => c.id === channelId)?.name || channelId;
+      const isSocial = channelId === 'social-media';
+      const ids = isSocial ? selectedPlatforms : [channelId];
+      const updates: Record<string, string> = {};
+      ids.forEach(id => {
+        if (reviewCaptions[id] !== undefined) return; // already set
+        const name = isSocial
+          ? (socialPlatforms.find(p => p.id === id)?.name || id)
+          : chName;
+        updates[id] = extractPreviewForItem(name, combined);
+      });
+      if (Object.keys(updates).length > 0) {
+        setReviewCaptions(prev => ({ ...prev, ...updates }));
+      }
     }
   }, [step]);
 
@@ -388,6 +473,35 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     }
   };
 
+  // Extract preview text for a given item from combined AI messages
+  const extractPreviewForItem = useCallback((displayName: string, combined: string): string => {
+    const escaped = escRx(displayName);
+    let sect = combined.split(new RegExp(`### ${escaped}`, 'i'));
+    let wasH2 = false;
+    if (sect.length <= 1) {
+      sect = combined.split(new RegExp(`##\\s+[^\\n]*${escaped}`, 'i'));
+      wasH2 = sect.length > 1;
+    }
+    if (sect.length > 1) {
+      const endRe = wasH2 ? /\n##\s(?!#)/ : /#{2,3}\s/;
+      return sect[1].split(endRe)[0].trim().slice(0, 300);
+    }
+    // Fallback: blockquotes
+    const caps = combined.match(/^>\s*.+$/gm);
+    if (caps && caps.length > 0) {
+      return caps.slice(0, 3).map(l => l.replace(/^>\s*/, '')).join(' ');
+    }
+    // Fallback: table rows
+    const tableRows = combined.match(/^\|[^|]+\|.*$/gm);
+    if (tableRows && tableRows.length > 1) {
+      const dataRows = tableRows.filter(r => !/^[\s|:-]+$/.test(r) && !/^\|\s*(Day|Date|#)\s*\|/i.test(r));
+      if (dataRows.length > 0) {
+        return dataRows.slice(0, 3).map(r => r.replace(/^\||\|$/g, '').replace(/\|/g, ' · ').trim()).join(' // ');
+      }
+    }
+    return `AI-generated content for ${displayName}.`;
+  }, []);
+
   const resetWizard = () => {
     setStep('channel');
     setSelectedChannel(null);
@@ -423,7 +537,8 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     if (!canProceed()) return;
     switch (step) {
       case 'channel':
-        if (selectedChannel === 'social-media') setStep('platforms');
+        if (isSocialChannel) setStep('platforms');
+        else setStep('actions'); // Non-social channels skip platform selection
         break;
       case 'platforms':
         setStep('actions');
@@ -437,15 +552,25 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
   const handleBack = () => {
     switch (step) {
       case 'platforms': setStep('channel'); break;
-      case 'actions': setStep('platforms'); break;
+      case 'actions': setStep(isSocialChannel ? 'platforms' : 'channel'); break;
       case 'chat': setStep('actions'); setMessages([]); break;
     }
   };
 
-  const stepNumber = step === 'channel' ? 1 : step === 'platforms' ? 2 : step === 'actions' ? 3 : step === 'chat' ? 4 : step === 'assets' ? 5 : 6;
-
+  // For social-media: channel(1) → platforms(2) → actions(3) → chat(4) → assets(5) → review(6) = 6 steps
   // ── Asset generation helpers ──
   const creationActions = selectedActions.filter(a => actionAssetMeta[a]);
+  const hasCreationActions = creationActions.length > 0;
+
+  // Social-media: channel(1) → platforms(2) → actions(3) → chat(4) → assets(5) → review(6) = 6 steps
+  // Non-social WITH creation: channel(1) → actions(2) → chat(3) → assets(4) → review(5) = 5 steps
+  // Non-social WITHOUT creation: channel(1) → actions(2) → chat(3) → review(4) = 4 steps
+  const totalSteps = isSocialChannel ? 6 : (hasCreationActions ? 5 : 4);
+  const stepNumber = isSocialChannel
+    ? (step === 'channel' ? 1 : step === 'platforms' ? 2 : step === 'actions' ? 3 : step === 'chat' ? 4 : step === 'assets' ? 5 : 6)
+    : hasCreationActions
+      ? (step === 'channel' ? 1 : step === 'actions' ? 2 : step === 'chat' ? 3 : step === 'assets' ? 4 : 5)
+      : (step === 'channel' ? 1 : step === 'actions' ? 2 : step === 'chat' ? 3 : 4);
 
   // Build a context-rich DALL-E prompt from project info
   const buildEnrichedPrompt = useCallback((basePrompt: string): string => {
@@ -453,11 +578,12 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       .map(id => socialPlatforms.find(p => p.id === id)?.name || id)
       .join(', ');
     const channelLabel = marketingChannels.find(c => c.id === selectedChannel)?.name || 'Social Media';
+    const contextLabel = platformList ? `(${channelLabel} · ${platformList})` : `(${channelLabel})`;
     return [
       basePrompt,
       `for "${projectName}"`,
       projectDescription ? `— ${projectDescription.slice(0, 120)}` : '',
-      `(${channelLabel} · ${platformList})`,
+      contextLabel,
       'Professional quality, modern design, clean composition, high contrast, no text overlay unless specified.',
     ].filter(Boolean).join(' ');
   }, [projectName, projectDescription, selectedPlatforms, selectedChannel]);
@@ -619,27 +745,36 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     // Get combined AI content for context
     const aiMessages = messages.filter(m => m.role === 'assistant');
     const combinedContent = aiMessages.map(m => m.content).join('\n');
-    const platformNames = selectedPlatforms.map(id => socialPlatforms.find(p => p.id === id)?.name || id);
+
+    // Build item list: social platforms or the single channel
+    const channelId = selectedChannel || 'social-media';
+    const isCurrentSocial = channelId === 'social-media';
+    const itemIds = isCurrentSocial ? selectedPlatforms : [channelId];
+    const itemNames = isCurrentSocial
+      ? selectedPlatforms.map(id => socialPlatforms.find(p => p.id === id)?.name || id)
+      : [marketingChannels.find(c => c.id === channelId)?.name || channelId];
 
     try {
       const result = await refineContent({
         instruction: userText,
         currentContent: combinedContent.slice(0, 1000),
         captions: reviewCaptions,
-        platforms: platformNames,
+        platforms: itemNames,
         projectName,
       });
 
       if (result.success && result.output) {
         setReviewRefineMessages(prev => [...prev, { role: 'ai', text: result.output }]);
 
-        // Try to auto-apply: check if the AI response contains platform-keyed captions
-        // Pattern: "**Instagram:** new caption" or "Instagram: new caption"
+        // Try to auto-apply: check if the AI response contains item-keyed captions
+        // Pattern: "**ItemName:** new caption" or "ItemName: new caption"
         let appliedCount = 0;
-        for (const pid of selectedPlatforms) {
-          const pName = socialPlatforms.find(p => p.id === pid)?.name;
-          if (!pName) continue;
-          // Match "**PlatformName:** caption" or "PlatformName: caption"
+        for (let idx = 0; idx < itemIds.length; idx++) {
+          const pid = itemIds[idx];
+          const pNameRaw = itemNames[idx];
+          if (!pNameRaw) continue;
+          const pName = escRx(pNameRaw);
+          // Match "**ItemName:** caption" or "ItemName: caption"
           const regex = new RegExp(`\\*?\\*?${pName}\\*?\\*?:\\s*["']?(.+?)["']?(?=\\n\\*?\\*?\\w|$)`, 'is');
           const match = result.output.match(regex);
           if (match && match[1]?.trim()) {
@@ -651,8 +786,35 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
           }
         }
 
+        // For non-social single-item channels, try direct auto-apply if no pattern match
+        if (appliedCount === 0 && !isCurrentSocial && itemIds.length === 1) {
+          // Strip AI commentary: split by double-newline, drop paragraphs that
+          // look like meta-commentary rather than actual caption/content.
+          const commentaryOpeners = /^(I've |I have |Here'?s |Sure[,!.]|Of course|Note:|Summary:|Changes? |Updated |This |The change)/i;
+          const paragraphs = result.output.split(/\n{2,}/);
+          const contentParagraphs = paragraphs.filter(p => {
+            const trimmed = p.trim();
+            if (!trimmed) return false;
+            if (commentaryOpeners.test(trimmed)) return false;
+            if (trimmed.length < 15 && /^(Let me know|Hope this|Feel free|Done|Ready)/i.test(trimmed)) return false;
+            return true;
+          });
+          // Recombine; also strip any leading **Header:** that isn't the channel name
+          let cleaned = (contentParagraphs.length > 0 ? contentParagraphs.join('\n\n') : result.output)
+            .replace(/^\*{1,2}[^*\n]+\*{1,2}:\s*/m, '')
+            .replace(/^["']|["']$/g, '')
+            .trim();
+          if (cleaned.length > 10 && cleaned.length < 5000) {
+            const pid = itemIds[0];
+            const currentCaption = reviewCaptions[pid] || '';
+            if (currentCaption) pushUndo(pid, currentCaption);
+            setReviewCaptions(prev => ({ ...prev, [pid]: cleaned }));
+            appliedCount = 1;
+          }
+        }
+
         if (appliedCount > 0) {
-          toast.success(`AI applied changes to ${appliedCount} platform caption${appliedCount > 1 ? 's' : ''}`, {
+          toast.success(`AI applied changes to ${appliedCount} caption${appliedCount > 1 ? 's' : ''}`, {
             description: 'Use ↩ Undo if you want to revert.',
             duration: 4000,
           });
@@ -675,19 +837,26 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       setReviewRefineMessages(prev => [...prev, { role: 'ai', text: responses[Math.floor(Math.random() * responses.length)] }]);
       setIsRefining(false);
     }, 1000);
-  }, [reviewRefineInput, isRefining, projectName, messages, selectedPlatforms, reviewCaptions, pushUndo]);
+  }, [reviewRefineInput, isRefining, projectName, messages, selectedPlatforms, selectedChannel, reviewCaptions, pushUndo]);
 
-  // Platform character limits for caption counter
+  // Character limits for caption counter (social platforms + marketing channels)
   const platformCharLimits: Record<string, number> = {
+    // Social platforms
     instagram: 2200, facebook: 63206, twitter: 280, linkedin: 3000,
     tiktok: 2200, youtube: 5000, pinterest: 500, snapchat: 250,
     threads: 500, reddit: 40000, whatsapp: 1024, telegram: 4096,
+    // Marketing channels (generous limits for long-form content)
+    seo: 10000, sem: 5000, email: 15000, content: 20000,
+    display: 5000, affiliate: 10000, video: 10000, mobile: 3000,
+    programmatic: 5000, influencer: 10000,
   };
 
   // AI Quick Action on a per-platform caption
   const quickRefineCaption = useCallback(async (platformId: string, actionLabel: string) => {
     const platform = socialPlatforms.find(p => p.id === platformId);
-    if (!platform) return;
+    const channel = !platform ? marketingChannels.find(c => c.id === platformId) : null;
+    const itemName = platform?.name || channel?.name || platformId;
+    if (!platform && !channel) return;
 
     const currentCaption = reviewCaptions[platformId] || '';
     if (!currentCaption.trim()) {
@@ -700,29 +869,33 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     setRefiningPlatform(platformId);
 
     const instructionMap: Record<string, string> = {
-      'Shorten':        `Shorten this ${platform.name} caption to be more concise while keeping the core message. Keep hashtags. Return ONLY the rewritten caption, no commentary.`,
-      'More Casual':    `Rewrite this ${platform.name} caption in a more casual, friendly, conversational tone. Keep hashtags. Return ONLY the rewritten caption.`,
-      'More Professional': `Rewrite this ${platform.name} caption in a more professional, authoritative tone suitable for B2B audiences. Keep hashtags. Return ONLY the rewritten caption.`,
-      'Add Hashtags':   `Add 5-8 relevant, trending hashtags to this ${platform.name} caption. Keep the existing text. Return ONLY the caption with hashtags added at the end.`,
-      'Add CTA':        `Add a compelling call-to-action to this ${platform.name} caption. Make it action-oriented and platform-appropriate. Return ONLY the rewritten caption.`,
-      'Emoji Boost':    `Add relevant emojis throughout this ${platform.name} caption to make it more engaging and visually appealing. Return ONLY the rewritten caption.`,
+      'Shorten':        `Shorten this ${itemName} caption to be more concise while keeping the core message. Keep hashtags. Return ONLY the rewritten caption, no commentary.`,
+      'More Casual':    `Rewrite this ${itemName} caption in a more casual, friendly, conversational tone. Keep hashtags. Return ONLY the rewritten caption.`,
+      'More Professional': `Rewrite this ${itemName} caption in a more professional, authoritative tone suitable for B2B audiences. Keep hashtags. Return ONLY the rewritten caption.`,
+      'Add Hashtags':   `Add 5-8 relevant, trending hashtags to this ${itemName} caption. Keep the existing text. Return ONLY the caption with hashtags added at the end.`,
+      'Add CTA':        `Add a compelling call-to-action to this ${itemName} caption. Make it action-oriented and platform-appropriate. Return ONLY the rewritten caption.`,
+      'Emoji Boost':    `Add relevant emojis throughout this ${itemName} caption to make it more engaging and visually appealing. Return ONLY the rewritten caption.`,
     };
 
-    const instruction = instructionMap[actionLabel] || `${actionLabel} for this ${platform.name} caption. Return ONLY the rewritten caption.`;
+    const instruction = instructionMap[actionLabel] || `${actionLabel} for this ${itemName} caption. Return ONLY the rewritten caption.`;
 
     try {
       const result = await refineContent({
         instruction,
         currentContent: currentCaption,
-        platforms: [platform.name],
+        platforms: [itemName],
         projectName,
       });
 
       if (result.success && result.output) {
         // Auto-apply the refined text directly into the caption field
-        const cleaned = result.output.replace(/^["']|["']$/g, '').trim();
+        // Strip any trailing AI commentary that slipped past the "Return ONLY" instruction
+        let cleaned = result.output.replace(/^["']|["']$/g, '').trim();
+        const trailingCommentary = /\n{2,}(I've |I have |Here'?s |Note:|Summary:|Changes? made|The \w+ has been)/i;
+        const commentaryIdx = cleaned.search(trailingCommentary);
+        if (commentaryIdx > 20) cleaned = cleaned.slice(0, commentaryIdx).trim();
         setReviewCaptions(prev => ({ ...prev, [platformId]: cleaned }));
-        toast.success(`${actionLabel} applied to ${platform.name} caption`);
+        toast.success(`${actionLabel} applied to ${itemName} caption`);
         setRefiningPlatform(null);
         return;
       }
@@ -817,9 +990,13 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         transition={{ duration: 0.3 }}
+        ref={wizardTrapRef}
         className={`bg-gradient-to-br from-gray-900/95 via-purple-900/90 to-gray-900/95 backdrop-blur-2xl border border-white/15 rounded-2xl sm:rounded-3xl shadow-2xl w-full overflow-hidden flex flex-col fold-modal-safe ${
           step === 'chat' || step === 'assets' || step === 'review' ? 'max-w-5xl h-[95vh] sm:h-[90vh]' : 'max-w-4xl max-h-[95vh] sm:max-h-[90vh]'
         }`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create content wizard"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
@@ -837,13 +1014,13 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
             {/* Step indicators — mobile compact */}
             {!['chat', 'assets', 'review'].includes(step) && (
               <span className="sm:hidden text-white/50 text-xs font-medium">
-                Step {stepNumber}/6
+                Step {stepNumber}/{totalSteps}
               </span>
             )}
             {/* Step indicators — desktop */}
             {!['chat', 'assets', 'review'].includes(step) && (
               <div className="hidden sm:flex items-center gap-1.5">
-                {[1, 2, 3, 4, 5, 6].map(s => (
+                {Array.from({ length: totalSteps }, (_, i) => i + 1).map(s => (
                   <div key={s} className="flex items-center gap-1">
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold transition-all ${
                       s < stepNumber ? 'bg-teal-500 text-white' :
@@ -852,7 +1029,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                     }`}>
                       {s < stepNumber ? <Check className="w-3 h-3" /> : s}
                     </div>
-                    {s < 6 && <div className={`w-4 h-0.5 ${s < stepNumber ? 'bg-teal-500' : 'bg-white/10'}`} />}
+                    {s < totalSteps && <div className={`w-4 h-0.5 ${s < stepNumber ? 'bg-teal-500' : 'bg-white/10'}`} />}
                   </div>
                 ))}
               </div>
@@ -862,10 +1039,10 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
             {(step === 'assets' || step === 'review') && (
               <>
                 <span className="sm:hidden text-white/50 text-xs font-medium">
-                  Step {stepNumber}/6
+                  Step {stepNumber}/{totalSteps}
                 </span>
                 <div className="hidden sm:flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5, 6].map(s => (
+                  {Array.from({ length: totalSteps }, (_, i) => i + 1).map(s => (
                     <div key={s} className="flex items-center gap-1">
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold transition-all ${
                         s < stepNumber ? 'bg-teal-500 text-white' :
@@ -874,7 +1051,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                       }`}>
                         {s < stepNumber ? <Check className="w-3 h-3" /> : s}
                       </div>
-                      {s < 6 && <div className={`w-4 h-0.5 ${s < stepNumber ? 'bg-teal-500' : 'bg-white/10'}`} />}
+                      {s < totalSteps && <div className={`w-4 h-0.5 ${s < stepNumber ? 'bg-teal-500' : 'bg-white/10'}`} />}
                     </div>
                   ))}
                 </div>
@@ -923,7 +1100,14 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                       key={channel.id}
                       channel={channel}
                       selected={selectedChannel === channel.id}
-                      onSelect={() => channel.active ? setSelectedChannel(channel.id) : undefined}
+                      onSelect={() => {
+                        if (!channel.active) return;
+                        if (selectedChannel !== channel.id) {
+                          setSelectedActions([]);
+                          setSelectedPlatforms([]);
+                        }
+                        setSelectedChannel(channel.id);
+                      }}
                     />
                   ))}
                 </div>
@@ -995,6 +1179,24 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                 <div className="text-center mb-6">
                   <h3 className="text-xl font-bold text-white mb-2">Select Content Actions</h3>
                   <p className="text-white/50 text-sm">Choose what you want the AI to create (multi-select)</p>
+                  {!isSocialChannel && selectedChannel && (
+                    <motion.button
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      onClick={() => {
+                        if (!selectedChannel) return;
+                        const recommended = channelRecommendedActions[selectedChannel] || [];
+                        const allRecommendedSelected = recommended.every(id => selectedActions.includes(id));
+                        setSelectedActions(allRecommendedSelected ? [] : [...recommended]);
+                      }}
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-teal-300/80 hover:text-teal-200 bg-teal-500/10 hover:bg-teal-500/15 border border-teal-400/20 hover:border-teal-400/35 px-3 py-1.5 rounded-full transition-all"
+                    >
+                      <Zap className="w-3 h-3" />
+                      {(channelRecommendedActions[selectedChannel] || []).every(id => selectedActions.includes(id))
+                        ? 'Clear All'
+                        : 'Select All Recommended'}
+                    </motion.button>
+                  )}
                 </div>
 
                 <div className="max-w-3xl mx-auto space-y-4">
@@ -1002,8 +1204,10 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                   <div>
                     <h4 className="text-white/60 text-xs uppercase tracking-wider mb-2 px-1">📊 Planning & Strategy</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {contentActions.filter(a => a.category === 'planning').map(action => {
+                      {contentActions.filter(a => a.category === 'planning').map(rawAction => {
+                        const action = getChannelAwareAction(rawAction);
                         const isSelected = selectedActions.includes(action.id);
+                        const recommended = isActionRecommended(action.id);
                         return (
                           <motion.button
                             key={action.id}
@@ -1013,12 +1217,19 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                             className={`relative p-4 rounded-xl border-2 text-left transition-all ${
                               isSelected
                                 ? 'bg-white/15 border-teal-400/60 shadow-lg shadow-teal-500/10'
-                                : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/8'
+                                : recommended
+                                ? 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/8'
+                                : 'bg-white/[0.02] border-white/[0.06] hover:border-white/15 hover:bg-white/5 opacity-55'
                             }`}
                           >
                             {isSelected && (
                               <div className="absolute top-3 right-3 w-5 h-5 bg-teal-500 rounded-full flex items-center justify-center">
                                 <Check className="w-3 h-3 text-white" />
+                              </div>
+                            )}
+                            {!isSelected && recommended && !isSocialChannel && (
+                              <div className="absolute top-2.5 right-2.5 flex items-center gap-1 text-teal-300/70 text-[9px] bg-teal-500/10 border border-teal-400/20 px-1.5 py-0.5 rounded-full font-medium">
+                                <Zap className="w-2.5 h-2.5" /> Recommended
                               </div>
                             )}
                             <div className="flex items-start gap-3">
@@ -1038,8 +1249,10 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                   <div>
                     <h4 className="text-white/60 text-xs uppercase tracking-wider mb-2 px-1">🎨 Content Creation</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {contentActions.filter(a => a.category === 'creation').map(action => {
+                      {contentActions.filter(a => a.category === 'creation').map(rawAction => {
+                        const action = getChannelAwareAction(rawAction);
                         const isSelected = selectedActions.includes(action.id);
+                        const recommended = isActionRecommended(action.id);
                         return (
                           <motion.button
                             key={action.id}
@@ -1049,12 +1262,19 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                             className={`relative p-4 rounded-xl border-2 text-left transition-all ${
                               isSelected
                                 ? 'bg-white/15 border-teal-400/60 shadow-lg shadow-teal-500/10'
-                                : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/8'
+                                : recommended
+                                ? 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/8'
+                                : 'bg-white/[0.02] border-white/[0.06] hover:border-white/15 hover:bg-white/5 opacity-55'
                             }`}
                           >
                             {isSelected && (
                               <div className="absolute top-3 right-3 w-5 h-5 bg-teal-500 rounded-full flex items-center justify-center">
                                 <Check className="w-3 h-3 text-white" />
+                              </div>
+                            )}
+                            {!isSelected && recommended && !isSocialChannel && (
+                              <div className="absolute top-2.5 right-2.5 flex items-center gap-1 text-teal-300/70 text-[9px] bg-teal-500/10 border border-teal-400/20 px-1.5 py-0.5 rounded-full font-medium">
+                                <Zap className="w-2.5 h-2.5" /> Recommended
                               </div>
                             )}
                             <div className="flex items-start gap-3">
@@ -1093,10 +1313,15 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
               >
                 {/* Chat summary bar */}
                 <div className="px-5 py-3 bg-white/5 border-b border-white/10 flex flex-wrap gap-2 text-xs shrink-0">
-                  <span className="bg-purple-500/20 text-purple-300 border border-purple-400/30 px-2 py-1 rounded-full">
-                    📱 Social Media
-                  </span>
-                  {selectedPlatforms.slice(0, 4).map(id => {
+                  {(() => {
+                    const channelMeta = marketingChannels.find(c => c.id === selectedChannel);
+                    return (
+                      <span className="bg-purple-500/20 text-purple-300 border border-purple-400/30 px-2 py-1 rounded-full">
+                        {channelMeta?.icon || '📱'} {channelMeta?.name || 'Social Media'}
+                      </span>
+                    );
+                  })()}
+                  {isSocialChannel && selectedPlatforms.slice(0, 4).map(id => {
                     const p = socialPlatforms.find(sp => sp.id === id);
                     return p ? (
                       <span key={id} className="bg-white/10 text-white/70 border border-white/15 px-2 py-1 rounded-full inline-flex items-center gap-1.5">
@@ -1104,7 +1329,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                       </span>
                     ) : null;
                   })}
-                  {selectedPlatforms.length > 4 && (
+                  {isSocialChannel && selectedPlatforms.length > 4 && (
                     <span className="bg-white/10 text-white/50 border border-white/15 px-2 py-1 rounded-full">
                       +{selectedPlatforms.length - 4} more
                     </span>
@@ -1462,7 +1687,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
               </motion.div>
             )}
 
-            {/* Step 6: Review & Refine */}
+            {/* Step: Review & Refine */}
             {step === 'review' && (
               <motion.div
                 key="review"
@@ -1478,57 +1703,63 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                     Review & Refine
                   </h3>
                   <p className="text-white/50 text-xs mt-1">
-                    Edit each caption, use AI quick-actions to refine, then submit — {selectedPlatforms.length} platform{selectedPlatforms.length !== 1 ? 's' : ''}
+                    {isSocialChannel
+                      ? `Edit each caption, use AI quick-actions to refine, then submit — ${selectedPlatforms.length} platform${selectedPlatforms.length !== 1 ? 's' : ''}`
+                      : `Review generated content, refine with AI, then submit — ${marketingChannels.find(c => c.id === selectedChannel)?.name || 'Content'}`
+                    }
                   </p>
                 </div>
 
                 {/* Review content */}
                 <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="p-5 space-y-3">
-                    {/* Per-platform accordion cards */}
-                    {selectedPlatforms.map(platformId => {
-                      const platform = socialPlatforms.find(p => p.id === platformId);
-                      if (!platform) return null;
-                      const isExpanded = expandedPlatform === platformId;
-                      const isThisRefining = refiningPlatform === platformId;
+                    {/* Per-platform (social) or per-channel (non-social) accordion cards */}
+                    {(isSocialChannel ? selectedPlatforms : [selectedChannel || 'general']).map(itemId => {
+                      const platform = isSocialChannel
+                        ? socialPlatforms.find(p => p.id === itemId)
+                        : null;
+                      const channelMeta = !isSocialChannel
+                        ? marketingChannels.find(c => c.id === itemId)
+                        : null;
+                      const displayName = platform?.name || channelMeta?.name || 'Content';
+                      const displayIcon = channelMeta?.icon;
+                      const isExpanded = expandedPlatform === itemId;
+                      const isThisRefining = refiningPlatform === itemId;
 
-                      // Extract AI-generated preview for this platform
-                      const aiMsgs = messages.filter(m => m.role === 'assistant');
-                      const combined = aiMsgs.map(m => m.content).join('\n');
-                      const platformSect = combined.split(new RegExp(`### ${platform.name}`, 'i'));
-                      let preview = '';
-                      if (platformSect.length > 1) {
-                        preview = platformSect[1].split(/###\s/)[0].trim().slice(0, 300);
-                      } else {
-                        const caps = combined.match(/^>\s*.+$/gm);
-                        preview = caps ? caps.slice(0, 3).map(l => l.replace(/^>\s*/, '')).join(' ') : `AI-generated content for ${platform.name}.`;
-                      }
-
-                      // Initialize caption if not yet set
-                      const caption = reviewCaptions[platformId] ?? preview.slice(0, 300);
-                      const charLimit = platformCharLimits[platformId] || 2200;
+                      // Caption is initialized by the useEffect when entering review step;
+                      // fallback to extractPreviewForItem for safety
+                      const caption = reviewCaptions[itemId] ?? (() => {
+                        const aiMsgs = messages.filter(m => m.role === 'assistant');
+                        const combined = aiMsgs.map(m => m.content).join('\n');
+                        return extractPreviewForItem(displayName, combined);
+                      })();
+                      const charLimit = platformCharLimits[itemId] || 2200;
                       const charCount = caption.length;
                       const charPct = Math.min((charCount / charLimit) * 100, 100);
                       const isOverLimit = charCount > charLimit;
 
                       return (
                         <motion.div
-                          key={platformId}
+                          key={itemId}
                           layout
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           className="bg-white/5 border border-white/10 rounded-xl overflow-hidden"
                         >
-                          {/* Clickable platform header (accordion) */}
+                          {/* Clickable header (accordion) */}
                           <button
-                            onClick={() => setExpandedPlatform(isExpanded ? null : platformId)}
+                            onClick={() => setExpandedPlatform(isExpanded ? null : itemId)}
                             className="flex items-center gap-3 w-full p-3.5 hover:bg-white/3 transition-all text-left"
                           >
                             <div className="w-9 h-9 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
-                              <PlatformIcon platformId={platformId} className={`w-4 h-4 ${platformBrandColors[platformId]}`} />
+                              {isSocialChannel ? (
+                                <PlatformIcon platformId={itemId} className={`w-4 h-4 ${platformBrandColors[itemId]}`} />
+                              ) : (
+                                <span className="text-base">{displayIcon || '📝'}</span>
+                              )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-white font-semibold text-sm">{platform.name}</h4>
+                              <h4 className="text-white font-semibold text-sm">{displayName}</h4>
                               <p className="text-white/35 text-[10px] truncate">
                                 {charCount} / {charLimit.toLocaleString()} chars
                                 {caption.trim() ? '' : ' · No caption yet'}
@@ -1567,7 +1798,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                                     </div>
                                     <textarea
                                       value={caption}
-                                      onChange={e => setReviewCaptions(prev => ({ ...prev, [platformId]: e.target.value }))}
+                                      onChange={e => setReviewCaptions(prev => ({ ...prev, [itemId]: e.target.value }))}
                                       rows={4}
                                       className={`w-full bg-white/5 border rounded-lg px-3 py-2.5 text-white/80 placeholder-white/30 text-xs focus:outline-none transition-all resize-none ${isOverLimit ? 'border-red-400/40 focus:border-red-400/60' : 'border-white/15 focus:border-teal-400/40'}`}
                                       placeholder="Write or paste your caption..."
@@ -1597,7 +1828,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                                       ].map(({ label, icon }) => (
                                         <motion.button
                                           key={label}
-                                          onClick={() => quickRefineCaption(platformId, label)}
+                                          onClick={() => quickRefineCaption(itemId, label)}
                                           disabled={isThisRefining || !caption.trim()}
                                           whileHover={{ scale: 1.04 }}
                                           whileTap={{ scale: 0.96 }}
@@ -1608,9 +1839,9 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                                         </motion.button>
                                       ))}
                                       {/* Undo button — visible when undo stack has entries */}
-                                      {(captionUndoStack[platformId]?.length ?? 0) > 0 && (
+                                      {(captionUndoStack[itemId]?.length ?? 0) > 0 && (
                                         <motion.button
-                                          onClick={() => undoCaption(platformId)}
+                                          onClick={() => undoCaption(itemId)}
                                           disabled={isThisRefining}
                                           whileHover={{ scale: 1.04 }}
                                           whileTap={{ scale: 0.96 }}
@@ -1733,17 +1964,20 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
                         : 'bg-gradient-to-r from-teal-500 to-purple-600 text-white shadow-lg shadow-teal-500/20'
                     }`}
                   >
-                    {savedToBoard ? (
-                      <>
-                        <CheckCircle className="w-4 h-4" />
-                        Submitted as Draft ({selectedPlatforms.length} card{selectedPlatforms.length !== 1 ? 's' : ''})
-                      </>
-                    ) : (
-                      <>
-                        <FileCheck className="w-4 h-4" />
-                        Submit as Draft ({selectedPlatforms.length} card{selectedPlatforms.length !== 1 ? 's' : ''})
-                      </>
-                    )}
+                    {(() => {
+                      const cardCount = isSocialChannel ? selectedPlatforms.length : 1;
+                      return savedToBoard ? (
+                        <>
+                          <CheckCircle className="w-4 h-4" />
+                          Submitted as Draft ({cardCount} card{cardCount !== 1 ? 's' : ''})
+                        </>
+                      ) : (
+                        <>
+                          <FileCheck className="w-4 h-4" />
+                          Submit as Draft ({cardCount} card{cardCount !== 1 ? 's' : ''})
+                        </>
+                      );
+                    })()}
                   </motion.button>
                 </div>
               </motion.div>

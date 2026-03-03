@@ -9,6 +9,7 @@ import { DrawerForm, ConfirmDialog } from '../../components/saas/DrawerForm';
 import { RoleBadge } from '../../components/saas/StatusBadge';
 import { useOutletContext } from 'react-router';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { formatRM } from '../../utils/format';
 import { useAuth } from '../../components/AuthContext';
 import { projectId } from '/utils/supabase/info';
@@ -178,17 +179,17 @@ function AIBudgetTab({
 
       {/* Custom limit badge */}
       {budget?.isCustom ? (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
-          style={{ background: 'rgba(62,60,112,0.08)', borderColor: 'rgba(62,60,112,0.3)' }}>
-          <Zap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-          <p className="text-purple-300 text-xs font-medium">
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${t.isDark ? '' : 'shadow-sm'}`}
+          style={{ background: t.isDark ? 'rgba(62,60,112,0.08)' : 'rgba(139,92,246,0.06)', borderColor: t.isDark ? 'rgba(62,60,112,0.3)' : 'rgba(139,92,246,0.2)' }}>
+          <Zap className={`w-3.5 h-3.5 shrink-0 ${t.isDark ? 'text-purple-400' : 'text-purple-500'}`} />
+          <p className={`text-xs font-medium ${t.isDark ? 'text-purple-300' : 'text-purple-700'}`}>
             Custom limit active — platform default is {DEFAULT_LIMIT.toLocaleString()} tokens/mo
           </p>
         </div>
       ) : (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/8"
-          style={{ background: 'rgba(255,255,255,0.03)' }}>
-          <Zap className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${t.isDark ? 'border-white/8' : 'border-gray-200'}`}
+          style={{ background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+          <Zap className={`w-3.5 h-3.5 shrink-0 ${t.isDark ? 'text-gray-500' : 'text-gray-400'}`} />
           <p className={`${t.textFaint} text-xs`}>
             Using platform default — {DEFAULT_LIMIT.toLocaleString()} tokens/mo
           </p>
@@ -350,8 +351,8 @@ function SLATab({ tenant, t }: { tenant: Tenant; t: ReturnType<typeof useDashboa
           </p>
         </div>
         {isCustom && (
-          <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-semibold"
-            style={{ background: 'rgba(62,60,112,0.15)', border: '1px solid rgba(62,60,112,0.3)', color: '#a78bfa' }}>
+          <span className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-semibold ${t.isDark ? '' : 'shadow-sm'}`}
+            style={{ background: t.isDark ? 'rgba(62,60,112,0.15)' : 'rgba(139,92,246,0.08)', border: t.isDark ? '1px solid rgba(62,60,112,0.3)' : '1px solid rgba(139,92,246,0.2)', color: t.isDark ? '#a78bfa' : '#7c3aed' }}>
             Custom
           </span>
         )}
@@ -452,6 +453,9 @@ function SLATab({ tenant, t }: { tenant: Tenant; t: ReturnType<typeof useDashboa
 export function TenantsPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Tenants', description: 'Manage all tenant organisations — create, edit, and suspend accounts.', noindex: true });
+
   const [tenants,        setTenants]        = useState<Tenant[]>([]);
   const [allModules,     setAllModules]     = useState<any[]>([]);
   const [drawerUsers,    setDrawerUsers]    = useState<any[]>([]);

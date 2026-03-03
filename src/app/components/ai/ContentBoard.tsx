@@ -29,6 +29,7 @@ import { socialPlatforms } from './aiEngine';
 import { useFoldableLayout } from '../../hooks/useFoldableLayout';
 import { projectId as supabaseProjectId } from '/utils/supabase/info';
 import { useDashboardTheme } from '../saas/DashboardThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import {
   getSlaStatusWith, getSlaHoursElapsed, formatSlaAge,
@@ -131,6 +132,15 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
   const [showBulkRejectModal, setShowBulkRejectModal] = useState(false);
   const [bulkRejectReason,    setBulkRejectReason]    = useState('');
   const [bulkBusy,            setBulkBusy]            = useState(false);
+
+  // ── Focus trap + Escape for bulk reject modal ──
+  const bulkRejectTrapRef = useFocusTrap<HTMLDivElement>(showBulkRejectModal);
+  useEffect(() => {
+    if (!showBulkRejectModal) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { setShowBulkRejectModal(false); setBulkRejectReason(''); } };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [showBulkRejectModal]);
 
   // ── Bulk "Share for Review" mode ──────────────────────────────────────────
   // Allows selecting any non-draft card to bundle into a client review link.
@@ -1309,13 +1319,13 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
             >
               {/* Count */}
               <div>
-                <p className="text-white font-semibold text-sm leading-tight">
+                <p className={`font-semibold text-sm leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
                   {selectedIds.size === 0 ? 'Select non-draft cards' : `${selectedIds.size} card${selectedIds.size !== 1 ? 's' : ''} selected`}
                 </p>
-                <p className="text-white/35 text-[10px] leading-tight">Click cards to add to the review bundle</p>
+                <p className={`text-[10px] leading-tight ${isDark ? 'text-white/35' : 'text-gray-400'}`}>Click cards to add to the review bundle</p>
               </div>
 
-              <div className="hidden sm:block h-8 w-px bg-white/10" />
+              <div className={`hidden sm:block h-8 w-px ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
 
               {/* Share button */}
               <motion.button
@@ -1378,16 +1388,16 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                   </span>
                 </button>
 
-                <div className="hidden sm:block h-4 w-px bg-white/10" />
+                <div className={`hidden sm:block h-4 w-px ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
 
                 {/* Count */}
                 <div>
-                  <p className="text-white font-semibold text-sm leading-tight">
+                  <p className={`font-semibold text-sm leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     {selectedIds.size === 0
                       ? 'Select cards'
                       : `${selectedIds.size} card${selectedIds.size !== 1 ? 's' : ''} selected`}
                   </p>
-                  <p className="text-white/35 text-[10px] leading-tight">
+                  <p className={`text-[10px] leading-tight ${isDark ? 'text-white/35' : 'text-gray-400'}`}>
                     {myActionableIds.size} actionable across all pages
                   </p>
                 </div>
@@ -1405,7 +1415,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                 )}
               </div>
 
-              <div className="hidden sm:block h-8 w-px bg-white/10" />
+              <div className={`hidden sm:block h-8 w-px ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
 
               {/* Actions */}
               <div className="flex items-center gap-2">
@@ -1474,6 +1484,10 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
               className="relative z-10 w-full max-w-md rounded-2xl border border-red-400/20 p-6 shadow-2xl"
               style={{ background: isDark ? 'rgba(15,10,40,0.97)' : 'rgba(255,255,255,0.98)' }}
               onClick={e => e.stopPropagation()}
+              ref={bulkRejectTrapRef}
+              role="alertdialog"
+              aria-modal="true"
+              aria-label="Bulk reject confirmation"
             >
               {/* Header */}
               <div className="flex items-start gap-3 mb-4">
@@ -1481,10 +1495,10 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                   <XCircle className="w-5 h-5 text-red-400" />
                 </div>
                 <div>
-                  <h3 className="text-white font-bold text-base leading-tight">
+                  <h3 className={`font-bold text-base leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     Reject {selectedIds.size} card{selectedIds.size !== 1 ? 's' : ''}
                   </h3>
-                  <p className="text-white/45 text-xs mt-1">
+                  <p className={`text-xs mt-1 ${isDark ? 'text-white/45' : 'text-gray-500'}`}>
                     This rejection reason will be applied to all {selectedIds.size} selected card{selectedIds.size !== 1 ? 's' : ''} and sent to their creators.
                   </p>
                 </div>
@@ -1501,11 +1515,11 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
                 }}
                 placeholder="Why are these cards being rejected? Provide clear feedback for the team…"
                 rows={4}
-                className="w-full bg-white/8 border border-red-400/30 rounded-xl px-4 py-3 text-white text-sm placeholder-white/30 focus:outline-none focus:border-red-400/60 resize-none transition-all mb-4"
+                className={`w-full border border-red-400/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-red-400/60 resize-none transition-all mb-4 ${isDark ? 'bg-white/8 text-white placeholder-white/30' : 'bg-red-50/50 text-gray-900 placeholder-gray-400'}`}
               />
 
               {/* Character count hint */}
-              <p className="text-white/25 text-[10px] -mt-3 mb-4 text-right">
+              <p className={`text-[10px] -mt-3 mb-4 text-right ${isDark ? 'text-white/25' : 'text-gray-400'}`}>
                 {bulkRejectReason.length} chars · Ctrl+Enter to submit
               </p>
 
@@ -1526,7 +1540,7 @@ export function ContentBoard({ projectId, projectTeamMembers, projectName }: Con
 
                 <button
                   onClick={() => setShowBulkRejectModal(false)}
-                  className="text-white/50 hover:text-white/80 px-5 py-2.5 rounded-xl hover:bg-white/8 transition-all text-sm font-medium"
+                  className={`px-5 py-2.5 rounded-xl transition-all text-sm font-medium ${isDark ? 'text-white/50 hover:text-white/80 hover:bg-white/8' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
                 >
                   Cancel
                 </button>

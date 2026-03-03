@@ -17,11 +17,18 @@ import { toast } from 'sonner';
 import { RoleBadge } from '../../components/saas/StatusBadge';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { employeeTheme } from '../../utils/employeeTheme';
+import { useSEO } from '../../hooks/useSEO';
 
 export function EmployeeProfilePage() {
   const { user, login } = useAuth();
   const { isDark } = useDashboardTheme();
   const et = employeeTheme(isDark);
+
+  useSEO({
+    title:       'My Profile',
+    description: 'Manage your Brandtelligence account profile, avatar, and security settings.',
+    noindex:     true,
+  });
 
   const [firstName,     setFirstName]     = useState(user?.firstName ?? '');
   const [lastName,      setLastName]      = useState(user?.lastName  ?? '');

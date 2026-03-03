@@ -8,13 +8,14 @@ import {
   // Module icons
   Share2, Wand2, BarChart3, CreditCard, MailCheck, SearchCheck,
   Target, PenLine, Layers, Link2, Film, Smartphone, Bot, Star,
-  Mic2, Video, Newspaper, DatabaseZap,
+  Newspaper, DatabaseZap,
   // Category icons
   Cpu, TrendingUp, PieChart, MessageSquare,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BackgroundLayout } from '../components/BackgroundLayout';
 import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
+import { useSEO } from '../hooks/useSEO';
 import brandtelligenceLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 import {
   createRequest, fetchModules, checkAccessEmail,
@@ -38,8 +39,6 @@ const MODULE_ICONS: Record<string, React.ElementType> = {
   mobile_marketing:    Smartphone,
   programmatic_ads:    Bot,
   influencer:          Star,
-  podcast_audio:       Mic2,
-  webinars_events:     Video,
   pr_media:            Newspaper,
   content_scrapper:    DatabaseZap,
 };
@@ -217,6 +216,8 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select…', sea
 export function RequestAccessPage() {
   const navigate = useNavigate();
   const { isDark } = useDashboardTheme();
+
+  useSEO({ title: 'Request Access', description: 'Apply for a Brandtelligence account — get started with AI-powered marketing tools.', noindex: false });
 
   // ── Data ────────────────────────────────────────────────────────────────
   const [modules,         setModules]         = useState<Module[]>([]);

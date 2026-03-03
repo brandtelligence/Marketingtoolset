@@ -23,10 +23,14 @@ import {
 import { useState, useMemo, useEffect } from 'react';
 import { useFoldableLayout } from '../hooks/useFoldableLayout';
 import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
+import { useSEO } from '../hooks/useSEO';
 
 export function ProjectsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  useSEO({ title: 'Projects', description: 'Manage your content projects — create, organise, and collaborate on marketing campaigns.', noindex: true });
+
   const { projects, addProject, updateProject, requestEditAccess, isLoading: projectsLoading } = useProjects();
   const { isDualScreen, isSquarish, spanningMode } = useFoldableLayout();
   const { isDark } = useDashboardTheme();

@@ -11,6 +11,7 @@ import {
   Sun, Moon,
 } from 'lucide-react';
 import { useWebTheme } from '../../contexts/WebThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 
 interface MegaItem { icon: React.ReactNode; label: string; desc: string; href: string; }
@@ -45,6 +46,7 @@ export function WebNav() {
   const [openMega, setOpenMega]             = useState<string | null>(null);
   const [mobileOpen, setMobileOpen]         = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
+  const mobileDrawerRef = useFocusTrap<HTMLDivElement>(mobileOpen);
   const location = useLocation();
   const { isDark, toggleTheme } = useWebTheme();
 
@@ -55,6 +57,14 @@ export function WebNav() {
   }, []);
 
   useEffect(() => { setMobileOpen(false); setOpenMega(null); }, [location.pathname]);
+
+  // Close mobile drawer on Escape
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [mobileOpen]);
 
   /* ── Shared colour tokens (light vs dark) ─────────────────────── */
   const headerBg = scrolled
@@ -227,6 +237,10 @@ export function WebNav() {
             exit={{ opacity: 0, x: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 35 }}
             className={`fixed inset-0 z-40 pt-16 overflow-y-auto lg:hidden ${mobileDrawerBg}`}
+            ref={mobileDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mobile navigation menu"
           >
             <div className="p-6 space-y-1">
               {NAV_LINKS.map(link => (

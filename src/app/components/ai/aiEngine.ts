@@ -31,19 +31,16 @@ export interface MarketingChannel {
 
 export const marketingChannels: MarketingChannel[] = [
   { id: 'social-media', name: 'Social Media', icon: '📱', description: 'Create and manage social media content across multiple platforms', active: true, color: 'from-purple-500 to-pink-500' },
-  { id: 'seo', name: 'Search Engine Optimization (SEO)', icon: '🔍', description: 'Optimize content for search engine visibility and organic traffic', active: false, color: 'from-green-500 to-teal-500' },
-  { id: 'sem', name: 'Search Engine Marketing (SEM)', icon: '💰', description: 'Paid search advertising campaigns on Google, Bing, and more', active: false, color: 'from-blue-500 to-cyan-500' },
-  { id: 'email', name: 'Email Marketing', icon: '✉️', description: 'Email campaigns, newsletters, drip sequences, and automations', active: false, color: 'from-amber-500 to-orange-500' },
-  { id: 'content', name: 'Content Marketing', icon: '📝', description: 'Blog posts, articles, whitepapers, case studies, and infographics', active: false, color: 'from-indigo-500 to-violet-500' },
-  { id: 'display', name: 'Display Advertising', icon: '🖼️', description: 'Banner ads, rich media ads, and programmatic display campaigns', active: false, color: 'from-rose-500 to-red-500' },
-  { id: 'affiliate', name: 'Affiliate Marketing', icon: '🤝', description: 'Partner and affiliate program management and content creation', active: false, color: 'from-emerald-500 to-green-500' },
-  { id: 'video', name: 'Video Marketing', icon: '🎬', description: 'YouTube, Vimeo, and OTT platform video content strategy', active: false, color: 'from-red-500 to-pink-500' },
-  { id: 'mobile', name: 'Mobile Marketing', icon: '📲', description: 'SMS, push notifications, in-app advertising, and mobile-first campaigns', active: false, color: 'from-sky-500 to-blue-500' },
-  { id: 'programmatic', name: 'Programmatic Advertising', icon: '🤖', description: 'Automated ad buying across networks using DSPs and RTB', active: false, color: 'from-violet-500 to-purple-500' },
-  { id: 'influencer', name: 'Influencer Marketing', icon: '⭐', description: 'Influencer partnerships, UGC campaigns, and brand ambassador programs', active: false, color: 'from-yellow-500 to-amber-500' },
-  { id: 'podcast', name: 'Podcast & Audio Marketing', icon: '🎙️', description: 'Podcast production, audio ads, and Spotify/Apple Music campaigns', active: false, color: 'from-fuchsia-500 to-pink-500' },
-  { id: 'webinar', name: 'Webinars & Virtual Events', icon: '🎥', description: 'Live webinars, virtual conferences, and online workshop content', active: false, color: 'from-teal-500 to-cyan-500' },
-  { id: 'pr', name: 'Public Relations & Media', icon: '📰', description: 'Press releases, media outreach, and reputation management', active: false, color: 'from-slate-500 to-gray-500' },
+  { id: 'seo', name: 'Search Engine Optimization (SEO)', icon: '🔍', description: 'Optimize content for search engine visibility and organic traffic', active: true, color: 'from-green-500 to-teal-500' },
+  { id: 'sem', name: 'Search Engine Marketing (SEM)', icon: '💰', description: 'Paid search advertising campaigns on Google, Bing, and more', active: true, color: 'from-blue-500 to-cyan-500' },
+  { id: 'email', name: 'Email Marketing', icon: '✉️', description: 'Email campaigns, newsletters, drip sequences, and automations', active: true, color: 'from-amber-500 to-orange-500' },
+  { id: 'content', name: 'Content Marketing', icon: '📝', description: 'Blog posts, articles, whitepapers, case studies, and infographics', active: true, color: 'from-indigo-500 to-violet-500' },
+  { id: 'display', name: 'Display Advertising', icon: '🖼️', description: 'Banner ads, rich media ads, and programmatic display campaigns', active: true, color: 'from-rose-500 to-red-500' },
+  { id: 'affiliate', name: 'Affiliate Marketing', icon: '🤝', description: 'Partner and affiliate program management and content creation', active: true, color: 'from-emerald-500 to-green-500' },
+  { id: 'video', name: 'Video Marketing', icon: '🎬', description: 'YouTube, Vimeo, and OTT platform video content strategy', active: true, color: 'from-red-500 to-pink-500' },
+  { id: 'mobile', name: 'Mobile Marketing', icon: '📲', description: 'SMS, push notifications, in-app advertising, and mobile-first campaigns', active: true, color: 'from-sky-500 to-blue-500' },
+  { id: 'programmatic', name: 'Programmatic Advertising', icon: '🤖', description: 'Automated ad buying across networks using DSPs and RTB', active: true, color: 'from-violet-500 to-purple-500' },
+  { id: 'influencer', name: 'Influencer Marketing', icon: '⭐', description: 'Influencer partnerships, UGC campaigns, and brand ambassador programs', active: true, color: 'from-yellow-500 to-amber-500' },
 ];
 
 // ─── Social Media Platforms ────────────────────────────────────────────────────
@@ -135,10 +132,14 @@ function getActionNames(actions: string[]): string {
 export function generateInitialResponse(request: ContentRequest): string {
   const platformList = getPlatformNames(request.platforms);
   const actionList = getActionNames(request.actions);
+  const channelName = marketingChannels.find(c => c.id === request.channel)?.name || request.channel;
 
   let response = `# 🚀 AI Content Studio — Ready!\n\n`;
   response += `I've analyzed your project **"${request.projectName}"** and I'm ready to create content for the following:\n\n`;
-  response += `**Target Platforms:** ${platformList}\n`;
+  response += `**Marketing Channel:** ${channelName}\n`;
+  if (request.platforms.length > 0) {
+    response += `**Target Platforms:** ${platformList}\n`;
+  }
   response += `**Requested Actions:** ${actionList}\n\n`;
   response += `---\n\n`;
 
@@ -188,18 +189,38 @@ export function generateInitialResponse(request: ContentRequest): string {
 }
 
 function generateCalendarContent(req: ContentRequest): string {
-  const platforms = req.platforms.map(id => socialPlatforms.find(p => p.id === id)?.name || id);
-  let content = `## 📅 Social Media Calendar\n\n`;
+  const channelName = marketingChannels.find(c => c.id === req.channel)?.name || req.channel;
+  const isSocial = req.channel === 'social-media';
+  const platforms = isSocial
+    ? req.platforms.map(id => socialPlatforms.find(p => p.id === id)?.name || id)
+    : [channelName];
+
+  let content = `## 📅 ${channelName} Calendar\n\n`;
   content += `**Project:** ${req.projectName}\n`;
   content += `**Period:** March 2026 (4 weeks)\n\n`;
 
   const weeks = ['Week 1 (Mar 2–8)', 'Week 2 (Mar 9–15)', 'Week 3 (Mar 16–22)', 'Week 4 (Mar 23–29)'];
   const themes = ['Brand Awareness & Introduction', 'Value Proposition & Features', 'Social Proof & Testimonials', 'Conversion & Call-to-Action'];
-  const postTypes = ['Carousel Post', 'Reel / Short Video', 'Story Series', 'Static Image Post', 'Poll / Interactive', 'Behind-the-Scenes', 'User-Generated Content'];
+
+  // Channel-appropriate content types
+  const contentTypesByChannel: Record<string, string[]> = {
+    'social-media': ['Carousel Post', 'Reel / Short Video', 'Story Series', 'Static Image Post', 'Poll / Interactive', 'Behind-the-Scenes', 'User-Generated Content'],
+    'seo': ['Blog Post', 'Pillar Page Update', 'Internal Link Audit', 'Keyword Cluster Article', 'FAQ Page', 'Backlink Outreach', 'Technical SEO Fix'],
+    'sem': ['Search Ad Campaign', 'Ad Copy A/B Test', 'Keyword Bid Adjustment', 'Landing Page Test', 'Negative Keyword Review', 'Audience Segment Test', 'Budget Reallocation'],
+    'email': ['Newsletter', 'Drip Sequence Email', 'Re-engagement Campaign', 'Product Announcement', 'Welcome Series Email', 'Survey Email', 'Segmented Offer'],
+    'content': ['Blog Article', 'Whitepaper Chapter', 'Case Study', 'Infographic', 'eBook Section', 'Thought Leadership Post', 'How-to Guide'],
+    'display': ['Banner Ad Set', 'Retargeting Creative', 'Rich Media Ad', 'Responsive Display Ad', 'Native Ad Unit', 'Video Pre-roll', 'Interstitial Ad'],
+    'affiliate': ['Partner Brief', 'Affiliate Creative Kit', 'Commission Review', 'Partner Newsletter', 'Landing Page Update', 'Performance Report', 'New Partner Outreach'],
+    'video': ['Explainer Video', 'Product Demo', 'Customer Testimonial', 'Behind-the-Scenes', 'Tutorial Video', 'Brand Story', 'Short-form Clip'],
+    'mobile': ['Push Notification', 'SMS Campaign', 'In-App Banner', 'App Store Update', 'Mobile Landing Page', 'Geo-targeted Message', 'Deep Link Campaign'],
+    'programmatic': ['DSP Campaign Launch', 'Audience Segment Update', 'Creative Rotation', 'Bid Strategy Review', 'Brand Safety Audit', 'Viewability Optimization', 'Frequency Cap Adjustment'],
+    'influencer': ['Influencer Outreach', 'Campaign Brief', 'Content Review', 'UGC Reshare', 'Influencer Story Collab', 'Ambassador Check-in', 'Performance Review'],
+  };
+  const postTypes = contentTypesByChannel[req.channel] || contentTypesByChannel['content']!;
 
   weeks.forEach((week, i) => {
     content += `### ${week} — *${themes[i]}*\n\n`;
-    content += `| Day | Platform | Content Type | Status |\n`;
+    content += `| Day | ${isSocial ? 'Platform' : 'Channel'} | Content Type | Status |\n`;
     content += `|-----|----------|-------------|--------|\n`;
 
     const days = ['Monday', 'Wednesday', 'Friday'];
@@ -211,27 +232,46 @@ function generateCalendarContent(req: ContentRequest): string {
     content += `\n`;
   });
 
-  content += `**Total Posts:** ${weeks.length * 3} | **Platforms:** ${platforms.length} | **Posting Frequency:** 3x/week\n\n`;
+  content += `**Total Items:** ${weeks.length * 3} | **${isSocial ? 'Platforms' : 'Channel'}:** ${platforms.join(', ')} | **Frequency:** 3x/week\n\n`;
   return content;
 }
 
 function generateContentPlan(req: ContentRequest): string {
-  let content = `## 📋 Social Media Content Plan\n\n`;
+  const channelName = marketingChannels.find(c => c.id === req.channel)?.name || req.channel;
+  const isSocial = req.channel === 'social-media';
+
+  let content = `## 📋 ${channelName} Content Plan\n\n`;
   content += `### Content Pillars\n\n`;
   content += `1. **Educational Content (40%)** — Tips, tutorials, how-tos related to ${req.projectName}\n`;
-  content += `2. **Engagement Content (25%)** — Polls, Q&As, interactive stories, user challenges\n`;
+  content += `2. **Engagement Content (25%)** — Interactive elements, surveys, user challenges\n`;
   content += `3. **Promotional Content (20%)** — Product features, offers, launches, CTAs\n`;
   content += `4. **Community Content (15%)** — Behind-the-scenes, team spotlights, user testimonials\n\n`;
 
-  content += `### Posting Strategy\n\n`;
-  req.platforms.forEach(id => {
-    const platform = socialPlatforms.find(p => p.id === id);
-    if (!platform) return;
-    const freq = id === 'tiktok' || id === 'instagram' ? '5–7x/week' : id === 'twitter' ? '3–5x/day' : '3–4x/week';
-    const bestTime = id === 'linkedin' ? '8–10 AM (weekdays)' : id === 'instagram' ? '11 AM–1 PM, 7–9 PM' : '12–3 PM';
-    content += `- **${platform.name}:** ${freq} | Best posting time: ${bestTime}\n`;
-  });
-  content += `\n`;
+  content += `### ${isSocial ? 'Posting' : 'Publishing'} Strategy\n\n`;
+  if (isSocial) {
+    req.platforms.forEach(id => {
+      const platform = socialPlatforms.find(p => p.id === id);
+      if (!platform) return;
+      const freq = id === 'tiktok' || id === 'instagram' ? '5–7x/week' : id === 'twitter' ? '3–5x/day' : '3–4x/week';
+      const bestTime = id === 'linkedin' ? '8–10 AM (weekdays)' : id === 'instagram' ? '11 AM–1 PM, 7–9 PM' : '12–3 PM';
+      content += `- **${platform.name}:** ${freq} | Best posting time: ${bestTime}\n`;
+    });
+  } else {
+    const channelStrategies: Record<string, string> = {
+      'seo': `- **${channelName}:** 2–3 blog posts/week | Keyword-focused content with 1500+ words | Monthly technical audits`,
+      'sem': `- **${channelName}:** Daily bid optimizations | Weekly A/B tests | Bi-weekly campaign reviews`,
+      'email': `- **${channelName}:** 2 newsletters/week | 1 drip sequence/month | Quarterly re-engagement campaigns`,
+      'content': `- **${channelName}:** 2 articles/week | 1 long-form piece/month | Monthly content audit`,
+      'display': `- **${channelName}:** Weekly creative rotation | Bi-weekly audience refinement | Monthly performance review`,
+      'affiliate': `- **${channelName}:** Weekly partner updates | Monthly creative refreshes | Quarterly partner reviews`,
+      'video': `- **${channelName}:** 1–2 videos/week | Monthly brand story | Quarterly testimonial campaigns`,
+      'mobile': `- **${channelName}:** 3–5 push notifications/week | Weekly SMS campaigns | Monthly in-app updates`,
+      'programmatic': `- **${channelName}:** Real-time bid optimization | Weekly audience segment reviews | Monthly creative refreshes`,
+      'influencer': `- **${channelName}:** 2–3 influencer posts/week | Monthly campaign briefs | Quarterly ambassador reviews`,
+    };
+    content += channelStrategies[req.channel] || `- **${channelName}:** 3x/week content delivery | Monthly strategy review`;
+  }
+  content += `\n\n`;
 
   content += `### Monthly Themes\n\n`;
   content += `| Month | Theme | Key Messages |\n`;
@@ -243,51 +283,74 @@ function generateContentPlan(req: ContentRequest): string {
 }
 
 function generateCopywriting(req: ContentRequest): string {
+  const channelName = marketingChannels.find(c => c.id === req.channel)?.name || req.channel;
+  const isSocial = req.channel === 'social-media';
+
   let content = `## ✍️ Copywriting & Captions\n\n`;
 
-  const platforms = req.platforms.slice(0, 3);
-  platforms.forEach(id => {
-    const platform = socialPlatforms.find(p => p.id === id);
-    if (!platform) return;
+  if (isSocial) {
+    const platforms = req.platforms.slice(0, 3);
+    platforms.forEach(id => {
+      const platform = socialPlatforms.find(p => p.id === id);
+      if (!platform) return;
 
-    content += `### ${platform.name} Captions\n\n`;
+      content += `### ${platform.name} Captions\n\n`;
 
-    if (id === 'instagram' || id === 'facebook') {
-      content += `**Post 1 — Introduction**\n`;
-      content += `> Meet ${req.projectName} — your new secret weapon for digital growth. 🚀\n>\n`;
-      content += `> We're reimagining the way brands connect with their audience. From strategy to execution, we've got you covered.\n>\n`;
-      content += `> 👉 Link in bio to learn more!\n>\n`;
-      content += `> #DigitalMarketing #BrandStrategy #${req.projectName.replace(/\s/g, '')} #Innovation #MarketingTips\n\n`;
+      if (id === 'instagram' || id === 'facebook') {
+        content += `**Post 1 — Introduction**\n`;
+        content += `> Meet ${req.projectName} — your new secret weapon for digital growth. 🚀\n>\n`;
+        content += `> We're reimagining the way brands connect with their audience. From strategy to execution, we've got you covered.\n>\n`;
+        content += `> 👉 Link in bio to learn more!\n>\n`;
+        content += `> #DigitalMarketing #BrandStrategy #${req.projectName.replace(/\s/g, '')} #Innovation #MarketingTips\n\n`;
 
-      content += `**Post 2 — Feature Highlight**\n`;
-      content += `> Did you know? ${req.projectName} helps you:\n>\n`;
-      content += `> ✅ Save 10+ hours per week\n`;
-      content += `> ✅ Boost engagement by 3x\n`;
-      content += `> ✅ Reach your target audience faster\n>\n`;
-      content += `> Try it today — link in bio 🔗\n>\n`;
-      content += `> #ProductLaunch #TechInnovation #GrowthHacking\n\n`;
-    }
+        content += `**Post 2 — Feature Highlight**\n`;
+        content += `> Did you know? ${req.projectName} helps you:\n>\n`;
+        content += `> ✅ Save 10+ hours per week\n`;
+        content += `> ✅ Boost engagement by 3x\n`;
+        content += `> ✅ Reach your target audience faster\n>\n`;
+        content += `> Try it today — link in bio 🔗\n>\n`;
+        content += `> #ProductLaunch #TechInnovation #GrowthHacking\n\n`;
+      }
 
-    if (id === 'twitter') {
-      content += `**Tweet 1:**\n`;
-      content += `> 🚀 Introducing ${req.projectName} — the smarter way to grow your brand online. Thread 🧵👇\n\n`;
-      content += `**Tweet 2:**\n`;
-      content += `> Hot take: Most brands waste 80% of their marketing budget on the wrong channels. ${req.projectName} fixes that. 📊\n\n`;
-    }
+      if (id === 'twitter') {
+        content += `**Tweet 1:**\n`;
+        content += `> 🚀 Introducing ${req.projectName} — the smarter way to grow your brand online. Thread 🧵👇\n\n`;
+        content += `**Tweet 2:**\n`;
+        content += `> Hot take: Most brands waste 80% of their marketing budget on the wrong channels. ${req.projectName} fixes that. 📊\n\n`;
+      }
 
-    if (id === 'linkedin') {
-      content += `**Article Post:**\n`;
-      content += `> I'm excited to share a project our team has been building: ${req.projectName}.\n>\n`;
-      content += `> ${req.projectDescription}\n>\n`;
-      content += `> After months of development, we're seeing incredible results with our early adopters. Here's what we've learned about building products that matter...\n>\n`;
-      content += `> [Read the full case study →]\n\n`;
-    }
+      if (id === 'linkedin') {
+        content += `**Article Post:**\n`;
+        content += `> I'm excited to share a project our team has been building: ${req.projectName}.\n>\n`;
+        content += `> ${req.projectDescription}\n>\n`;
+        content += `> After months of development, we're seeing incredible results with our early adopters. Here's what we've learned about building products that matter...\n>\n`;
+        content += `> [Read the full case study →]\n\n`;
+      }
 
-    if (id === 'tiktok') {
-      content += `**Video Caption:**\n`;
-      content += `> POV: You just discovered ${req.projectName} and your marketing game changed forever 🤯 #MarketingTips #DigitalMarketing #BrandGrowth #FYP\n\n`;
-    }
-  });
+      if (id === 'tiktok') {
+        content += `**Video Caption:**\n`;
+        content += `> POV: You just discovered ${req.projectName} and your marketing game changed forever 🤯 #MarketingTips #DigitalMarketing #BrandGrowth #FYP\n\n`;
+      }
+    });
+  } else {
+    // Non-social channel copywriting
+    content += `### ${channelName} Copy\n\n`;
+
+    const channelCopy: Record<string, string> = {
+      'seo': `**Meta Title:**\n> ${req.projectName} — Smart Solutions for Modern Brands | Official Site\n\n**Meta Description:**\n> Discover how ${req.projectName} helps businesses grow with AI-powered marketing tools. Boost engagement, save time, and reach your audience faster.\n\n**H1 Headline:**\n> Transform Your Marketing with ${req.projectName}\n\n**Blog Post Opening:**\n> In today's competitive digital landscape, brands need every advantage they can get. ${req.projectName} delivers AI-powered insights that help you create content that ranks, engages, and converts. Here's how to get started...\n\n`,
+      'sem': `**Search Ad — Headline 1:**\n> ${req.projectName} — AI-Powered Marketing\n\n**Search Ad — Headline 2:**\n> Boost Engagement by 3x | Try Free\n\n**Search Ad — Description:**\n> ${req.projectName} helps brands create, schedule, and optimize content across channels. Save 10+ hours/week. Start your free trial today.\n\n**Display Ad Copy:**\n> Stop guessing. Start growing. ${req.projectName} uses AI to create content that converts. Get started free → \n\n`,
+      'email': `**Subject Line Options:**\n> 1. "Your marketing just got smarter — introducing ${req.projectName}" 🚀\n> 2. "Save 10 hours/week on content creation"\n> 3. "${req.projectName}: Your new secret weapon"\n\n**Email Body — Introduction:**\n> Hi [First Name],\n>\n> We know your time is valuable. That's why we built ${req.projectName} — an AI-powered platform that creates, schedules, and optimizes your marketing content in minutes, not hours.\n>\n> Here's what you can do:\n> ✅ Generate platform-ready content instantly\n> ✅ Schedule across all channels from one dashboard\n> ✅ Track performance with real-time analytics\n>\n> Ready to transform your workflow?\n> [Start Your Free Trial →]\n\n`,
+      'content': `**Blog Article — Draft:**\n\n### How ${req.projectName} Is Changing the Content Game\n\n> The content marketing landscape is evolving faster than ever. With AI tools becoming mainstream, brands that adapt early are seeing 3x the engagement of those relying on traditional methods.\n>\n> ${req.projectName} sits at the intersection of creativity and technology. Here's what makes it different:\n>\n> **1. AI-Powered Content Generation** — From blog posts to ad copy, generate polished drafts in seconds.\n>\n> **2. Multi-Channel Distribution** — One platform, every channel. Social, email, display, and more.\n>\n> **3. Performance Intelligence** — Real-time analytics that tell you what's working and what to change.\n\n**Whitepaper Excerpt:**\n> In our analysis of 500+ brands, those using AI-assisted content creation saw a 47% increase in content output and a 32% improvement in engagement rates within the first quarter.\n\n`,
+      'display': `**Banner Ad (300×250) — Headline:**\n> ${req.projectName}: Smart Marketing, Real Results\n\n**Banner Ad — Body:**\n> AI-powered content creation for modern brands. Save time. Boost engagement. Start free.\n\n**Leaderboard (728×90):**\n> ${req.projectName} — Create. Schedule. Optimize. All in one platform. [Get Started →]\n\n**Rich Media Ad Concept:**\n> Interactive expandable unit featuring a 3-step animation:\n> 1. "Create" — AI generates content (typing animation)\n> 2. "Schedule" — Calendar fills with posts (slide-in)\n> 3. "Grow" — Engagement metrics climb (counter animation)\n> CTA: "Try ${req.projectName} Free"\n\n`,
+      'affiliate': `**Partner Welcome Email:**\n> Welcome to the ${req.projectName} Partner Program! Here's everything you need to start earning:\n>\n> 💰 Commission: 30% recurring on all referrals\n> 🔗 Your unique link: [partner.${req.projectName.toLowerCase().replace(/\s/g, '')}.com/ref/PARTNER_ID]\n> 📊 Dashboard: Track clicks, conversions, and payouts in real-time\n\n**Affiliate Ad Copy:**\n> I've been using ${req.projectName} for 3 months and my content workflow has completely transformed. 10+ hours saved weekly. If you're serious about marketing, this is a must-try. [My referral link →]\n\n`,
+      'video': `**Video Script — Product Demo (60s):**\n> [0–5s] "What if creating a month of marketing content took minutes, not days?"\n> [5–15s] Screen recording: Dashboard overview, AI content generation\n> [15–30s] Feature highlights with motion graphics overlays\n> [30–45s] Customer testimonial clip: "Since using ${req.projectName}, our engagement tripled."\n> [45–55s] Results montage: Analytics dashboards, growth charts\n> [55–60s] CTA: "${req.projectName} — Start creating smarter. Link below."\n\n`,
+      'mobile': `**Push Notification — Re-engagement:**\n> 📱 "Your content calendar has 3 empty slots this week. Let AI fill them in seconds →"\n\n**SMS Campaign:**\n> ${req.projectName}: Your weekly content report is ready! 📊 Open rate: 42% | Engagement: +18%. View full report: [link]\n\n**In-App Banner:**\n> 🎯 New Feature: AI-powered A/B testing is here. Test headlines, images, and CTAs automatically. [Try Now]\n\n`,
+      'programmatic': `**DSP Campaign Brief:**\n> **Objective:** Brand awareness + retargeting for ${req.projectName}\n> **Audience Segments:** Marketing professionals, SMB owners, SaaS decision-makers\n> **Bid Strategy:** Target CPA $12 | Viewability threshold 70%+\n> **Creative Rotation:** 3 banner sizes × 4 messages = 12 creative variants\n> **Frequency Cap:** 5 impressions/user/day\n\n**Retargeting Copy Variants:**\n> A: "Still thinking about ${req.projectName}? Your free trial is waiting →"\n> B: "Join 10,000+ marketers using ${req.projectName} to create smarter content"\n> C: "Don't let your content fall behind. ${req.projectName} makes it effortless."\n\n`,
+      'influencer': `**Influencer Brief — Campaign Overview:**\n> **Brand:** ${req.projectName}\n> **Campaign Goal:** Drive awareness and trial sign-ups among marketing professionals\n> **Deliverables:** 1 feed post + 2 story slides per influencer\n> **Key Messages:** AI-powered content creation, time savings, multi-channel management\n>\n> **Talking Points:**\n> - Show the AI content generation feature in action\n> - Mention specific time savings (e.g., "what used to take me 3 hours now takes 15 minutes")\n> - Include CTA with unique promo code: ${req.projectName.toUpperCase().replace(/\s/g, '')}[CREATOR]\n\n**Sample Influencer Caption:**\n> I partnered with @${req.projectName.toLowerCase().replace(/\s/g, '')} and honestly? Game changer. Creating a full week of content in under 30 minutes is wild. Use my code for 20% off 🚀\n\n`,
+    };
+
+    content += channelCopy[req.channel] || `**${channelName} Content:**\n> ${req.projectName} is your go-to solution for ${channelName.toLowerCase()}. Our AI-powered platform helps you create, optimize, and distribute content that drives real results.\n\n`;
+  }
 
   return content;
 }
@@ -403,9 +466,10 @@ function generateMusicContent(req: ContentRequest): string {
 }
 
 function generateResearchContent(req: ContentRequest): string {
+  const channelName = marketingChannels.find(c => c.id === req.channel)?.name || req.channel;
   let content = `## 🌐 Internet Research & Trend Analysis\n\n`;
 
-  content += `### Industry Trends for "${req.projectName}"\n\n`;
+  content += `### Industry Trends for "${req.projectName}" — ${channelName}\n\n`;
   content += `**Top Trending Topics:**\n`;
   content += `1. AI-powered marketing automation — *+340% search volume YoY*\n`;
   content += `2. Short-form video dominance — *TikTok & Reels driving 67% of engagement*\n`;
@@ -414,16 +478,16 @@ function generateResearchContent(req: ContentRequest): string {
   content += `5. Community-led growth — *Brand communities growing 2.5x faster than paid channels*\n\n`;
 
   content += `### Competitor Analysis\n\n`;
-  content += `| Competitor | Platforms Active | Posting Freq | Avg Engagement |\n`;
+  content += `| Competitor | Channels Active | Content Freq | Avg Engagement |\n`;
   content += `|-----------|-----------------|-------------|----------------|\n`;
-  content += `| Competitor A | IG, FB, LI | 5x/week | 3.2% |\n`;
-  content += `| Competitor B | IG, TW, TT | 7x/week | 4.8% |\n`;
-  content += `| Competitor C | FB, LI, YT | 3x/week | 2.1% |\n\n`;
+  content += `| Competitor A | ${channelName}, Social | 5x/week | 3.2% |\n`;
+  content += `| Competitor B | ${channelName}, Email | 7x/week | 4.8% |\n`;
+  content += `| Competitor C | ${channelName}, Display | 3x/week | 2.1% |\n\n`;
 
-  content += `### Recommended Hashtags\n\n`;
-  content += `**High Volume:** #DigitalMarketing #SocialMedia #ContentCreation #MarketingStrategy\n`;
-  content += `**Niche:** #${req.projectName.replace(/\s/g, '')} #BrandGrowth #AIMarketing #ContentCalendar\n`;
-  content += `**Trending:** #MarketingTips2026 #SocialMediaTrends #GrowthHacking\n\n`;
+  content += `### Recommended Keywords & Tags\n\n`;
+  content += `**High Volume:** #DigitalMarketing #${channelName.replace(/[^a-zA-Z]/g, '')} #ContentCreation #MarketingStrategy\n`;
+  content += `**Niche:** #${req.projectName.replace(/\s/g, '')} #BrandGrowth #AIMarketing #${channelName.replace(/[^a-zA-Z]/g, '')}Strategy\n`;
+  content += `**Trending:** #MarketingTrends2026 #FutureOfMarketing #DigitalTransformation\n\n`;
 
   content += `> 🌐 *Data sourced from public APIs and trend analysis tools. Updated as of February 2026.*\n\n`;
   return content;
@@ -435,7 +499,11 @@ export function generateChatResponse(userMessage: string, context: ContentReques
   const msg = userMessage.toLowerCase();
 
   if (msg.includes('tone') || msg.includes('voice') || msg.includes('style')) {
-    return `Great question! I've adjusted the content tone. Here are the updated options:\n\n**Tone Options:**\n- 🎯 **Professional** — Corporate-friendly, data-driven\n- 🎨 **Creative** — Playful, bold, trend-forward\n- 🤝 **Conversational** — Friendly, approachable, relatable\n- 🏆 **Authoritative** — Expert-level, thought leadership\n\nWhich tone would you like me to apply to the ${context.projectName} content? I can also mix styles per platform (e.g., conversational on Instagram, professional on LinkedIn).`;
+    const toneChannelName = marketingChannels.find(c => c.id === context.channel)?.name || context.channel;
+    const toneExample = context.channel === 'social-media'
+      ? 'I can also mix styles per platform (e.g., conversational on Instagram, professional on LinkedIn).'
+      : `I can tailor the tone specifically for ${toneChannelName} best practices.`;
+    return `Great question! I've adjusted the content tone. Here are the updated options:\n\n**Tone Options:**\n- 🎯 **Professional** — Corporate-friendly, data-driven\n- 🎨 **Creative** — Playful, bold, trend-forward\n- 🤝 **Conversational** — Friendly, approachable, relatable\n- 🏆 **Authoritative** — Expert-level, thought leadership\n\nWhich tone would you like me to apply to the ${context.projectName} content? ${toneExample}`;
   }
 
   if (msg.includes('more') || msg.includes('variation') || msg.includes('alternative')) {
@@ -451,23 +519,47 @@ export function generateChatResponse(userMessage: string, context: ContentReques
   }
 
   if (msg.includes('schedule') || msg.includes('time') || msg.includes('when') || msg.includes('frequency')) {
-    const platformAdvice = context.platforms.map(id => {
-      const name = socialPlatforms.find(p => p.id === id)?.name || id;
-      const times: Record<string, string> = {
-        instagram: '11 AM–1 PM and 7–9 PM (Mon–Fri)',
-        facebook: '1–4 PM (Wed–Fri)',
-        twitter: '8–10 AM and 6–9 PM (Mon–Thu)',
-        linkedin: '7–8 AM and 5–6 PM (Tue–Thu)',
-        tiktok: '7–9 AM, 12–3 PM, 7–11 PM (daily)',
-        youtube: '2–4 PM (Thu–Sat)',
-        telegram: '9–11 AM and 6–8 PM (daily)',
-      };
-      return `- **${name}:** ${times[id] || '10 AM–2 PM (weekdays)'}`;
-    });
+    const channelName = marketingChannels.find(c => c.id === context.channel)?.name || context.channel;
+    const isSocial = context.channel === 'social-media';
 
-    return `Here's the optimal posting schedule for ${context.projectName}:\n\n### Best Times to Post\n${platformAdvice.join('\n')}\n\n### Recommended Frequency\n- **Minimum:** 3 posts/week across all platforms\n- **Optimal:** 5–7 posts/week (rotating platforms)\n- **Maximum impact:** Daily posts on primary platforms\n\nWant me to generate a specific weekly schedule?`;
+    if (isSocial && context.platforms.length > 0) {
+      const platformAdvice = context.platforms.map(id => {
+        const name = socialPlatforms.find(p => p.id === id)?.name || id;
+        const times: Record<string, string> = {
+          instagram: '11 AM–1 PM and 7–9 PM (Mon–Fri)',
+          facebook: '1–4 PM (Wed–Fri)',
+          twitter: '8–10 AM and 6–9 PM (Mon–Thu)',
+          linkedin: '7–8 AM and 5–6 PM (Tue–Thu)',
+          tiktok: '7–9 AM, 12–3 PM, 7–11 PM (daily)',
+          youtube: '2–4 PM (Thu–Sat)',
+          telegram: '9–11 AM and 6–8 PM (daily)',
+        };
+        return `- **${name}:** ${times[id] || '10 AM–2 PM (weekdays)'}`;
+      });
+
+      return `Here's the optimal posting schedule for ${context.projectName}:\n\n### Best Times to Post\n${platformAdvice.join('\n')}\n\n### Recommended Frequency\n- **Minimum:** 3 posts/week across all platforms\n- **Optimal:** 5–7 posts/week (rotating platforms)\n- **Maximum impact:** Daily posts on primary platforms\n\nWant me to generate a specific weekly schedule?`;
+    }
+
+    // Non-social channel scheduling advice
+    const channelSchedules: Record<string, string> = {
+      'seo': `- **Blog Content:** 2–3 new posts per week (publish Tue/Thu/Sat mornings)\n- **Technical Audits:** Monthly full-site crawl\n- **Keyword Research:** Bi-weekly trend updates\n- **Backlink Outreach:** 5–10 prospects per week`,
+      'sem': `- **Campaign Reviews:** Daily bid adjustments at 9 AM\n- **A/B Tests:** Launch new tests every Monday\n- **Keyword Optimization:** Weekly negative keyword review (Fridays)\n- **Budget Reallocation:** Bi-weekly performance-based shifts`,
+      'email': `- **Newsletters:** Tuesday & Thursday at 10 AM\n- **Drip Sequences:** Trigger-based, 24–48hr intervals\n- **Re-engagement:** Monthly on the 1st\n- **Product Updates:** As needed, best on Wednesdays`,
+      'content': `- **Blog Articles:** Tue/Thu at 8 AM\n- **Long-form Content:** Monthly whitepaper/case study\n- **Content Audit:** Quarterly review of top performers\n- **Guest Posts:** 1–2 per month for backlinks`,
+      'display': `- **Creative Rotation:** Every 2 weeks\n- **Audience Refresh:** Weekly segment review\n- **Performance Review:** Daily CTR/CPA monitoring\n- **A/B Tests:** Bi-weekly new creative variants`,
+      'video': `- **Short-form:** 2–3x per week (Mon/Wed/Fri)\n- **Long-form:** 1x per week (Thursday)\n- **Live Streams:** Bi-weekly (Tuesday evenings)\n- **Testimonials:** Monthly releases`,
+    };
+    const scheduleAdvice = channelSchedules[context.channel] || `- **${channelName}:** 3x/week content delivery\n- **Performance Review:** Weekly on Mondays\n- **Strategy Update:** Monthly planning session`;
+
+    return `Here's the optimal ${channelName} schedule for ${context.projectName}:\n\n### Recommended Schedule\n${scheduleAdvice}\n\n### General Guidelines\n- **Minimum:** 3 content pieces/week\n- **Optimal:** Daily activity with weekly reviews\n- **Maximum impact:** Consistent schedule with data-driven adjustments\n\nWant me to generate a specific weekly calendar?`;
   }
 
   // Default response
-  return `I understand you'd like to make changes to the ${context.projectName} content. Here's what I can do:\n\n1. ✏️ **Edit existing content** — Modify captions, hashtags, or CTAs\n2. ➕ **Create new content** — Generate additional posts or formats\n3. 🎯 **Refine targeting** — Adjust audience, tone, or platform strategy\n4. 📊 **Add analytics goals** — Set KPIs and tracking metrics\n5. 🔄 **Regenerate sections** — Get fresh alternatives for any part\n\nCould you be more specific about what you'd like to change? For example:\n- "Make the Instagram captions more casual"\n- "Add 5 more video concepts"\n- "Create a LinkedIn article draft"\n- "Change the posting frequency to daily"`;
+  const defaultChannelName = marketingChannels.find(c => c.id === context.channel)?.name || context.channel;
+  const isDefaultSocial = context.channel === 'social-media';
+  const examples = isDefaultSocial
+    ? `- "Make the Instagram captions more casual"\n- "Add 5 more video concepts"\n- "Create a LinkedIn article draft"\n- "Change the posting frequency to daily"`
+    : `- "Make the copy more conversational"\n- "Add more data points and statistics"\n- "Create alternative headline options"\n- "Adjust the tone for a B2B audience"`;
+
+  return `I understand you'd like to make changes to the ${context.projectName} ${defaultChannelName} content. Here's what I can do:\n\n1. ✏️ **Edit existing content** — Modify copy, headlines, or CTAs\n2. ➕ **Create new content** — Generate additional ${isDefaultSocial ? 'posts or formats' : 'variations or assets'}\n3. 🎯 **Refine targeting** — Adjust audience, tone, or strategy\n4. 📊 **Add analytics goals** — Set KPIs and tracking metrics\n5. 🔄 **Regenerate sections** — Get fresh alternatives for any part\n\nCould you be more specific about what you'd like to change? For example:\n${examples}`;
 }

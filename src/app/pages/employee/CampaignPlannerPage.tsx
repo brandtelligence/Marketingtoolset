@@ -9,8 +9,15 @@ import { BackgroundLayout } from '../../components/BackgroundLayout';
 import { EmployeeNav }      from '../../components/EmployeeNav';
 import { ProfileBanner }    from '../../components/ProfileBanner';
 import { SocialCalendarPlanner } from '../../components/ai/SocialCalendarPlanner';
+import { useSEO } from '../../hooks/useSEO';
 
 export function CampaignPlannerPage() {
+  useSEO({
+    title:       'Campaign Planner',
+    description: 'AI-powered social media campaign planner with calendar view and GPT-4o content generation.',
+    noindex:     true,
+  });
+
   return (
     <BackgroundLayout>
       <EmployeeNav />

@@ -8,6 +8,7 @@ import { formatRM } from '../../utils/format';
 import { StatusBadge } from '../../components/saas/StatusBadge';
 import { DrawerForm, Field, Select, Textarea, ConfirmDialog } from '../../components/saas/DrawerForm';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import {
   fetchRequests, updateRequest, createTenant, fetchModules,
   type PendingRequest, type Tenant,
@@ -15,6 +16,9 @@ import {
 
 export function RequestsPage() {
   const t = useDashboardTheme();
+
+  useSEO({ title: 'Access Requests', description: 'Review and manage pending tenant module access requests.', noindex: true });
+
   const [requests,     setRequests]     = useState<PendingRequest[]>([]);
   const [modules,      setModules]      = useState<any[]>([]);
   const [loadingData,  setLoadingData]  = useState(true);
@@ -125,11 +129,11 @@ export function RequestsPage() {
     {
       key: 'actions', header: '', render: r => (
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-          <button onClick={() => openDetail(r)} className={`p-1.5 rounded-lg ${t.hover} ${t.textFaint} transition-colors`} title="View"><Eye className="w-4 h-4" /></button>
+          <button onClick={() => openDetail(r)} className={`p-1.5 rounded-lg ${t.hover} ${t.textFaint} transition-colors`} title="View" aria-label={`View details for ${r.companyName}`}><Eye className="w-4 h-4" /></button>
           {r.status === 'pending' && (
             <>
-              <button onClick={() => openApprove(r)} className="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-500 transition-colors" title="Approve"><CheckCircle className="w-4 h-4" /></button>
-              <button onClick={() => { setSelected(r); setRejectDialog(true); }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors" title="Reject"><XCircle className="w-4 h-4" /></button>
+              <button onClick={() => openApprove(r)} className="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-500 transition-colors" title="Approve" aria-label={`Approve ${r.companyName}`}><CheckCircle className="w-4 h-4" /></button>
+              <button onClick={() => { setSelected(r); setRejectDialog(true); }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors" title="Reject" aria-label={`Reject ${r.companyName}`}><XCircle className="w-4 h-4" /></button>
             </>
           )}
         </div>
@@ -146,14 +150,19 @@ export function RequestsPage() {
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6" role="group" aria-label="Request statistics">
         {[
-          { label: 'Pending Review', value: stats.pending, color: 'bg-sky-500/20 border-sky-500/20 text-sky-600' },
-          { label: 'Approved', value: stats.approved, color: 'bg-emerald-500/20 border-emerald-500/20 text-emerald-600' },
-          { label: 'Rejected', value: stats.rejected, color: 'bg-red-500/20 border-red-500/20 text-red-600' },
+          { label: 'Pending Review', value: stats.pending, color: t.isDark ? 'bg-sky-500/20 border-sky-500/20 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-700' },
+          { label: 'Approved', value: stats.approved, color: t.isDark ? 'bg-emerald-500/20 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700' },
+          { label: 'Rejected', value: stats.rejected, color: t.isDark ? 'bg-red-500/20 border-red-500/20 text-red-400' : 'bg-red-50 border-red-200 text-red-700' },
         ].map(s => (
-          <motion.div key={s.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          <motion.div
+            key={s.label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
             className={`${s.color} border rounded-xl p-4 text-center`}
+            role="group"
+            aria-label={`${s.label}: ${s.value}`}
           >
             <p className="text-3xl font-bold">{s.value}</p>
             <p className="text-xs opacity-80 mt-1">{s.label}</p>

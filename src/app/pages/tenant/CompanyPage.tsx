@@ -6,11 +6,15 @@ import { Field, Input, Select, Textarea } from '../../components/saas/DrawerForm
 import { useAuth } from '../../components/AuthContext';
 import { formatRM } from '../../utils/format';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { fetchTenants, updateTenant, type Tenant } from '../../utils/apiClient';
 
 export function TenantCompanyPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Company Profile', description: 'View and update your company details, billing address, and tax information.', noindex: true });
+
   const [tenant,         setTenant]         = useState<Tenant | null>(null);
   const [name,           setName]           = useState('');
   const [taxId,          setTaxId]          = useState('');

@@ -31,6 +31,7 @@ import { supabase } from '../utils/supabaseClient';
 import { useAuth } from '../components/AuthContext';
 import { BackgroundLayout } from '../components/BackgroundLayout';
 import { useDashboardTheme } from '../components/saas/DashboardThemeContext';
+import { useSEO } from '../hooks/useSEO';
 import {
   IS_DEMO_MODE, MFA_RECOVERY_CODE_COUNT, TOTP_ISSUER,
   SS_MFA_PENDING_USER, SS_MFA_TARGET_ROUTE,
@@ -145,6 +146,8 @@ export function MFAEnrollPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { isDark } = useDashboardTheme();
+
+  useSEO({ title: 'Set Up Two-Factor Authentication', description: 'Enrol in MFA to secure your Brandtelligence account with TOTP-based verification.', noindex: true });
 
   // ── Theme helpers ──────────────────────────────────────────────────────
   const glass   = isDark ? 'bg-white/10 backdrop-blur-md border border-white/20' : 'bg-white/80 backdrop-blur-md border border-gray-200/60 shadow-sm';

@@ -57,12 +57,20 @@ const NAV_ITEMS = [
 
 // ─── Action colour map ────────────────────────────────────────────────────────
 
-const ACTION_META: Record<string, { label: string; color: string; Icon: React.ComponentType<{ className?: string }> }> = {
+const ACTION_META_DARK: Record<string, { label: string; color: string; Icon: React.ComponentType<{ className?: string }> }> = {
   approved:                { label: 'Approved',        color: 'text-teal-300',   Icon: CheckCircle },
   rejected:                { label: 'Rejected',        color: 'text-red-300',    Icon: XCircle    },
   published:               { label: 'Published',       color: 'text-green-300',  Icon: Check      },
   submitted_for_approval:  { label: 'Submitted',       color: 'text-amber-300',  Icon: Clock      },
   reverted_to_draft:       { label: 'Reverted',        color: 'text-gray-300',   Icon: Activity   },
+};
+
+const ACTION_META_LIGHT: Record<string, { label: string; color: string; Icon: React.ComponentType<{ className?: string }> }> = {
+  approved:                { label: 'Approved',        color: 'text-teal-600',   Icon: CheckCircle },
+  rejected:                { label: 'Rejected',        color: 'text-red-600',    Icon: XCircle    },
+  published:               { label: 'Published',       color: 'text-green-600',  Icon: Check      },
+  submitted_for_approval:  { label: 'Submitted',       color: 'text-amber-600',  Icon: Clock      },
+  reverted_to_draft:       { label: 'Reverted',        color: 'text-gray-500',   Icon: Activity   },
 };
 
 // ─── Failure alert type (mirrors server AutoPublishAlert) ─────────────────────
@@ -92,6 +100,7 @@ function ApprovalBell() {
   const { projects }            = useProjects();
   const { user }                = useAuth();
   const navigate                = useNavigate();
+  const { isDark }              = useDashboardTheme();
   const [open, setOpen]         = useState(false);
   const [tab, setTab]           = useState<'queue' | 'activity' | 'failures'>('queue');
   const ref                     = useRef<HTMLDivElement>(null);
@@ -199,6 +208,13 @@ function ApprovalBell() {
       {/* Bell button */}
       <button
         onClick={() => setOpen(o => !o)}
+        aria-label={
+          hasDanger
+            ? `Notifications: ${failureCount} publish failure${failureCount !== 1 ? 's' : ''}, ${count} pending, ${newActivity} new activity`
+            : totalBadge > 0 ? `Notifications: ${count} pending, ${newActivity} new activity` : 'Notifications'
+        }
+        aria-expanded={open}
+        aria-haspopup="true"
         title={
           hasDanger
             ? `${failureCount} publish failure${failureCount !== 1 ? 's' : ''} · ${count} pending · ${newActivity} new activity`
@@ -207,7 +223,7 @@ function ApprovalBell() {
         className={`relative p-2 rounded-lg transition-all ${
           open
             ? hasDanger ? 'bg-red-500/15 text-red-400' : 'bg-[#F47A20]/15 text-[#F47A20]'
-            : 'text-white/60 hover:text-white hover:bg-white/10'
+            : isDark ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
         }`}
       >
         <Bell className="w-4 h-4" />
@@ -241,24 +257,28 @@ function ApprovalBell() {
             transition={{ duration: 0.15, ease: 'easeOut' }}
             className="absolute right-0 top-full mt-2 w-80 rounded-2xl border border-white/15 shadow-2xl z-50 overflow-hidden"
             style={{ background: isDark ? 'rgba(10,8,35,0.97)' : 'rgba(255,255,255,0.98)', backdropFilter: 'blur(20px)' }}
+            role="region"
+            aria-label="Notifications panel"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+            <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-[#F47A20]" />
-                <span className="text-white font-semibold text-sm">Notifications</span>
+                <span className={`font-semibold text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>Notifications</span>
               </div>
-              <button onClick={() => setOpen(false)} className="text-white/40 hover:text-white transition-colors">
+              <button onClick={() => setOpen(false)} className={`${isDark ? 'text-white/40 hover:text-white' : 'text-gray-400 hover:text-gray-700'} transition-colors`} aria-label="Close notifications">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-white/8">
+            <div className={`flex border-b ${isDark ? 'border-white/8' : 'border-gray-200'}`} role="tablist" aria-label="Notification categories">
               <button
                 onClick={() => setTab('queue')}
+                role="tab"
+                aria-selected={tab === 'queue'}
                 className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors ${
-                  tab === 'queue' ? 'text-[#F47A20] border-b-2 border-[#F47A20]' : 'text-white/40 hover:text-white/60'
+                  tab === 'queue' ? 'text-[#F47A20] border-b-2 border-[#F47A20]' : isDark ? 'text-white/40 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
                 <Clock className="w-3 h-3" />
@@ -269,8 +289,10 @@ function ApprovalBell() {
               </button>
               <button
                 onClick={() => { setTab('activity'); setLastSeen(Date.now()); }}
+                role="tab"
+                aria-selected={tab === 'activity'}
                 className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors ${
-                  tab === 'activity' ? 'text-[#0BA4AA] border-b-2 border-[#0BA4AA]' : 'text-white/40 hover:text-white/60'
+                  tab === 'activity' ? 'text-[#0BA4AA] border-b-2 border-[#0BA4AA]' : isDark ? 'text-white/40 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
                 <Activity className="w-3 h-3" />
@@ -281,8 +303,10 @@ function ApprovalBell() {
               </button>
               <button
                 onClick={() => setTab('failures')}
+                role="tab"
+                aria-selected={tab === 'failures'}
                 className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors ${
-                  tab === 'failures' ? 'text-red-400 border-b-2 border-red-400' : 'text-white/40 hover:text-white/60'
+                  tab === 'failures' ? 'text-red-400 border-b-2 border-red-400' : isDark ? 'text-white/40 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
                 <AlertTriangle className="w-3 h-3" />
@@ -295,14 +319,14 @@ function ApprovalBell() {
 
             {/* ── Queue tab ── */}
             {tab === 'queue' && (
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-72 overflow-y-auto" role="tabpanel" aria-label="Approval queue">
                 {count === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 px-4 gap-2">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                    <div className={`w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center`}>
                       <CheckCheck className="w-5 h-5 text-emerald-400" />
                     </div>
-                    <p className="text-white/60 text-sm font-medium">All caught up!</p>
-                    <p className="text-white/30 text-xs text-center">No content cards are currently waiting for approval.</p>
+                    <p className={`text-sm font-medium ${isDark ? 'text-white/60' : 'text-gray-500'}`}>All caught up!</p>
+                    <p className={`text-xs text-center ${isDark ? 'text-white/30' : 'text-gray-400'}`}>No content cards are currently waiting for approval.</p>
                   </div>
                 ) : (
                   pendingCards.slice(0, 8).map((card, i) => {
@@ -315,12 +339,13 @@ function ApprovalBell() {
                       <button
                         key={card.id}
                         onClick={() => goToProject(slug)}
-                        className={`w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-white/5 transition-colors group ${!isLast ? 'border-b border-white/6' : ''}`}
+                        aria-label={`${card.title} — ${project?.name ?? 'Unknown project'} — Pending approval`}
+                        className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors group ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'} ${!isLast ? `border-b ${isDark ? 'border-white/6' : 'border-gray-100'}` : ''}`}
                       >
-                        <span className="text-base shrink-0 mt-0.5 leading-none">{emoji}</span>
+                        <span className="text-base shrink-0 mt-0.5 leading-none" aria-hidden="true">{emoji}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-white/90 text-xs font-semibold truncate leading-snug">{card.title}</p>
-                          <p className="text-white/40 text-[11px] truncate mt-0.5">
+                          <p className={`text-xs font-semibold truncate leading-snug ${isDark ? 'text-white/90' : 'text-gray-900'}`}>{card.title}</p>
+                          <p className={`text-[11px] truncate mt-0.5 ${isDark ? 'text-white/40' : 'text-gray-500'}`}>
                             {project?.name ?? 'Unknown project'}
                             {card.createdBy ? ` · by ${card.createdBy}` : ''}
                           </p>
@@ -329,7 +354,7 @@ function ApprovalBell() {
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#F47A20]/15 text-[#F47A20] border border-[#F47A20]/25">
                             Pending
                           </span>
-                          <ExternalLink className="w-3 h-3 text-white/20 group-hover:text-white/60 transition-colors" />
+                          <ExternalLink className={`w-3 h-3 transition-colors ${isDark ? 'text-white/20 group-hover:text-white/60' : 'text-gray-300 group-hover:text-gray-500'}`} />
                         </div>
                       </button>
                     );
@@ -337,15 +362,15 @@ function ApprovalBell() {
                 )}
 
                 {pendingCards.length > 8 && (
-                  <div className="px-4 py-2 border-t border-white/8 text-center">
-                    <span className="text-white/30 text-[11px]">
+                  <div className={`px-4 py-2 border-t text-center ${isDark ? 'border-white/8' : 'border-gray-100'}`}>
+                    <span className={`text-[11px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
                       +{pendingCards.length - 8} more card{pendingCards.length - 8 !== 1 ? 's' : ''} not shown
                     </span>
                   </div>
                 )}
 
                 {count > 0 && (
-                  <div className="px-4 py-2.5 border-t border-white/8">
+                  <div className={`px-4 py-2.5 border-t ${isDark ? 'border-white/8' : 'border-gray-100'}`}>
                     <button
                       onClick={() => { setOpen(false); navigate('/app/projects'); }}
                       className="w-full text-center text-xs text-[#0BA4AA] hover:text-[#0BA4AA]/80 transition-colors py-0.5"
@@ -359,36 +384,36 @@ function ApprovalBell() {
 
             {/* ── Activity tab ── */}
             {tab === 'activity' && (
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-72 overflow-y-auto" role="tabpanel" aria-label="Recent activity">
                 {recentEvents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 px-4 gap-2">
-                    <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                      <Activity className="w-5 h-5 text-white/25" />
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-white/5 border border-white/10' : 'bg-gray-100 border border-gray-200'}`}>
+                      <Activity className={`w-5 h-5 ${isDark ? 'text-white/25' : 'text-gray-300'}`} />
                     </div>
-                    <p className="text-white/60 text-sm font-medium">No recent activity</p>
-                    <p className="text-white/30 text-xs text-center">Approval decisions and publish events will appear here.</p>
+                    <p className={`text-sm font-medium ${isDark ? 'text-white/60' : 'text-gray-500'}`}>No recent activity</p>
+                    <p className={`text-xs text-center ${isDark ? 'text-white/30' : 'text-gray-400'}`}>Approval decisions and publish events will appear here.</p>
                   </div>
                 ) : (
                   recentEvents.slice(0, 12).map((event, i) => {
-                    const meta   = ACTION_META[event.action] ?? { label: event.action, color: 'text-white/40', Icon: Activity };
+                    const meta   = (isDark ? ACTION_META_DARK : ACTION_META_LIGHT)[event.action] ?? { label: event.action, color: isDark ? 'text-white/40' : 'text-gray-400', Icon: Activity };
                     const isLast = i === Math.min(recentEvents.length, 12) - 1;
                     return (
                       <div
                         key={event.id}
-                        className={`flex items-start gap-3 px-4 py-3 ${!isLast ? 'border-b border-white/6' : ''}`}
+                        className={`flex items-start gap-3 px-4 py-3 ${!isLast ? `border-b ${isDark ? 'border-white/6' : 'border-gray-100'}` : ''}`}
                       >
-                        <div className="w-6 h-6 rounded-full bg-white/6 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${isDark ? 'bg-white/6 border border-white/10' : 'bg-gray-100 border border-gray-200'}`}>
                           <meta.Icon className={`w-3 h-3 ${meta.color}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-white/80 text-xs font-semibold truncate leading-snug">{event.cardTitle || 'Untitled content'}</p>
+                          <p className={`text-xs font-semibold truncate leading-snug ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{event.cardTitle || 'Untitled content'}</p>
                           <p className={`text-[10px] mt-0.5 ${meta.color}`}>
                             {meta.label}{event.performedBy ? ` by ${event.performedBy}` : ''}
                             {event.reason ? ` — "${event.reason}"` : ''}
                           </p>
-                          <p className="text-white/25 text-[10px] mt-0.5">{fmtAgo(event.timestamp)}</p>
+                          <p className={`text-[10px] mt-0.5 ${isDark ? 'text-white/25' : 'text-gray-400'}`}>{fmtAgo(event.timestamp)}</p>
                         </div>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/6 text-white/30 border border-white/8 capitalize shrink-0 mt-0.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full capitalize shrink-0 mt-0.5 ${isDark ? 'bg-white/6 text-white/30 border border-white/8' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}>
                           {PLATFORM_EMOJI[event.platform] ?? '📄'}
                         </span>
                       </div>
@@ -400,19 +425,19 @@ function ApprovalBell() {
 
             {/* ── Failures tab ── */}
             {tab === 'failures' && (
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-72 overflow-y-auto" role="tabpanel" aria-label="Publish failures">
                 {failuresLoading ? (
                   <div className="flex items-center justify-center py-8 gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-white/30" />
-                    <span className="text-white/30 text-xs">Loading failures…</span>
+                    <Loader2 className={`w-4 h-4 animate-spin ${isDark ? 'text-white/30' : 'text-gray-400'}`} />
+                    <span className={`text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>Loading failures…</span>
                   </div>
                 ) : failureCount === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 px-4 gap-2">
                     <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
                       <CheckCheck className="w-5 h-5 text-emerald-400" />
                     </div>
-                    <p className="text-white/60 text-sm font-medium">No publish failures</p>
-                    <p className="text-white/30 text-xs text-center">All scheduled auto-publishes are running normally.</p>
+                    <p className={`text-sm font-medium ${isDark ? 'text-white/60' : 'text-gray-500'}`}>No publish failures</p>
+                    <p className={`text-xs text-center ${isDark ? 'text-white/30' : 'text-gray-400'}`}>All scheduled auto-publishes are running normally.</p>
                   </div>
                 ) : (
                   <>
@@ -421,7 +446,7 @@ function ApprovalBell() {
                       return (
                         <div
                           key={f.cardId}
-                          className={`flex items-start gap-3 px-4 py-3 group hover:bg-red-500/4 transition-colors ${!isLast ? 'border-b border-white/6' : ''}`}
+                          className={`flex items-start gap-3 px-4 py-3 group transition-colors ${isDark ? 'hover:bg-red-500/4' : 'hover:bg-red-50'} ${!isLast ? `border-b ${isDark ? 'border-white/6' : 'border-gray-100'}` : ''}`}
                         >
                           {/* Icon */}
                           <div className="w-6 h-6 rounded-full bg-red-500/10 border border-red-400/20 flex items-center justify-center shrink-0 mt-0.5">
@@ -431,24 +456,25 @@ function ApprovalBell() {
                           {/* Info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="text-white/80 text-[11px] font-semibold truncate leading-snug max-w-[140px]">
+                              <p className={`text-[11px] font-semibold truncate leading-snug max-w-[140px] ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
                                 {f.cardTitle}
                               </p>
-                              <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-400/20">
+                              <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${isDark ? 'bg-red-500/15 text-red-300 border-red-400/20' : 'bg-red-50 text-red-600 border-red-200'}`}>
                                 {PLATFORM_SHORT[f.platform] ?? f.platform.toUpperCase()}
                               </span>
                             </div>
-                            <p className="text-red-300/50 text-[10px] truncate mt-0.5 leading-snug">
+                            <p className={`text-[10px] truncate mt-0.5 leading-snug ${isDark ? 'text-red-300/50' : 'text-red-400'}`}>
                               {f.error}
                             </p>
-                            <p className="text-white/20 text-[10px] mt-0.5">{fmtFailureAge(f.failedAt)} · {f.attempts} attempt{f.attempts !== 1 ? 's' : ''}</p>
+                            <p className={`text-[10px] mt-0.5 ${isDark ? 'text-white/20' : 'text-gray-400'}`}>{fmtFailureAge(f.failedAt)} · {f.attempts} attempt{f.attempts !== 1 ? 's' : ''}</p>
 
                             {/* Inline actions */}
                             <div className="flex items-center gap-1.5 mt-2">
                               <button
                                 onClick={() => handleRetryFromBell(f.cardId, f.cardTitle)}
                                 disabled={retrying.has(f.cardId)}
-                                className="flex items-center gap-1 text-[10px] font-semibold text-emerald-300/80 hover:text-emerald-200 px-2 py-0.5 rounded-md bg-emerald-500/8 hover:bg-emerald-500/15 border border-emerald-400/20 transition-all disabled:opacity-40"
+                                aria-label={`Retry publishing ${f.cardTitle}`}
+                                className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border transition-all disabled:opacity-40 ${isDark ? 'text-emerald-300/80 hover:text-emerald-200 bg-emerald-500/8 hover:bg-emerald-500/15 border-emerald-400/20' : 'text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'}`}
                               >
                                 {retrying.has(f.cardId)
                                   ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
@@ -458,7 +484,8 @@ function ApprovalBell() {
                               </button>
                               <button
                                 onClick={() => { setOpen(false); navigate('/app/content'); }}
-                                className="flex items-center gap-1 text-[10px] text-white/30 hover:text-white/60 px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
+                                aria-label={`View ${f.cardTitle} in content board`}
+                                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border transition-all ${isDark ? 'text-white/30 hover:text-white/60 bg-white/5 hover:bg-white/10 border-white/10' : 'text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 border-gray-200'}`}
                               >
                                 <ExternalLink className="w-2.5 h-2.5" />
                                 View
@@ -470,10 +497,10 @@ function ApprovalBell() {
                     })}
 
                     {/* Footer */}
-                    <div className="px-4 py-2.5 border-t border-white/8 text-center">
+                    <div className={`px-4 py-2.5 border-t text-center ${isDark ? 'border-white/8' : 'border-gray-100'}`}>
                       <button
                         onClick={() => { setOpen(false); navigate('/app/content'); }}
-                        className="w-full text-center text-xs text-red-300/60 hover:text-red-200 transition-colors py-0.5"
+                        className={`w-full text-center text-xs transition-colors py-0.5 ${isDark ? 'text-red-300/60 hover:text-red-200' : 'text-red-400 hover:text-red-500'}`}
                       >
                         Open Content Board →
                       </button>
@@ -557,10 +584,13 @@ export function EmployeeNav() {
 
             {/* Theme toggle */}
             <div className="flex items-center gap-1.5">
-              <Sun className={`w-3.5 h-3.5 transition-colors ${!isDark ? 'text-amber-500' : 'text-white/25'}`} />
+              <Sun className={`w-3.5 h-3.5 transition-colors ${!isDark ? 'text-amber-500' : 'text-white/25'}`} aria-hidden="true" />
               <button
                 onClick={toggleTheme}
                 title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                role="switch"
+                aria-checked={isDark}
                 className={`relative w-9 h-5 rounded-full transition-colors duration-300 focus:outline-none ${
                   isDark ? 'bg-[#3E3C70]' : 'bg-amber-400'
                 }`}
@@ -571,7 +601,7 @@ export function EmployeeNav() {
                   className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md block"
                 />
               </button>
-              <Moon className={`w-3.5 h-3.5 transition-colors ${isDark ? 'text-purple-300' : 'text-gray-300'}`} />
+              <Moon className={`w-3.5 h-3.5 transition-colors ${isDark ? 'text-purple-300' : 'text-gray-300'}`} aria-hidden="true" />
             </div>
 
             {/* Divider */}
@@ -597,6 +627,7 @@ export function EmployeeNav() {
             <button
               onClick={handleLogout}
               title="Sign out"
+              aria-label="Sign out"
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-sm ${
                 isDark
                   ? 'text-white/60 hover:text-white hover:bg-white/10'

@@ -5,10 +5,14 @@ import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { StatusBadge } from '../../components/saas/StatusBadge';
 import { useOutletContext } from 'react-router';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { fetchTenants, fetchTenantUsers } from '../../utils/apiClient';
 
 export function SupportPage() {
   const t = useDashboardTheme();
+
+  useSEO({ title: 'Support & Impersonation', description: 'Search tenants and users, impersonate accounts for troubleshooting.', noindex: true });
+
   const { impersonating, setImpersonating } = useOutletContext<{ impersonating: string | null; setImpersonating: (v: string | null) => void }>();
   const [query,   setQuery]   = useState('');
   const [tenants, setTenants] = useState<any[]>([]);

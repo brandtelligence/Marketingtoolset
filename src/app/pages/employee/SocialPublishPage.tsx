@@ -24,6 +24,7 @@ import { BackgroundLayout } from '../../components/BackgroundLayout';
 import { EmployeeNav } from '../../components/EmployeeNav';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { employeeTheme } from '../../utils/employeeTheme';
+import { useSEO } from '../../hooks/useSEO';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -229,6 +230,12 @@ export function SocialPublishPage() {
   const tenantId = user?.tenantId ?? 'demo';
   const { isDark } = useDashboardTheme();
   const et = employeeTheme(isDark);
+
+  useSEO({
+    title:       'Social Publishing Hub',
+    description: 'Connect social accounts, publish content across platforms, and view publish history.',
+    noindex:     true,
+  });
 
   const [connections,  setConnections]  = useState<SocialConnection[]>([]);
   const [history,      setHistory]      = useState<PublishRecord[]>([]);

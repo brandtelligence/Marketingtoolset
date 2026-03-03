@@ -52,6 +52,9 @@ import { CampaignPlannerPage }  from "./pages/employee/CampaignPlannerPage";
 // ── Team Activity Feed ──────────────────────────────────────────────────────
 import { ActivityFeedPage }     from "./pages/employee/ActivityFeedPage";
 
+// ── Channel Module Dashboard ────────────────────────────────────────────────
+import { ChannelDashboardPage } from "./pages/employee/ChannelDashboardPage";
+
 // ── 404 Not Found page ──────────────────────────────────────────────────────
 import { NotFoundPage } from "./pages/NotFoundPage";
 
@@ -125,6 +128,7 @@ export const router = createBrowserRouter([
       { path: "projects/:slug",      Component: ProjectDetailPage },
       { path: "profile",             Component: EmployeeProfilePage },
       { path: "modules",             Component: EmployeeModulesPage },
+      { path: "modules/:key",        Component: ChannelDashboardPage },
       { path: "content",             Component: ContentGenPage      },
       { path: "publish",             Component: SocialPublishPage   },
       { path: "campaign",            Component: CampaignPlannerPage },

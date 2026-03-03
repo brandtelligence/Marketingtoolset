@@ -33,6 +33,7 @@ import {
 } from '../../utils/apiClient';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { employeeTheme } from '../../utils/employeeTheme';
+import { useSEO } from '../../hooks/useSEO';
 
 // ─── Action metadata ──────────────────────────────────────────────────────────
 
@@ -236,6 +237,12 @@ export function ActivityFeedPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { isDark } = useDashboardTheme();
   const et = employeeTheme(isDark);
+
+  useSEO({
+    title:       'Team Activity Feed',
+    description: 'Real-time team collaboration feed — content edits, approvals, publishes, and campaign actions.',
+    noindex:     true,
+  });
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const loadFeed = useCallback(async (append = false, before?: string) => {

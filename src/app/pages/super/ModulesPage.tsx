@@ -5,6 +5,7 @@ import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { StatusBadge } from '../../components/saas/StatusBadge';
 import { formatRM } from '../../utils/format';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { fetchModules, fetchFeatures, updateModule, updateFeature, type Module, type Feature } from '../../utils/apiClient';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
@@ -106,6 +107,9 @@ function PriceEditor({
 
 export function ModulesPage() {
   const t = useDashboardTheme();
+
+  useSEO({ title: 'Modules & Features', description: 'Manage platform modules and feature toggles across all tenants.', noindex: true });
+
   const [modules,   setModules]   = useState<Module[]>([]);
   const [features,  setFeatures]  = useState<Feature[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -243,7 +247,7 @@ export function ModulesPage() {
           </p>
           <p className={`${t.textFaint} text-xs max-w-sm mx-auto mb-6`}>
             This happens when the tables were created <em>after</em> the server first booted.
-            Click <strong>Seed Modules</strong> to populate all 18 modules and 6 feature flags.
+            Click <strong>Seed Modules</strong> to populate all 16 modules and 40 feature flags.
           </p>
 
           {/* Result banner — shown after a seed attempt */}

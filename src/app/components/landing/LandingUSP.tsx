@@ -100,8 +100,8 @@ const USPS: USP[] = [
     title: 'Build Authority at Scale',
     subtitle: 'Earned, owned & paid media from one hub',
     description:
-      'Manage influencer partnerships, press releases, brand monitoring, virtual events, and video marketing in one place. Turn your brand into a trusted voice in your market without coordinating across five agencies.',
-    modules: ['⭐ Influencer Marketing', '📰 PR & Media', '🎥 Webinars & Events', '🎬 Video Marketing', '🎙️ Podcast & Audio'],
+      'Manage influencer partnerships, press releases, brand monitoring, video marketing, and programmatic advertising in one place. Turn your brand into a trusted voice in your market without coordinating across five agencies.',
+    modules: ['⭐ Influencer Marketing', '📰 PR & Media', '🎬 Video Marketing', '🤖 Programmatic Ads', '📲 Mobile Marketing'],
     kpiLabel: 'Earned media value',
     kpiValue: '3× ROI',
   },

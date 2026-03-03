@@ -49,6 +49,7 @@ import { useContent, createCardId, type ContentCard } from '../../contexts/Conte
 import { useProjects, availableTeamMembers } from '../../contexts/ProjectsContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { employeeTheme } from '../../utils/employeeTheme';
+import { useSEO } from '../../hooks/useSEO';
 
 // ─── Glassmorphism helpers (legacy dark-only constants kept for backward compat) ─
 
@@ -758,6 +759,12 @@ export function ContentGenPage() {
   const { projects } = useProjects();
   const navigate     = useNavigate();
   const { isDark }   = useDashboardTheme();
+
+  useSEO({
+    title:       'AI Content Studio',
+    description: 'Generate social media content, blog posts, and ad copy with GPT-4o AI assistance.',
+    noindex:     true,
+  });
   const et           = employeeTheme(isDark);
 
   // Shadow module-level constants with theme-aware versions

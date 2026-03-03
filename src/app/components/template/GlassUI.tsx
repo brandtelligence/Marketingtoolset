@@ -23,6 +23,7 @@
 import { ReactNode, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Check, AlertTriangle, Info, CheckCircle, XCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 // ── Shared accent palette ──────────────────────────────────────────────────────
 
@@ -150,12 +151,16 @@ const modalMaxW: Record<string, string> = {
 };
 
 export function GlassModal({ open, onClose, children, title, maxWidth = 'md' }: GlassModalProps) {
+  // Focus trap
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
   // Close on Escape
   useEffect(() => {
+    if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, open]);
 
   return (
     <AnimatePresence>
@@ -173,7 +178,11 @@ export function GlassModal({ open, onClose, children, title, maxWidth = 'md' }: 
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 12 }}
             transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            ref={trapRef}
             className={`relative w-full ${modalMaxW[maxWidth]} bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title || 'Modal dialog'}
           >
             {title && (
               <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/10">

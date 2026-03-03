@@ -1,10 +1,11 @@
-import { useState, ReactNode } from 'react';
+import { useState, ReactNode, useEffect } from 'react';
 import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 import { NavLink, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogOut, ChevronLeft, ChevronRight, Menu, ShieldAlert, Sun, Moon, FlaskConical } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { useDashboardTheme } from './DashboardThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { NotificationsPanel } from './NotificationsPanel';
 import { toast } from 'sonner';
 import { SHOW_DEMO_RIBBON } from '../../config/appConfig';
@@ -31,6 +32,21 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
   const t = useDashboardTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileSidebarRef = useFocusTrap<HTMLElement>(mobileOpen);
+
+  // Close mobile sidebar on Escape
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [mobileOpen]);
+
+  // Lock body scroll while mobile sidebar is open
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
 
   const handleLogout = () => {
     logout();
@@ -45,6 +61,9 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
       <button
         onClick={t.toggleTheme}
         title={t.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        aria-label={t.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        role="switch"
+        aria-checked={t.isDark}
         className={`relative w-9 h-5 rounded-full transition-colors duration-300 focus:outline-none ${
           t.isDark ? 'bg-purple-600' : 'bg-amber-400'
         }`}
@@ -152,6 +171,7 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
               onClick={handleLogout}
               className="p-2 rounded-lg text-gray-400 transition-all opacity-0 group-hover:opacity-100 hover:bg-red-500/15 hover:text-red-500"
               title="Sign out"
+              aria-label="Sign out"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -161,6 +181,7 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
             onClick={handleLogout}
             className={`p-2 rounded-lg ${t.hover} ${t.textMd} transition-colors`}
             title="Sign out"
+            aria-label="Sign out"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -245,6 +266,10 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
                 initial={{ x: -220 }} animate={{ x: 0 }} exit={{ x: -220 }}
                 transition={{ type: 'spring', stiffness: 320, damping: 32 }}
                 className={`fixed left-0 top-0 bottom-0 w-[220px] z-50 flex flex-col border-r ${t.sidebarBorder} ${t.mobileSidebarBg} md:hidden`}
+                ref={mobileSidebarRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Navigation menu"
               >
                 <SidebarContent />
               </motion.aside>
@@ -256,7 +281,10 @@ export function SaasLayout({ navItems, children, accentColor = 'purple', imperso
         <div className="flex-1 flex flex-col min-w-0">
 
           {/* Top bar */}
-          <header className={`h-14 flex items-center gap-3 px-4 sm:px-6 border-b ${t.sidebarBorder} ${t.sidebarBg} backdrop-blur-md shrink-0`}>
+          <header
+            className={`h-14 flex items-center gap-3 px-4 sm:px-6 border-b ${t.sidebarBorder} ${t.sidebarBg} backdrop-blur-md shrink-0`}
+            role="banner"
+          >
             <button
               onClick={() => setMobileOpen(true)}
               aria-label="Open navigation menu"
@@ -332,14 +360,18 @@ export function StatCard({ label, value, delta, icon, color = 'purple' }: StatCa
   };
   const c = (colorMap[color] ?? colorMap.purple)[t.isDark ? 'dark' : 'light'];
   return (
-    <div className={`bg-gradient-to-br ${c} border rounded-2xl p-5`}>
+    <div
+      className={`bg-gradient-to-br ${c} border rounded-2xl p-5`}
+      role="group"
+      aria-label={`${label}: ${value}${delta ? `, ${delta}` : ''}`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
           <p className={`${t.textMd} text-xs font-medium uppercase tracking-wider`}>{label}</p>
           <p className={`${t.text} font-bold mt-1`} style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)' }}>{value}</p>
           {delta && <p className={`${t.textFaint} text-xs mt-1`}>{delta}</p>}
         </div>
-        {icon && <div className={`${t.textFaint} shrink-0`}>{icon}</div>}
+        {icon && <div className={`${t.textFaint} shrink-0`} aria-hidden="true">{icon}</div>}
       </div>
     </div>
   );
@@ -349,7 +381,7 @@ export function StatCard({ label, value, delta, icon, color = 'purple' }: StatCa
 export function Card({ title, children, actions, className }: { title?: ReactNode; children: ReactNode; actions?: ReactNode; className?: string }) {
   const t = useDashboardTheme();
   return (
-    <div className={`${t.s0} border ${t.border} rounded-2xl ${className ?? ''}`}>
+    <section className={`${t.s0} border ${t.border} rounded-2xl ${className ?? ''}`}>
       {title && (
         <div className={`flex items-center justify-between px-5 pt-5 pb-4 border-b ${t.border}`}>
           <h2 className={`${t.text} font-semibold text-sm`}>{title}</h2>
@@ -357,7 +389,7 @@ export function Card({ title, children, actions, className }: { title?: ReactNod
         </div>
       )}
       <div className="p-5">{children}</div>
-    </div>
+    </section>
   );
 }
 

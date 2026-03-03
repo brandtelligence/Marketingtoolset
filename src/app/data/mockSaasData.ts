@@ -68,8 +68,6 @@ export const MOCK_MODULES: Module[] = [
   { id: 'm12', key: 'mobile_marketing',    name: 'Mobile Marketing',              description: 'SMS, push notifications, in-app advertising, and mobile-first campaigns.',              globalEnabled: true, basePrice: 200, icon: '📲', category: 'communication' },
   { id: 'm13', key: 'programmatic_ads',    name: 'Programmatic Advertising',      description: 'Automated ad buying across networks using DSPs and real-time bidding.',                 globalEnabled: true, basePrice: 400, icon: '🤖', category: 'marketing' },
   { id: 'm14', key: 'influencer',          name: 'Influencer Marketing',          description: 'Influencer partnerships, UGC campaigns, and brand ambassador programmes.',               globalEnabled: true, basePrice: 280, icon: '⭐', category: 'marketing' },
-  { id: 'm15', key: 'podcast_audio',       name: 'Podcast & Audio Marketing',     description: 'Podcast production, audio ads, and Spotify / Apple Music campaigns.',                   globalEnabled: true, basePrice: 250, icon: '🎙️', category: 'marketing' },
-  { id: 'm16', key: 'webinars_events',     name: 'Webinars & Virtual Events',     description: 'Live webinars, virtual conferences, and online workshop content.',                      globalEnabled: true, basePrice: 300, icon: '🎥', category: 'marketing' },
   { id: 'm17', key: 'pr_media',            name: 'Public Relations & Media',      description: 'Press releases, media outreach, and brand reputation management.',                      globalEnabled: true, basePrice: 350, icon: '📰', category: 'communication' },
   { id: 'm18', key: 'content_scrapper',    name: 'Content Scrapper',              description: 'Scrape, curate, and repurpose content from the web to fuel your marketing pipeline.',   globalEnabled: true, basePrice: 180, icon: '🕷️', category: 'marketing' },
 ];
@@ -80,12 +78,59 @@ export interface Feature {
   globalEnabled: boolean; rolloutNote: string;
 }
 export const MOCK_FEATURES: Feature[] = [
+  // m1 — Social Media Management
   { id: 'f1', key: 'ai_caption', name: 'AI Caption Generator', moduleId: 'm1', globalEnabled: true, rolloutNote: '100% rollout' },
   { id: 'f2', key: 'bulk_schedule', name: 'Bulk Post Scheduler', moduleId: 'm1', globalEnabled: true, rolloutNote: '100% rollout' },
   { id: 'f3', key: 'telegram_support', name: 'Telegram Channel Support', moduleId: 'm1', globalEnabled: true, rolloutNote: 'Beta – 50%' },
+  // m2 — AI Content Studio
   { id: 'f4', key: 'content_approval', name: 'Multi-step Approval Workflow', moduleId: 'm2', globalEnabled: true, rolloutNote: '100% rollout' },
   { id: 'f5', key: 'gpt4_gen', name: 'GPT-4 Content Generation', moduleId: 'm2', globalEnabled: false, rolloutNote: 'Staged – 20%' },
+  // m3 — Analytics Dashboard
   { id: 'f6', key: 'custom_reports', name: 'Custom Report Builder', moduleId: 'm3', globalEnabled: true, rolloutNote: '100% rollout' },
+  // m5 — Email Marketing
+  { id: 'f7',  key: 'email_drip',        name: 'Drip Sequence Builder',       moduleId: 'm5', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f8',  key: 'email_ab_test',     name: 'A/B Subject Line Testing',    moduleId: 'm5', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f9',  key: 'email_deliverability', name: 'Deliverability Monitor',   moduleId: 'm5', globalEnabled: true,  rolloutNote: 'Beta – 70%' },
+  { id: 'f10', key: 'email_templates',   name: 'AI Email Template Library',   moduleId: 'm5', globalEnabled: true,  rolloutNote: '100% rollout' },
+  // m6 — SEO Toolkit
+  { id: 'f11', key: 'seo_keyword',       name: 'AI Keyword Research',         moduleId: 'm6', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f12', key: 'seo_rank_tracker',  name: 'SERP Rank Tracker',           moduleId: 'm6', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f13', key: 'seo_audit',         name: 'On-Page SEO Audit',           moduleId: 'm6', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f14', key: 'seo_backlink',      name: 'Backlink Analyser',           moduleId: 'm6', globalEnabled: true,  rolloutNote: 'Beta – 60%' },
+  // m7 — SEM
+  { id: 'f15', key: 'sem_campaign',      name: 'Campaign Builder',            moduleId: 'm7', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f16', key: 'sem_bid_optimizer', name: 'AI Bid Optimiser',            moduleId: 'm7', globalEnabled: true,  rolloutNote: 'Beta – 50%' },
+  { id: 'f17', key: 'sem_ad_copy',       name: 'Ad Copy Generator',           moduleId: 'm7', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f18', key: 'sem_quality_score', name: 'Quality Score Dashboard',     moduleId: 'm7', globalEnabled: true,  rolloutNote: '100% rollout' },
+  // m8 — Content Marketing
+  { id: 'f19', key: 'cm_blog_gen',       name: 'AI Blog Post Generator',      moduleId: 'm8', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f20', key: 'cm_whitepaper',     name: 'Whitepaper Builder',          moduleId: 'm8', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f21', key: 'cm_editorial_cal',  name: 'Editorial Calendar',          moduleId: 'm8', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f22', key: 'cm_seo_score',      name: 'Content SEO Scorer',          moduleId: 'm8', globalEnabled: false, rolloutNote: 'Staged – 30%' },
+  // m9 — Display Advertising
+  { id: 'f23', key: 'da_banner_gen',     name: 'AI Banner Generator',         moduleId: 'm9', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f24', key: 'da_audience_target',name: 'Audience Targeting Engine',   moduleId: 'm9', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f25', key: 'da_retargeting',    name: 'Retargeting Pixel Manager',   moduleId: 'm9', globalEnabled: true,  rolloutNote: 'Beta – 50%' },
+  // m10 — Affiliate Marketing
+  { id: 'f26', key: 'af_partner_portal', name: 'Partner Portal',              moduleId: 'm10', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f27', key: 'af_commission',     name: 'Commission Tracker',          moduleId: 'm10', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f28', key: 'af_link_gen',       name: 'Affiliate Link Generator',    moduleId: 'm10', globalEnabled: true,  rolloutNote: '100% rollout' },
+  // m11 — Video Marketing
+  { id: 'f29', key: 'vm_script_gen',     name: 'AI Video Script Writer',      moduleId: 'm11', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f30', key: 'vm_thumbnail',      name: 'Thumbnail Generator',         moduleId: 'm11', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f31', key: 'vm_seo_tags',       name: 'Video SEO Tag Optimiser',     moduleId: 'm11', globalEnabled: true,  rolloutNote: 'Beta – 60%' },
+  // m12 — Mobile Marketing
+  { id: 'f32', key: 'mob_sms',           name: 'Bulk SMS Campaign Builder',   moduleId: 'm12', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f33', key: 'mob_push',          name: 'Push Notification Manager',   moduleId: 'm12', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f34', key: 'mob_in_app',        name: 'In-App Ad Builder',           moduleId: 'm12', globalEnabled: true,  rolloutNote: 'Beta – 40%' },
+  // m13 — Programmatic Advertising
+  { id: 'f35', key: 'prog_dsp',          name: 'DSP Integration Manager',     moduleId: 'm13', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f36', key: 'prog_rtb',          name: 'Real-Time Bidding Dashboard', moduleId: 'm13', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f37', key: 'prog_audience',     name: 'Audience Segment Builder',    moduleId: 'm13', globalEnabled: true,  rolloutNote: 'Beta – 50%' },
+  // m14 — Influencer Marketing
+  { id: 'f38', key: 'inf_discovery',     name: 'Influencer Discovery Engine', moduleId: 'm14', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f39', key: 'inf_campaign',      name: 'Campaign Brief Builder',      moduleId: 'm14', globalEnabled: true,  rolloutNote: '100% rollout' },
+  { id: 'f40', key: 'inf_roi',           name: 'Influencer ROI Tracker',      moduleId: 'm14', globalEnabled: true,  rolloutNote: 'Beta – 60%' },
 ];
 
 // ── Tenants ───────────────────────────────────────────────────────────────────

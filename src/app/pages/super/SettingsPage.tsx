@@ -9,6 +9,7 @@ import {
 import { PageHeader, Card, PrimaryBtn } from '../../components/saas/SaasLayout';
 import { Field, Input, Select } from '../../components/saas/DrawerForm';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { projectId } from '/utils/supabase/info';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { useNavigate } from 'react-router';
@@ -142,6 +143,8 @@ function GatewayDropdown({
 export function SettingsPage() {
   const t = useDashboardTheme();
   const navigate = useNavigate();
+
+  useSEO({ title: 'Platform Settings', description: 'Configure platform-wide settings, default AI budgets, and system preferences.', noindex: true });
 
   // ── SMTP ────────────────────────────────────────────────────────────────────
   const [smtpHost,    setSmtpHost]    = useState('smtp.sendgrid.net');

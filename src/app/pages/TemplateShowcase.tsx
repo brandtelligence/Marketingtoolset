@@ -12,6 +12,7 @@
  *   5. Import what you need from GlassUI and wrap pages with GlassBackground.
  */
 
+import { useSEO } from '../hooks/useSEO';
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -60,6 +61,8 @@ const TABLE_DATA = [
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function TemplateShowcase() {
+  useSEO({ title: 'UI Template Showcase', description: 'Browse glassmorphism UI components and design system tokens.', noindex: true });
+
   const [palette, setPalette]       = useState<GlassPalette>('brand');
   const [accent, setAccent]         = useState<GlassAccent>('purple');
   const [activeTab, setActiveTab]   = useState('components');

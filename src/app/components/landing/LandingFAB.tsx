@@ -122,9 +122,9 @@ const FAB_ITEMS: FABItem[] = [
     gradient: 'from-rose-500 to-orange-500',
     accentText: 'text-rose-300',
     accentBg: 'bg-rose-500/15 border-rose-500/25',
-    feature: 'Influencer, PR, Video & Webinar Management',
+    feature: 'Influencer, PR & Video Marketing',
     featureDetail:
-      'Manage influencer partnerships, UGC campaigns, and brand ambassador programmes. Draft and distribute press releases. Plan and host virtual events and webinars. Produce and track video content performance — all from one workspace.',
+      'Manage influencer partnerships, UGC campaigns, and brand ambassador programmes. Draft and distribute press releases. Produce and track video content performance — all from one workspace.',
     advantage: 'Coordinate earned, owned, and paid media from a single workflow',
     advantageDetail:
       'This module cluster replaces three separate agency retainers: a PR agency, an influencer agency, and a production house for video. All three are now internal capabilities managed by your own team.',
@@ -133,7 +133,7 @@ const FAB_ITEMS: FABItem[] = [
       'Brands running consistent PR, influencer, and video programs see 3× earned media value compared to paid-only strategies. The compounding organic growth — search visibility, domain authority, social proof — becomes a durable competitive moat.',
     metric: '3×',
     metricLabel: 'Earned media value',
-    modules: ['⭐ Influencer Marketing', '📰 PR & Media', '🎥 Webinars & Events', '🎬 Video Marketing'],
+    modules: ['⭐ Influencer Marketing', '📰 PR & Media', '🎬 Video Marketing', '🤖 Programmatic Ads'],
   },
 ];
 

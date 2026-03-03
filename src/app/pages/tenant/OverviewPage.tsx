@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/saas/StatusBadge';
 import { useAuth } from '../../components/AuthContext';
 import { formatRM } from '../../utils/format';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import {
   fetchTenants, fetchInvoices, fetchTenantUsers, fetchModules,
   type Tenant, type Invoice,
@@ -16,6 +17,8 @@ export function TenantOverviewPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  useSEO({ title: 'Dashboard Overview', description: 'Tenant dashboard — key metrics, recent activity, and quick actions.', noindex: true });
 
   const [tenant,   setTenant]   = useState<Tenant | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);

@@ -6,6 +6,7 @@ import { DataTable, Column } from '../../components/saas/DataTable';
 import { StatusBadge } from '../../components/saas/StatusBadge';
 import { DrawerForm, Field, Textarea } from '../../components/saas/DrawerForm';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import { formatRM } from '../../utils/format';
 import { fetchInvoices, updateInvoice, type Invoice, type InvoiceStatus } from '../../utils/apiClient';
 import { getAuthHeaders } from '../../utils/authHeaders';
@@ -101,6 +102,9 @@ ${inv.notes ? `<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>` : 
 
 export function BillingPage() {
   const t = useDashboardTheme();
+
+  useSEO({ title: 'Billing & Invoices', description: 'Generate, review, and manage invoices for all tenants.', noindex: true });
+
   const [invoices,  setInvoices]  = useState<Invoice[]>([]);
   const [selected,  setSelected]  = useState<Invoice | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -178,8 +182,8 @@ export function BillingPage() {
       key: 'actions', header: '',
       render: i => (
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-          <button onClick={() => openInvoice(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`}><Eye className="w-4 h-4" /></button>
-          <button onClick={() => generateInvoicePdf(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`}><Download className="w-4 h-4" /></button>
+          <button onClick={() => openInvoice(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`} aria-label={`View invoice ${i.invoiceNumber}`}><Eye className="w-4 h-4" /></button>
+          <button onClick={() => generateInvoicePdf(i)} className={`p-1.5 rounded-lg ${t.hover} ${t.textMd}`} aria-label={`Download invoice ${i.invoiceNumber}`}><Download className="w-4 h-4" /></button>
         </div>
       ),
     },

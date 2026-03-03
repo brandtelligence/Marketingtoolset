@@ -13,7 +13,7 @@
  *   4. Save to Board   — selected slots → ContentCards (draft, with scheduledDate)
  */
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Sparkles, CalendarDays, Check, ChevronDown, ChevronUp,
@@ -30,6 +30,7 @@ import {
 import { toast } from 'sonner';
 import { useAuth } from '../AuthContext';
 import { useDashboardTheme } from '../saas/DashboardThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { employeeTheme } from '../../utils/employeeTheme';
 import { useProjects } from '../../contexts/ProjectsContext';
 import { useContent, createCardId } from '../../contexts/ContentContext';
@@ -343,6 +344,12 @@ function SlotEditModal({ slot, onSave, onClose }: {
   const [draft, setDraft] = useState<CalendarSlot>({ ...slot });
   const [hashtagInput, setHashtagInput] = useState(slot.hashtags.join(' '));
   const { isDark } = useDashboardTheme();
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
   const et = employeeTheme(isDark);
   const inputCls = et.inputCls;
   const labelCls = `block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${et.textFaint}`;
@@ -364,8 +371,12 @@ function SlotEditModal({ slot, onSave, onClose }: {
         exit={{ opacity: 0, scale: 0.95, y: 12 }}
         transition={{ duration: 0.2 }}
         onClick={e => e.stopPropagation()}
+        ref={trapRef}
         className={`relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border shadow-2xl ${isDark ? 'border-white/15' : 'border-gray-200'}`}
         style={{ background: isDark ? 'rgba(10,8,35,0.97)' : 'rgba(255,255,255,0.98)', backdropFilter: 'blur(24px)' }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit calendar slot"
       >
         {/* Header */}
         <div className={`flex items-center justify-between px-6 py-4 border-b ${et.border} sticky top-0 z-10`}

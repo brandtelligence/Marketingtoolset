@@ -129,6 +129,7 @@ function KPICard({
   sub,
   accentClass,
   delay,
+  isDark = true,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -136,22 +137,23 @@ function KPICard({
   sub: string;
   accentClass: string;
   delay: number;
+  isDark?: boolean;
 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.3 }}
-      className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-2"
+      className={`border rounded-xl p-4 flex flex-col gap-2 ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}
     >
       <div className={`w-8 h-8 rounded-lg ${accentClass} flex items-center justify-center`}>
         <Icon className="w-4 h-4 text-white" />
       </div>
       <div>
-        <p className="text-white font-bold text-2xl leading-none tracking-tight">{value}</p>
-        <p className="text-white/40 text-[10px] mt-1.5 leading-snug">{sub}</p>
+        <p className={`font-bold text-2xl leading-none tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>{value}</p>
+        <p className={`text-[10px] mt-1.5 leading-snug ${isDark ? 'text-white/40' : 'text-gray-400'}`}>{sub}</p>
       </div>
-      <p className="text-white/50 text-xs font-medium mt-auto">{label}</p>
+      <p className={`text-xs font-medium mt-auto ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{label}</p>
     </motion.div>
   );
 }
@@ -307,15 +309,15 @@ function EngagementCsvImporter({
         style={{ background: isDark ? 'linear-gradient(150deg,rgba(14,12,28,0.99) 0%,rgba(8,6,18,0.99) 100%)' : 'linear-gradient(150deg,rgba(255,255,255,0.99) 0%,rgba(248,249,252,0.99) 100%)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/8 shrink-0">
+        <div className={`flex items-center gap-3 px-5 py-4 border-b shrink-0 ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
           <div className="w-9 h-9 rounded-xl bg-teal-500/15 border border-teal-400/25 flex items-center justify-center">
             <Upload className="w-4 h-4 text-teal-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="text-white font-bold text-sm">Import Engagement Metrics</h2>
-            <p className="text-white/35 text-xs mt-0.5">Upload a CSV to bulk-update engagement data on published cards</p>
+            <h2 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>Import Engagement Metrics</h2>
+            <p className={`text-xs mt-0.5 ${isDark ? 'text-white/35' : 'text-gray-400'}`}>Upload a CSV to bulk-update engagement data on published cards</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/6 hover:bg-white/12 flex items-center justify-center text-white/50 hover:text-white transition-all">
+          <button onClick={onClose} className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${isDark ? 'bg-white/6 hover:bg-white/12 text-white/50 hover:text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-gray-700'}`}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -337,12 +339,12 @@ function EngagementCsvImporter({
               onDrop={handleDrop}
               onDragOver={e => e.preventDefault()}
               onClick={() => fileRef.current?.click()}
-              className="border-2 border-dashed border-white/15 hover:border-teal-400/40 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group"
+              className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all group ${isDark ? 'border-white/15 hover:border-teal-400/40' : 'border-gray-300 hover:border-teal-400/60'}`}
             >
-              <Upload className="w-8 h-8 text-white/20 group-hover:text-teal-400/60 transition-colors" />
+              <Upload className={`w-8 h-8 group-hover:text-teal-400/60 transition-colors ${isDark ? 'text-white/20' : 'text-gray-300'}`} />
               <div className="text-center">
-                <p className="text-white/50 text-sm font-medium">Drop your CSV here or click to browse</p>
-                <p className="text-white/25 text-xs mt-1">Columns: <span className="font-mono">cardTitle, platform, likes, comments, shares, reach</span></p>
+                <p className={`text-sm font-medium ${isDark ? 'text-white/50' : 'text-gray-500'}`}>Drop your CSV here or click to browse</p>
+                <p className={`text-xs mt-1 ${isDark ? 'text-white/25' : 'text-gray-400'}`}>Columns: <span className="font-mono">cardTitle, platform, likes, comments, shares, reach</span></p>
               </div>
             </div>
           )}
@@ -351,9 +353,9 @@ function EngagementCsvImporter({
 
           {/* Error */}
           {error && (
-            <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-400/20 rounded-xl">
+            <div className={`flex items-start gap-2 p-3 rounded-xl ${isDark ? 'bg-red-500/10 border border-red-400/20' : 'bg-red-50 border border-red-200'}`}>
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <p className="text-red-300 text-xs leading-relaxed">{error}</p>
+              <p className={`text-xs leading-relaxed ${isDark ? 'text-red-300' : 'text-red-600'}`}>{error}</p>
             </div>
           )}
 
@@ -362,38 +364,38 @@ function EngagementCsvImporter({
             <div className="space-y-3">
               {/* Summary badges */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-1 rounded-full bg-white/6 border border-white/10 text-white/60 text-xs">{rows.length} rows parsed</span>
-                {matchedCount > 0   && <span className="px-2.5 py-1 rounded-full bg-green-500/12 border border-green-400/20 text-green-300 text-xs">✓ {matchedCount} matched</span>}
-                {unmatchedCount > 0 && <span className="px-2.5 py-1 rounded-full bg-amber-500/12 border border-amber-400/20 text-amber-300 text-xs">⚠ {unmatchedCount} unmatched</span>}
-                <button onClick={() => { setRows(null); setError(null); }} className="ml-auto text-white/30 hover:text-white/60 text-[10px] transition-colors">
+                <span className={`px-2.5 py-1 rounded-full text-xs ${isDark ? 'bg-white/6 border border-white/10 text-white/60' : 'bg-gray-100 border border-gray-200 text-gray-500'}`}>{rows.length} rows parsed</span>
+                {matchedCount > 0   && <span className={`px-2.5 py-1 rounded-full text-xs ${isDark ? 'bg-green-500/12 border border-green-400/20 text-green-300' : 'bg-green-50 border border-green-200 text-green-700'}`}>✓ {matchedCount} matched</span>}
+                {unmatchedCount > 0 && <span className={`px-2.5 py-1 rounded-full text-xs ${isDark ? 'bg-amber-500/12 border border-amber-400/20 text-amber-300' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>⚠ {unmatchedCount} unmatched</span>}
+                <button onClick={() => { setRows(null); setError(null); }} className={`ml-auto text-[10px] transition-colors ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'}`}>
                   Upload different file
                 </button>
               </div>
 
               {/* Table */}
-              <div className="rounded-xl border border-white/8 overflow-hidden">
+              <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-white/8" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+                      <tr className={`border-b ${isDark ? 'border-white/8' : 'border-gray-200'}`} style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
                         {['Status', 'Card Title', 'Likes', 'Comments', 'Shares', 'Reach'].map(h => (
-                          <th key={h} className="text-left text-white/40 px-3 py-2.5 font-semibold uppercase tracking-wider text-[10px]">{h}</th>
+                          <th key={h} className={`text-left px-3 py-2.5 font-semibold uppercase tracking-wider text-[10px] ${isDark ? 'text-white/40' : 'text-gray-400'}`}>{h}</th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className={`divide-y ${isDark ? 'divide-white/5' : 'divide-gray-100'}`}>
                       {rows.map((row, i) => (
-                        <tr key={i} className={`transition-colors ${row.matched ? 'hover:bg-white/3' : 'opacity-50'}`}>
+                        <tr key={i} className={`transition-colors ${row.matched ? isDark ? 'hover:bg-white/3' : 'hover:bg-gray-50' : 'opacity-50'}`}>
                           <td className="px-3 py-2.5 shrink-0">
                             {row.matched
                               ? <span className="w-5 h-5 rounded-full bg-green-500/15 border border-green-400/25 flex items-center justify-center"><Check className="w-3 h-3 text-green-400" /></span>
                               : <span className="w-5 h-5 rounded-full bg-amber-500/15 border border-amber-400/25 flex items-center justify-center"><AlertCircle className="w-3 h-3 text-amber-400" /></span>}
                           </td>
-                          <td className="px-3 py-2.5 text-white/70 font-medium max-w-[180px] truncate">{row.cardTitle}</td>
-                          <td className="px-3 py-2.5 text-pink-300/80 font-mono">{row.likes.toLocaleString()}</td>
-                          <td className="px-3 py-2.5 text-blue-300/80 font-mono">{row.comments.toLocaleString()}</td>
-                          <td className="px-3 py-2.5 text-green-300/80 font-mono">{row.shares.toLocaleString()}</td>
-                          <td className="px-3 py-2.5 text-purple-300/80 font-mono">{row.reach.toLocaleString()}</td>
+                          <td className={`px-3 py-2.5 font-medium max-w-[180px] truncate ${isDark ? 'text-white/70' : 'text-gray-700'}`}>{row.cardTitle}</td>
+                          <td className={`px-3 py-2.5 font-mono ${isDark ? 'text-pink-300/80' : 'text-pink-600'}`}>{row.likes.toLocaleString()}</td>
+                          <td className={`px-3 py-2.5 font-mono ${isDark ? 'text-blue-300/80' : 'text-blue-600'}`}>{row.comments.toLocaleString()}</td>
+                          <td className={`px-3 py-2.5 font-mono ${isDark ? 'text-green-300/80' : 'text-green-600'}`}>{row.shares.toLocaleString()}</td>
+                          <td className={`px-3 py-2.5 font-mono ${isDark ? 'text-purple-300/80' : 'text-purple-600'}`}>{row.reach.toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -406,11 +408,11 @@ function EngagementCsvImporter({
 
         {/* Footer */}
         {rows && matchedCount > 0 && (
-          <div className="px-5 py-4 border-t border-white/8 shrink-0 flex items-center gap-3">
-            <p className="flex-1 text-white/30 text-xs">
+          <div className={`px-5 py-4 border-t shrink-0 flex items-center gap-3 ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
+            <p className={`flex-1 text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
               Will update engagement metrics on {matchedCount} card{matchedCount !== 1 ? 's' : ''}
             </p>
-            <button onClick={onClose} className="px-4 py-2 rounded-xl border border-white/12 bg-white/5 hover:bg-white/10 text-white/60 text-sm font-semibold transition-all">
+            <button onClick={onClose} className={`px-4 py-2 rounded-xl border text-sm font-semibold transition-all ${isDark ? 'border-white/12 bg-white/5 hover:bg-white/10 text-white/60' : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-500'}`}>
               Cancel
             </button>
             <button
@@ -644,9 +646,9 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
       {/* ── Dashboard header row ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-white/40 text-[10px] font-semibold uppercase tracking-wider">Analytics Overview</p>
+          <p className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? 'text-white/40' : 'text-gray-400'}`}>Analytics Overview</p>
           {/* Period picker */}
-          <div className="flex items-center gap-1 p-0.5 bg-white/5 border border-white/10 rounded-xl">
+          <div className={`flex items-center gap-1 p-0.5 border rounded-xl ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-100 border-gray-200'}`}>
             {PERIOD_OPTIONS.map(opt => (
               <button
                 key={opt.id}
@@ -654,7 +656,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${
                   period === opt.id
                     ? 'bg-[#0BA4AA]/20 text-[#0BA4AA] border border-[#0BA4AA]/30'
-                    : 'text-white/30 hover:text-white/60'
+                    : isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
                 {opt.label}
@@ -662,7 +664,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
             ))}
           </div>
           {period !== 'all' && (
-            <span className="text-white/20 text-[10px]">
+            <span className={`text-[10px] ${isDark ? 'text-white/20' : 'text-gray-400'}`}>
               {filteredCards.length} of {cards.length} cards in period
             </span>
           )}
@@ -670,7 +672,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
         <div className="flex items-center gap-2 flex-wrap">
           {/* Sync status indicator */}
           {syncStatus?.lastSyncAt && (
-            <span className="text-white/20 text-[10px] flex items-center gap-1">
+            <span className={`text-[10px] flex items-center gap-1 ${isDark ? 'text-white/20' : 'text-gray-400'}`}>
               <Wifi className="w-2.5 h-2.5" />
               Last sync: {new Date(syncStatus.lastSyncAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               {syncStatus.synced !== undefined && ` · ${syncStatus.synced} synced`}
@@ -721,7 +723,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
               URL.revokeObjectURL(url);
               toast.success('Analytics exported', { description: `${filteredCards.length} cards exported to CSV` });
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/12 bg-white/5 hover:bg-white/10 text-white/50 hover:text-white/70 text-xs font-semibold transition-all"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${isDark ? 'border-white/12 bg-white/5 hover:bg-white/10 text-white/50 hover:text-white/70' : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-700'}`}
           >
             <Download className="w-3.5 h-3.5" />
             Export CSV
@@ -738,6 +740,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           sub={`across ${Object.keys(filteredCards.reduce((a, c) => ({ ...a, [c.platform]: 1 }), {})).length} platforms`}
           accentClass="bg-purple-500/50"
           delay={0}
+          isDark={isDark}
         />
         <KPICard
           icon={TrendingUp}
@@ -746,6 +749,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           sub={`from ${decisionedCount} decisioned card${decisionedCount !== 1 ? 's' : ''}`}
           accentClass="bg-teal-500/50"
           delay={0.05}
+          isDark={isDark}
         />
         <KPICard
           icon={Clock}
@@ -754,6 +758,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           sub="from creation to approval"
           accentClass="bg-blue-500/50"
           delay={0.1}
+          isDark={isDark}
         />
         <KPICard
           icon={CheckCircle}
@@ -762,6 +767,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           sub={period === 'all' ? 'all published cards' : `cards published in last ${period}`}
           accentClass="bg-green-600/40"
           delay={0.15}
+          isDark={isDark}
         />
       </div>
 
@@ -773,14 +779,14 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3"
+          className={`border rounded-xl p-4 space-y-3 ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}
         >
-          <h4 className="text-white/50 text-[10px] font-semibold uppercase tracking-wider">
+          <h4 className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? 'text-white/50' : 'text-gray-400'}`}>
             Posts by Platform
           </h4>
 
           {platformData.length === 0 ? (
-            <p className="text-white/25 text-xs py-4 text-center">No platform data yet</p>
+            <p className={`text-xs py-4 text-center ${isDark ? 'text-white/25' : 'text-gray-400'}`}>No platform data yet</p>
           ) : (
             <div className="space-y-2.5">
               {platformData.map(({ platform, count }) => {
@@ -798,9 +804,9 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                       <div className="w-3.5 h-3.5 shrink-0" />
                     )}
                     {/* Name */}
-                    <span className="text-white/60 text-xs w-20 shrink-0 truncate">{name}</span>
+                    <span className={`text-xs w-20 shrink-0 truncate ${isDark ? 'text-white/60' : 'text-gray-600'}`}>{name}</span>
                     {/* Progress bar */}
-                    <div className="flex-1 h-2 bg-white/8 rounded-full overflow-hidden">
+                    <div className={`flex-1 h-2 rounded-full overflow-hidden ${isDark ? 'bg-white/8' : 'bg-gray-200'}`}>
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${barPct}%` }}
@@ -809,7 +815,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                       />
                     </div>
                     {/* Count */}
-                    <span className="text-white/40 text-[10px] w-5 text-right shrink-0">{count}</span>
+                    <span className={`text-[10px] w-5 text-right shrink-0 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>{count}</span>
                   </div>
                 );
               })}
@@ -822,14 +828,14 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
-          className="bg-white/5 border border-white/10 rounded-xl p-4"
+          className={`border rounded-xl p-4 ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}
         >
-          <h4 className="text-white/50 text-[10px] font-semibold uppercase tracking-wider mb-3">
+          <h4 className={`text-[10px] font-semibold uppercase tracking-wider mb-3 ${isDark ? 'text-white/50' : 'text-gray-400'}`}>
             Status Distribution
           </h4>
 
           {statusData.length === 0 ? (
-            <p className="text-white/25 text-xs py-4 text-center">No status data yet</p>
+            <p className={`text-xs py-4 text-center ${isDark ? 'text-white/25' : 'text-gray-400'}`}>No status data yet</p>
           ) : (
             <div className="flex items-center gap-4">
               {/* Donut */}
@@ -867,8 +873,8 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                         style={{ backgroundColor: hex }}
                       />
                       <StatusIcon className={`w-3 h-3 shrink-0 ${statusMeta[status].iconColor}`} />
-                      <span className="text-white/60 text-[11px] flex-1 min-w-0 truncate">{name}</span>
-                      <span className="text-white/35 text-[10px] shrink-0">{value} · {pct}%</span>
+                      <span className={`text-[11px] flex-1 min-w-0 truncate ${isDark ? 'text-white/60' : 'text-gray-600'}`}>{name}</span>
+                      <span className={`text-[10px] shrink-0 ${isDark ? 'text-white/35' : 'text-gray-400'}`}>{value} · {pct}%</span>
                     </div>
                   );
                 })}
@@ -887,9 +893,9 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           className="space-y-4"
         >
           {/* Section header */}
-          <div className="flex items-center gap-2 border-t border-white/8 pt-4">
+          <div className={`flex items-center gap-2 border-t pt-4 ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
             <Heart className="w-3.5 h-3.5 text-pink-400" />
-            <h4 className="text-white/60 text-xs font-semibold uppercase tracking-wider">
+            <h4 className={`text-xs font-semibold uppercase tracking-wider ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
               Engagement Performance — Published Posts
             </h4>
           </div>
@@ -902,8 +908,8 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 <Heart className="w-4 h-4 text-pink-400" />
               </div>
               <div>
-                <p className="text-white font-bold text-lg leading-none">{totalLikes.toLocaleString()}</p>
-                <p className="text-white/40 text-[10px] mt-1">Total Likes</p>
+                <p className={`font-bold text-lg leading-none ${isDark ? 'text-white' : 'text-gray-900'}`}>{totalLikes.toLocaleString()}</p>
+                <p className={`text-[10px] mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>Total Likes</p>
               </div>
             </div>
             {/* Total Reach */}
@@ -912,8 +918,8 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 <Eye className="w-4 h-4 text-purple-400" />
               </div>
               <div>
-                <p className="text-white font-bold text-lg leading-none">{totalReach.toLocaleString()}</p>
-                <p className="text-white/40 text-[10px] mt-1">Total Reach</p>
+                <p className={`font-bold text-lg leading-none ${isDark ? 'text-white' : 'text-gray-900'}`}>{totalReach.toLocaleString()}</p>
+                <p className={`text-[10px] mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>Total Reach</p>
               </div>
             </div>
             {/* Avg Engagement Rate */}
@@ -922,18 +928,18 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 <TrendingUp className="w-4 h-4 text-teal-400" />
               </div>
               <div>
-                <p className="text-white font-bold text-lg leading-none">
+                <p className={`font-bold text-lg leading-none ${isDark ? 'text-white' : 'text-gray-900'}`}>
                   {avgEngagementRate !== null ? `${avgEngagementRate.toFixed(2)}%` : '—'}
                 </p>
-                <p className="text-white/40 text-[10px] mt-1">Avg. Engagement Rate</p>
+                <p className={`text-[10px] mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>Avg. Engagement Rate</p>
               </div>
             </div>
           </div>
 
           {/* Stacked bar chart — engagement by platform */}
           {engagementByPlatform.length > 0 && (
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-              <h4 className="text-white/50 text-[10px] font-semibold uppercase tracking-wider mb-4">
+            <div className={`border rounded-xl p-4 ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
+              <h4 className={`text-[10px] font-semibold uppercase tracking-wider mb-4 ${isDark ? 'text-white/50' : 'text-gray-400'}`}>
                 Engagement by Platform (Likes · Comments · Shares)
               </h4>
               <ResponsiveContainer width="100%" height={180}>
@@ -964,7 +970,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 ].map(({ color, label }) => (
                   <div key={label} className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
-                    <span className="text-white/40 text-[10px]">{label}</span>
+                    <span className={`text-[10px] ${isDark ? 'text-white/40' : 'text-gray-400'}`}>{label}</span>
                   </div>
                 ))}
               </div>
@@ -981,12 +987,12 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
           transition={{ delay: 0.45 }}
           className="space-y-3"
         >
-          <div className="flex items-center gap-2 border-t border-white/8 pt-4">
+          <div className={`flex items-center gap-2 border-t pt-4 ${isDark ? 'border-white/8' : 'border-gray-200'}`}>
             <Timer className="w-3.5 h-3.5 text-amber-400" />
-            <h4 className="text-white/60 text-xs font-semibold uppercase tracking-wider">
+            <h4 className={`text-xs font-semibold uppercase tracking-wider ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
               Approval SLA Snapshot — Pending Cards
             </h4>
-            <span className="text-white/20 text-[10px]">({warningHours}h warn · {breachHours}h breach)</span>
+            <span className={`text-[10px] ${isDark ? 'text-white/20' : 'text-gray-400'}`}>({warningHours}h warn · {breachHours}h breach)</span>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -996,8 +1002,8 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 <CheckCircle className="w-4 h-4 text-green-400" />
               </div>
               <div>
-                <p className="text-white font-bold text-lg leading-none">{slaOk}</p>
-                <p className="text-white/40 text-[10px] mt-1">On Time</p>
+                <p className={`font-bold text-lg leading-none ${isDark ? 'text-white' : 'text-gray-900'}`}>{slaOk}</p>
+                <p className={`text-[10px] mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>On Time</p>
               </div>
             </div>
             {/* At Risk */}
@@ -1006,8 +1012,8 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 <Timer className="w-4 h-4 text-amber-400" />
               </div>
               <div>
-                <p className={`font-bold text-lg leading-none ${slaWarning > 0 ? 'text-amber-300' : 'text-white'}`}>{slaWarning}</p>
-                <p className="text-white/40 text-[10px] mt-1">At Risk (&gt;{warningHours}h)</p>
+                <p className={`font-bold text-lg leading-none ${slaWarning > 0 ? 'text-amber-300' : isDark ? 'text-white' : 'text-gray-900'}`}>{slaWarning}</p>
+                <p className={`text-[10px] mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>At Risk (&gt;{warningHours}h)</p>
               </div>
             </div>
             {/* SLA Breached */}
@@ -1016,8 +1022,8 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
                 <XCircle className="w-4 h-4 text-red-400" />
               </div>
               <div>
-                <p className={`font-bold text-lg leading-none ${slaBreached > 0 ? 'text-red-300' : 'text-white'}`}>{slaBreached}</p>
-                <p className="text-white/40 text-[10px] mt-1">Breached (&gt;{breachHours}h)</p>
+                <p className={`font-bold text-lg leading-none ${slaBreached > 0 ? 'text-red-300' : isDark ? 'text-white' : 'text-gray-900'}`}>{slaBreached}</p>
+                <p className={`text-[10px] mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>Breached (&gt;{breachHours}h)</p>
               </div>
             </div>
           </div>
@@ -1029,7 +1035,7 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.35 }}
-        className="flex items-center justify-between text-[10px] text-white/25 border-t border-white/8 pt-3"
+        className={`flex items-center justify-between text-[10px] border-t pt-3 ${isDark ? 'text-white/25 border-white/8' : 'text-gray-400 border-gray-200'}`}
       >
         <span>Analytics computed from {totalCards} card{totalCards !== 1 ? 's' : ''} in this project · Live, no server call</span>
         <span className="flex items-center gap-1">

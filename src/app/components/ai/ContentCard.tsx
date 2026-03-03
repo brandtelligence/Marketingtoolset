@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../AuthContext';
 import { availableTeamMembers } from '../../contexts/ProjectsContext';
 import { useDashboardTheme } from '../saas/DashboardThemeContext';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { employeeTheme } from '../../utils/employeeTheme';
 import {
   useContent,
@@ -187,10 +188,12 @@ function SlaDetailPanel({
   card,
   warningHours = SLA_WARNING_HOURS,
   breachHours  = SLA_BREACH_HOURS,
+  isDark = true,
 }: {
   card:          ContentCardType;
   warningHours?: number;
   breachHours?:  number;
+  isDark?:       boolean;
 }) {
   const status = getSlaStatusWith(card, warningHours, breachHours);
   if (!status) return null;
@@ -221,8 +224,8 @@ function SlaDetailPanel({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Timer className="w-3.5 h-3.5 text-white/50" />
-          <span className="text-white/60 text-xs font-semibold uppercase tracking-wider">Approval SLA</span>
+          <Timer className={`w-3.5 h-3.5 ${isDark ? 'text-white/50' : 'text-gray-400'}`} />
+          <span className={`text-xs font-semibold uppercase tracking-wider ${isDark ? 'text-white/60' : 'text-gray-500'}`}>Approval SLA</span>
         </div>
         <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-semibold ${badge.bg} ${badge.color}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
@@ -233,16 +236,16 @@ function SlaDetailPanel({
       {/* Stats grid */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="text-white/30 text-[10px] mb-0.5">Time elapsed</p>
-          <p className={`font-bold text-sm ${status === 'breached' ? 'text-red-300' : status === 'warning' ? 'text-amber-300' : 'text-white/80'}`}>
+          <p className={`text-[10px] mb-0.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>Time elapsed</p>
+          <p className={`font-bold text-sm ${status === 'breached' ? 'text-red-300' : status === 'warning' ? 'text-amber-300' : isDark ? 'text-white/80' : 'text-gray-800'}`}>
             {formatSlaAge(hours)}
           </p>
         </div>
         <div>
-          <p className="text-white/30 text-[10px] mb-0.5">
+          <p className={`text-[10px] mb-0.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
             {remaining > 0 ? 'Time remaining' : 'Exceeded by'}
           </p>
-          <p className={`font-bold text-sm ${remaining > 0 ? 'text-white/80' : 'text-red-300'}`}>
+          <p className={`font-bold text-sm ${remaining > 0 ? (isDark ? 'text-white/80' : 'text-gray-800') : 'text-red-300'}`}>
             {remaining > 0 ? formatSlaAge(remaining) : formatSlaAge(overBy)}
           </p>
         </div>
@@ -250,12 +253,12 @@ function SlaDetailPanel({
 
       {/* Progress bar with threshold markers */}
       <div>
-        <div className="flex justify-between text-[9px] text-white/25 mb-1.5">
+        <div className={`flex justify-between text-[9px] mb-1.5 ${isDark ? 'text-white/25' : 'text-gray-400'}`}>
           <span>Submitted</span>
           <span>{warningHours}h ⚠ warn</span>
           <span>{breachHours}h 🔴 breach</span>
         </div>
-        <div className="relative h-2 bg-white/8 rounded-full overflow-hidden">
+        <div className={`relative h-2 rounded-full overflow-hidden ${isDark ? 'bg-white/8' : 'bg-gray-200'}`}>
           <div
             className="absolute top-0 bottom-0 w-px bg-amber-400/50 z-10"
             style={{ left: `${(warningHours / breachHours) * 100}%` }}
@@ -270,7 +273,7 @@ function SlaDetailPanel({
       </div>
 
       {/* Breach deadline */}
-      <p className="text-white/25 text-[10px] flex items-center gap-1.5">
+      <p className={`text-[10px] flex items-center gap-1.5 ${isDark ? 'text-white/25' : 'text-gray-400'}`}>
         <Timer className="w-3 h-3 shrink-0" />
         Breach threshold:&nbsp;
         {breachAt.toLocaleString('en-MY', {
@@ -844,6 +847,12 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
   const { user } = useAuth();
   const { isDark } = useDashboardTheme();
   const et = employeeTheme(isDark);
+  const detailTrapRef = useFocusTrap<HTMLDivElement>(true);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
   const { updateCard, addAuditEntry, deleteCard, logApprovalEvent } = useContent();
   const { warningHours, breachHours } = useSlaConfig(user?.tenantId ?? undefined);
 
@@ -1387,6 +1396,10 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         className={`${isDark ? 'bg-gradient-to-br from-gray-900/95 via-purple-900/90 to-gray-900/95 border-white/15' : 'bg-white border-gray-200'} backdrop-blur-2xl border rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-full sm:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col fold-modal-safe`}
+        ref={detailTrapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Content card detail"
       >
         {/* Header */}
         <div className={`flex items-center justify-between p-5 border-b ${et.border} shrink-0`}>
@@ -1428,25 +1441,25 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
 
           {/* ── SLA Status Panel (pending_approval only) ── */}
           {card.status === 'pending_approval' && (
-            <SlaDetailPanel card={card} warningHours={warningHours} breachHours={breachHours} />
+            <SlaDetailPanel card={card} warningHours={warningHours} breachHours={breachHours} isDark={isDark} />
           )}
 
           {/* ── Media Section ── */}
           <div>
             <label className={`${et.textMd} text-xs uppercase tracking-wider mb-2 block`}>Media Asset</label>
             {card.mediaUrl ? (
-              <div className="relative rounded-xl overflow-hidden border border-white/15">
+              <div className={`relative rounded-xl overflow-hidden border ${isDark ? 'border-white/15' : 'border-gray-200'}`}>
                 {card.mediaType === 'image' ? (
                   <img src={card.mediaUrl} alt="" className="w-full h-48 object-cover" />
                 ) : card.mediaType === 'video' ? (
-                  <div className="w-full h-48 bg-gradient-to-br from-purple-900/60 to-gray-900/60 flex flex-col items-center justify-center gap-2">
-                    <Video className="w-12 h-12 text-white/30" />
-                    <span className="text-white/50 text-xs">{card.mediaFileName || 'Video file'}</span>
+                  <div className={`w-full h-48 flex flex-col items-center justify-center gap-2 ${isDark ? 'bg-gradient-to-br from-purple-900/60 to-gray-900/60' : 'bg-gradient-to-br from-purple-100 to-gray-100'}`}>
+                    <Video className={`w-12 h-12 ${isDark ? 'text-white/30' : 'text-gray-400'}`} />
+                    <span className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{card.mediaFileName || 'Video file'}</span>
                   </div>
                 ) : (
-                  <div className="w-full h-32 bg-gradient-to-br from-teal-900/60 to-gray-900/60 flex flex-col items-center justify-center gap-2">
-                    <Music className="w-12 h-12 text-white/30" />
-                    <span className="text-white/50 text-xs">{card.mediaFileName || 'Audio file'}</span>
+                  <div className={`w-full h-32 flex flex-col items-center justify-center gap-2 ${isDark ? 'bg-gradient-to-br from-teal-900/60 to-gray-900/60' : 'bg-gradient-to-br from-teal-100 to-gray-100'}`}>
+                    <Music className={`w-12 h-12 ${isDark ? 'text-white/30' : 'text-gray-400'}`} />
+                    <span className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{card.mediaFileName || 'Audio file'}</span>
                   </div>
                 )}
 
@@ -1494,11 +1507,11 @@ export function ContentCardDetail({ card: initialCard, projectTeamMembers, onClo
                 {/* Manual upload */}
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-24 border-2 border-dashed border-white/15 rounded-xl flex flex-col items-center justify-center gap-1.5 text-white/30 hover:text-white/50 hover:border-white/25 transition-all"
+                  className={`w-full h-24 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all ${isDark ? 'border-white/15 text-white/30 hover:text-white/50 hover:border-white/25' : 'border-gray-300 text-gray-400 hover:text-gray-500 hover:border-gray-400'}`}
                 >
                   <Upload className="w-5 h-5" />
                   <span className="text-xs">Upload image, video, or audio</span>
-                  <span className="text-[10px] text-white/20">Click to browse files</span>
+                  <span className={`text-[10px] ${isDark ? 'text-white/20' : 'text-gray-400'}`}>Click to browse files</span>
                 </button>
               </div>
             )}

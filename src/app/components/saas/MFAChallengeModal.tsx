@@ -23,6 +23,7 @@ import {
   KeyRound, ArrowLeft, CheckCircle2, FlaskConical,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { supabase } from '../../utils/supabaseClient';
 import { IS_DEMO_MODE } from '../../config/appConfig';
 import { projectId } from '/utils/supabase/info';
@@ -93,7 +94,7 @@ function OtpInput({
   };
 
   return (
-    <div className="flex items-center justify-center gap-2 sm:gap-3">
+    <div className="flex items-center justify-center gap-2 sm:gap-3" role="group" aria-label="One-time passcode input">
       {refs.map((ref, i) => (
         <input
           key={i}
@@ -101,6 +102,7 @@ function OtpInput({
           type="text"
           inputMode="numeric"
           maxLength={1}
+          aria-label={`Digit ${i + 1} of 6`}
           value={value[i] ?? ''}
           disabled={disabled}
           onChange={e => handleInput(i, e.target.value)}
@@ -132,6 +134,9 @@ export function MFAChallengeModal({
   const [mode,        setMode]        = useState<'totp' | 'recovery'>('totp');
   const [recoveryVal, setRecoveryVal] = useState('');
   const [success,     setSuccess]     = useState(false);
+
+  // ── Focus trap ──
+  const mfaTrapRef = useFocusTrap<HTMLDivElement>(true);
 
   const code = digits.join('');
   const isComplete = code.length === 6;
@@ -230,6 +235,10 @@ export function MFAChallengeModal({
       exit={{ opacity: 0, y: -10, scale: 0.97 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
       className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl"
+      ref={mfaTrapRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={success ? 'Identity verified' : 'Two-Factor Authentication'}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="text-center mb-6">
@@ -286,6 +295,7 @@ export function MFAChallengeModal({
                   <motion.p
                     initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
                     className="text-red-300 text-sm text-center"
+                    role="alert"
                   >
                     {error}
                   </motion.p>
@@ -324,6 +334,7 @@ export function MFAChallengeModal({
                   <motion.p
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     className="text-red-300 text-sm text-center"
+                    role="alert"
                   >
                     {error}
                   </motion.p>

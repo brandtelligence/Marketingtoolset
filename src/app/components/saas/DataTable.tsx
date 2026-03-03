@@ -82,11 +82,12 @@ export function DataTable<T extends Record<string, unknown>>({
         <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between">
           {searchable && (
             <div className="relative w-full sm:w-64">
-              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${t.textFaint}`} />
+              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${t.textFaint}`} aria-hidden="true" />
               <input
                 value={query}
                 onChange={e => { setQuery(e.target.value); setPage(1); }}
                 placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
                 className={`w-full border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none transition-all ${t.inputCls}`}
               />
             </div>
@@ -103,17 +104,19 @@ export function DataTable<T extends Record<string, unknown>>({
               {columns.map(col => (
                 <th
                   key={col.key}
+                  scope="col"
                   className={`px-4 py-3 text-left ${t.theadText} font-medium whitespace-nowrap ${col.width ?? ''} ${col.className ?? ''} ${col.sortable ? `cursor-pointer select-none transition-colors` : ''}`}
                   onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                  aria-sort={col.sortable && sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
                 >
                   <span className="inline-flex items-center gap-1">
                     {col.header}
                     {col.sortable && (
                       sortKey === col.key
                         ? sortDir === 'asc'
-                          ? <ChevronUp className="w-3 h-3" />
-                          : <ChevronDown className="w-3 h-3" />
-                        : <ChevronsUpDown className="w-3 h-3 opacity-40" />
+                          ? <ChevronUp className="w-3 h-3" aria-hidden="true" />
+                          : <ChevronDown className="w-3 h-3" aria-hidden="true" />
+                        : <ChevronsUpDown className="w-3 h-3 opacity-40" aria-hidden="true" />
                     )}
                   </span>
                 </th>
@@ -148,8 +151,8 @@ export function DataTable<T extends Record<string, unknown>>({
 
       {/* Pagination */}
       {!loading && sorted.length > pageSize && (
-        <div className={`flex items-center justify-between text-xs ${t.textMd}`}>
-          <span>
+        <nav className={`flex items-center justify-between text-xs ${t.textMd}`} aria-label="Table pagination">
+          <span aria-live="polite">
             {sorted.length === 0 ? '0 results' : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, sorted.length)} of ${sorted.length}`}
           </span>
           <div className="flex items-center gap-1">
@@ -157,6 +160,7 @@ export function DataTable<T extends Record<string, unknown>>({
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={safePage <= 1}
               className={`p-1.5 rounded-lg ${t.hover} disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
+              aria-label="Previous page"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -175,6 +179,8 @@ export function DataTable<T extends Record<string, unknown>>({
                     key={p}
                     onClick={() => setPage(p as number)}
                     className={`w-7 h-7 rounded-lg text-xs transition-colors ${safePage === p ? (t.isDark ? 'bg-purple-500/40 text-white' : 'bg-purple-500 text-white') : t.hover}`}
+                    aria-label={`Page ${p}`}
+                    aria-current={safePage === p ? 'page' : undefined}
                   >
                     {p}
                   </button>
@@ -184,11 +190,12 @@ export function DataTable<T extends Record<string, unknown>>({
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={safePage >= totalPages}
               className={`p-1.5 rounded-lg ${t.hover} disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
+              aria-label="Next page"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        </nav>
       )}
     </div>
   );

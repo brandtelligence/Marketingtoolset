@@ -7,6 +7,7 @@ import { DrawerForm, Field, Textarea } from '../../components/saas/DrawerForm';
 import { formatRM } from '../../utils/format';
 import { useAuth } from '../../components/AuthContext';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
+import { useSEO } from '../../hooks/useSEO';
 import {
   fetchTenants, fetchModules, fetchFeatures,
   fetchModuleRequests, updateModuleRequest,
@@ -20,6 +21,9 @@ const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe6
 export function TenantModulesPage() {
   const t = useDashboardTheme();
   const { user } = useAuth();
+
+  useSEO({ title: 'Subscribed Modules', description: 'View active modules, request new ones, and manage your marketing toolkit subscription.', noindex: true });
+
   const [tenant, setTenant] = useState(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeMsg, setUpgradeMsg] = useState('');

@@ -6,9 +6,12 @@
 import { Link, useLocation } from 'react-router';
 import { motion } from 'motion/react';
 import { Home, ArrowLeft, Search } from 'lucide-react';
+import { useSEO } from '../hooks/useSEO';
 
 export function NotFoundPage() {
   const location = useLocation();
+
+  useSEO({ title: 'Page Not Found', description: 'The page you requested could not be found.', noindex: true });
 
   // Determine the most likely portal the user was trying to reach
   const isAppPath = location.pathname.startsWith('/app');

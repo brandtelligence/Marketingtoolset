@@ -90,25 +90,25 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
           animate={{ scale: 1,    opacity: 1, y: 0  }}
           exit={{    scale: 0.94, opacity: 0, y: 12 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-          className="relative w-full max-w-md rounded-2xl border border-white/15 shadow-2xl overflow-hidden"
+          className={`relative w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden ${isDark ? 'border-white/15' : 'border-gray-200'}`}
           style={{ background: isDark ? 'rgba(12,10,40,0.97)' : 'rgba(255,255,255,0.98)', backdropFilter: 'blur(24px)' }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/10">
+          <div className={`flex items-center justify-between px-6 pt-5 pb-4 border-b ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-[#0BA4AA]/15 border border-[#0BA4AA]/30 flex items-center justify-center">
                 <Share2 className="w-4 h-4 text-[#0BA4AA]" />
               </div>
               <div>
-                <h3 className="text-white font-bold text-sm">Share for Client Review</h3>
-                <p className="text-white/40 text-[11px] mt-0.5">
+                <h3 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>Share for Client Review</h3>
+                <p className={`text-[11px] mt-0.5 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
                   {cards.length === 1
                     ? `1 card · "${cards[0].title}"`
                     : `${cards.length} cards`}
                 </p>
               </div>
             </div>
-            <button onClick={onClose} className="text-white/30 hover:text-white transition-colors p-1">
+            <button onClick={onClose} className={`transition-colors p-1 ${isDark ? 'text-white/30 hover:text-white' : 'text-gray-400 hover:text-gray-700'}`}>
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -123,7 +123,7 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
                     {cards.map(c => (
                       <span
                         key={c.id}
-                        className="px-2 py-0.5 rounded-full bg-white/6 border border-white/10 text-white/50 text-[10px] truncate max-w-[140px]"
+                        className={`px-2 py-0.5 rounded-full text-[10px] truncate max-w-[140px] ${isDark ? 'bg-white/6 border border-white/10 text-white/50' : 'bg-gray-100 border border-gray-200 text-gray-500'}`}
                         title={c.title}
                       >
                         {c.title}
@@ -134,7 +134,7 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
 
                 {/* Client name */}
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-white/50 text-xs font-medium">
+                  <label className={`flex items-center gap-1.5 text-xs font-medium ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
                     <User className="w-3.5 h-3.5" />
                     Client / recipient name
                   </label>
@@ -144,14 +144,14 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
                     onChange={e => setClientName(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleGenerate(); }}
                     placeholder="e.g. Acme Corp, John Smith"
-                    className="w-full bg-white/6 border border-white/12 focus:border-[#0BA4AA]/50 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-white/20 focus:outline-none transition-colors"
+                    className={`w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${isDark ? 'bg-white/6 border border-white/12 focus:border-[#0BA4AA]/50 text-white placeholder:text-white/20' : 'bg-gray-50 border border-gray-200 focus:border-[#0BA4AA]/50 text-gray-900 placeholder:text-gray-400'}`}
                     autoFocus
                   />
                 </div>
 
                 {/* Expiry */}
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-white/50 text-xs font-medium">
+                  <label className={`flex items-center gap-1.5 text-xs font-medium ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
                     <Clock className="w-3.5 h-3.5" />
                     Link expires after
                   </label>
@@ -163,7 +163,7 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
                         className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
                           expiresInDays === opt.value
                             ? 'bg-[#0BA4AA]/20 border-[#0BA4AA]/50 text-[#0BA4AA]'
-                            : 'bg-white/4 border-white/10 text-white/40 hover:text-white hover:bg-white/8'
+                            : isDark ? 'bg-white/4 border-white/10 text-white/40 hover:text-white hover:bg-white/8' : 'bg-gray-50 border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-100'
                         }`}
                       >
                         {opt.label}
@@ -173,7 +173,7 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
                 </div>
 
                 {/* Info box */}
-                <div className="bg-white/4 border border-white/8 rounded-xl px-4 py-3 text-[11px] text-white/40 space-y-1 leading-relaxed">
+                <div className={`rounded-xl px-4 py-3 text-[11px] space-y-1 leading-relaxed ${isDark ? 'bg-white/4 border border-white/8 text-white/40' : 'bg-gray-50 border border-gray-200 text-gray-400'}`}>
                   <p>✦ The link can be opened by anyone — no login required.</p>
                   <p>✦ Client decisions are recorded against each card for your review.</p>
                   <p>✦ The link stops working after the expiry period.</p>
@@ -214,10 +214,10 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
 
                 {/* URL box */}
                 <div className="space-y-1.5">
-                  <p className="text-white/40 text-[11px] font-medium">Shareable review link</p>
-                  <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5">
+                  <p className={`text-[11px] font-medium ${isDark ? 'text-white/40' : 'text-gray-400'}`}>Shareable review link</p>
+                  <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 ${isDark ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}>
                     <Link2 className="w-3.5 h-3.5 text-[#0BA4AA] shrink-0" />
-                    <span className="flex-1 text-white/70 text-[11px] font-mono truncate">{reviewUrl}</span>
+                    <span className={`flex-1 text-[11px] font-mono truncate ${isDark ? 'text-white/70' : 'text-gray-600'}`}>{reviewUrl}</span>
                   </div>
                 </div>
 
@@ -238,7 +238,7 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
                     href={reviewUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-sm border border-white/12 bg-white/5 text-white/60 hover:text-white hover:bg-white/10 transition-all"
+                    className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-sm border transition-all ${isDark ? 'border-white/12 bg-white/5 text-white/60 hover:text-white hover:bg-white/10' : 'border-gray-200 bg-gray-50 text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
                     title="Preview review page"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -248,7 +248,7 @@ export function ShareForReviewDialog({ cards, tenantId, onClose }: ShareForRevie
 
                 <button
                   onClick={onClose}
-                  className="w-full py-2 text-white/30 hover:text-white/60 text-xs transition-colors"
+                  className={`w-full py-2 text-xs transition-colors ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'}`}
                 >
                   Close
                 </button>
