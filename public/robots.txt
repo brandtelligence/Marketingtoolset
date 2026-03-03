@@ -1,0 +1,72 @@
+# Brandtelligence robots.txt
+# https://brandtelligence.io/robots.txt
+#
+# SUBMISSION CHECKLIST FOR GOOGLE SEARCH CONSOLE
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Go to https://search.google.com/search-console
+# 2. Add and verify property: https://brandtelligence.io
+# 3. Navigate to Sitemaps → Add new sitemap
+# 4. Enter: https://brandtelligence.io/sitemap.xml → Submit
+# 5. Confirm "Success" status within 24–72 hours
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Allow all crawlers for public marketing pages ────────────────────────────
+User-agent: *
+
+# Public marketing website — fully crawlable
+Allow: /
+Allow: /product
+Allow: /features
+Allow: /pricing
+Allow: /about
+Allow: /contact
+Allow: /faq
+Allow: /testimonials
+Allow: /blog
+Allow: /privacy
+Allow: /terms
+Allow: /cookies
+
+# ── Disallow private portals (never expose internal routes to search engines) –
+Disallow: /app/
+Disallow: /super/
+Disallow: /tenant/
+Disallow: /login
+Disallow: /request-access
+Disallow: /mfa-enroll
+Disallow: /auth/
+Disallow: /review/
+Disallow: /template-showcase
+
+# ── Disallow Vite build artifacts and source maps ────────────────────────────
+Disallow: /*.map$
+Disallow: /_assets/
+Disallow: /@vite/
+Disallow: /src/
+
+# ── Sitemap location ─────────────────────────────────────────────────────────
+Sitemap: https://brandtelligence.io/sitemap.xml
+
+# ── Specific crawler rules ────────────────────────────────────────────────────
+
+# Google
+User-agent: Googlebot
+Allow: /
+Disallow: /app/
+Disallow: /super/
+Disallow: /tenant/
+Disallow: /login
+Disallow: /auth/
+
+# Bing
+User-agent: Bingbot
+Allow: /
+Disallow: /app/
+Disallow: /super/
+Disallow: /tenant/
+Disallow: /login
+Disallow: /auth/
+
+# Crawl-delay for generic bots (ms — respected by some crawlers)
+User-agent: *
+Crawl-delay: 2

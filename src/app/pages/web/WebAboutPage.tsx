@@ -4,6 +4,7 @@
 import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import { ArrowRight, Globe, Users, Zap, Star, Target, Shield } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 function fadeUp(delay = 0) {
   return { initial: { opacity: 0, y: 24 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.5, delay } };
@@ -42,6 +43,21 @@ const OFFICES = [
 ];
 
 export function WebAboutPage() {
+  useSEO({
+    title:       'About Us — Our Mission, Team & Story',
+    description: 'Brandtelligence was founded in 2022 in Kuala Lumpur with a mission to democratise AI for marketing teams. Now trusted by 1,200+ teams in 40+ countries. Meet our founders and leadership team.',
+    keywords:    'about Brandtelligence, marketing AI company, MarTech startup, Kuala Lumpur SaaS, marketing platform team, AI marketing founders',
+    type:        'website',
+    schema: [
+      webPageSchema({
+        name:        'About Brandtelligence — Mission, Team & Story',
+        description: 'Founded in 2022 in KL, Brandtelligence powers 1,200+ marketing teams in 40+ countries with AI-powered marketing intelligence.',
+        url:         'https://brandtelligence.io/about',
+        breadcrumb:  [{ name: 'About', url: 'https://brandtelligence.io/about' }],
+      }),
+    ],
+  });
+
   return (
     <div className="text-white pt-16">
 

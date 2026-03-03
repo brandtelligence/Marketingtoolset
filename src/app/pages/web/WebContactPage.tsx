@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Mail, Phone, MapPin, MessageCircle, Zap, CheckCircle, Send } from 'lucide-react';
-
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 import { projectId } from '/utils/supabase/info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
@@ -27,13 +27,36 @@ const SUPPORT_OPTIONS = [
 ];
 
 export function WebContactPage() {
-  const [form, setForm] = useState({ name: '', email: '', company: '', subject: '', message: '' });
-  const [submitted, setSubmitted] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [form, setForm]     = useState({ name: '', email: '', company: '', role: '', message: '' });
+  const [sending, setSending] = useState(false);
+  const [sent, setSent]     = useState(false);
+  const [error, setError]   = useState('');
+
+  useSEO({
+    title:       'Contact Us — Talk to Our Team',
+    description: 'Get in touch with Brandtelligence. Contact us via email, live chat, or phone. We reply within 24 business hours. Offices in Kuala Lumpur, Singapore, and London.',
+    keywords:    'contact Brandtelligence, marketing platform support, sales inquiry, demo request, Brandtelligence email',
+    type:        'website',
+    schema: [
+      webPageSchema({
+        name:        'Contact Brandtelligence — Get in Touch',
+        description: 'Contact page for Brandtelligence. Email, phone, and office locations across Kuala Lumpur, Singapore, and London.',
+        url:         'https://brandtelligence.io/contact',
+        breadcrumb:  [{ name: 'Contact', url: 'https://brandtelligence.io/contact' }],
+      }),
+      {
+        '@context': 'https://schema.org',
+        '@type':    'ContactPage',
+        name:       'Contact Brandtelligence',
+        url:        'https://brandtelligence.io/contact',
+        description:'Reach the Brandtelligence team for sales, support, or partnership enquiries.',
+      },
+    ],
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSending(true);
     try {
       const res = await fetch(`${SERVER}/contact-submissions`, {
         method: 'POST',
@@ -42,13 +65,12 @@ export function WebContactPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to submit');
-      setSubmitted(true);
+      setSent(true);
     } catch (err: any) {
       console.error('[WebContactPage] submit error:', err);
-      // Show success anyway for UX — the form data is already captured locally
-      setSubmitted(true);
+      setError(err.message || 'An error occurred. Please try again.');
     } finally {
-      setLoading(false);
+      setSending(false);
     }
   };
 
@@ -79,7 +101,7 @@ export function WebContactPage() {
           <motion.div {...fadeUp(0)}>
             <h2 className="text-white font-bold text-xl mb-6">Send us a message</h2>
 
-            {submitted ? (
+            {sent ? (
               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="p-10 bg-emerald-500/[0.08] border border-emerald-500/25 rounded-2xl text-center">
                 <CheckCircle className="w-14 h-14 text-emerald-400 mx-auto mb-4" />
                 <h3 className="text-white font-black text-xl mb-2">Message received!</h3>
@@ -115,19 +137,12 @@ export function WebContactPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1.5 block">Subject *</label>
-                    <select
-                      required value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
-                      className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-bt-teal/50 transition-all appearance-none"
-                      style={{ colorScheme: 'dark' }}
-                    >
-                      <option value=""          className="bg-[#111]">Select subject</option>
-                      <option value="trial"      className="bg-[#111]">Start a free trial</option>
-                      <option value="demo"       className="bg-[#111]">Book a live demo</option>
-                      <option value="enterprise" className="bg-[#111]">Enterprise pricing</option>
-                      <option value="support"    className="bg-[#111]">Technical support</option>
-                      <option value="other"      className="bg-[#111]">Other enquiry</option>
-                    </select>
+                    <label className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1.5 block">Role</label>
+                    <input
+                      value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                      placeholder="Marketing Manager"
+                      className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white text-sm placeholder-white/25 focus:outline-none focus:border-bt-teal/50 focus:bg-white/[0.08] transition-all"
+                    />
                   </div>
                 </div>
                 <div>
@@ -140,15 +155,16 @@ export function WebContactPage() {
                 </div>
                 <p className="text-white/30 text-xs">By submitting this form, you agree to our <a href="/privacy" className="text-bt-teal hover:text-bt-teal/80 underline underline-offset-2">Privacy Policy</a>. We'll only use your data to respond to your enquiry.</p>
                 <button
-                  type="submit" disabled={loading}
+                  type="submit" disabled={sending}
                   className="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-gradient-to-r from-bt-teal to-bt-teal-dark text-white font-bold text-sm shadow-lg shadow-bt-teal/25 hover:shadow-bt-teal/45 hover:scale-[1.02] transition-all disabled:opacity-60 disabled:scale-100"
                 >
-                  {loading ? (
+                  {sending ? (
                     <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Sending...</>
                   ) : (
                     <><Send className="w-4 h-4" /> Send Message</>
                   )}
                 </button>
+                {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
               </form>
             )}
           </motion.div>

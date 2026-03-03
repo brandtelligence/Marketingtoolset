@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router';
 import { Search, ArrowRight, Clock, BookOpen } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 function fadeUp(delay = 0) {
   return { initial: { opacity: 0, y: 24 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.45, delay } };
@@ -129,6 +130,44 @@ export function WebBlogPage() {
     const matchCat = activeCategory === 'All' || p.category === activeCategory;
     const matchSearch = !search || p.title.toLowerCase().includes(search.toLowerCase()) || p.excerpt.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
+  });
+
+  useSEO({
+    title:       'Marketing Blog — AI, Analytics & Growth Insights',
+    description: 'Expert marketing guides, AI content strategy tips, UTM analytics best practices, brand management insights, and growth tactics from the Brandtelligence team.',
+    keywords:    'marketing blog, AI marketing tips, campaign analytics guide, content marketing strategy, UTM tracking guide, marketing growth tactics, brand strategy',
+    type:        'website',
+    schema: [
+      webPageSchema({
+        name:        'Brandtelligence Marketing Blog — AI, Analytics & Growth',
+        description: 'Marketing strategy articles, AI content tips, and analytics guides for marketing professionals.',
+        url:         'https://brandtelligence.io/blog',
+        breadcrumb:  [{ name: 'Blog', url: 'https://brandtelligence.io/blog' }],
+      }),
+      {
+        '@context':    'https://schema.org',
+        '@type':       'Blog',
+        name:          'Brandtelligence Marketing Blog',
+        description:   'Insights, guides, and best practices for modern marketing teams.',
+        url:           'https://brandtelligence.io/blog',
+        publisher:     { '@id': 'https://brandtelligence.io/#organization' },
+        blogPost:      POSTS.map(post => ({
+          '@type':         'BlogPosting',
+          headline:        post.title,
+          description:     post.excerpt,
+          url:             `https://brandtelligence.io/blog/${post.slug}`,
+          datePublished:   post.date,
+          author: {
+            '@type': 'Person',
+            name:    post.author,
+          },
+          publisher:       { '@id': 'https://brandtelligence.io/#organization' },
+          articleSection:  post.category,
+          timeRequired:    `PT${post.readTime.replace(' min', 'M')}`,
+          inLanguage:      'en',
+        })),
+      },
+    ],
   });
 
   return (

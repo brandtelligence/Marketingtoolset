@@ -136,7 +136,11 @@ export function WebNav() {
             </Link>
 
             {/* Desktop nav */}
-            <nav className="hidden lg:flex items-center gap-1 flex-1" onMouseLeave={() => setOpenMega(null)}>
+            <nav
+              className="hidden lg:flex items-center gap-1 flex-1"
+              aria-label="Primary navigation"
+              onMouseLeave={() => setOpenMega(null)}
+            >
               {NAV_LINKS.map(link => (
                 <div key={link.label} className="relative" onMouseEnter={() => setOpenMega(link.mega ?? null)}>
                   <Link

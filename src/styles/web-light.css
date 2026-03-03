@@ -41,11 +41,11 @@
 /* ── Card / surface backgrounds ───────────────────────────────────────────── */
 .web-light .bg-white\/\[0\.015\] { background-color: #f0f1f8; }
 .web-light .bg-white\/\[0\.03\]  { background-color: rgba(255 255 255 / 0.95); }
-.web-light .bg-white\/\[0\.04\]  { background-color: rgba(255 255 255 / 1); }
-.web-light .bg-white\/\[0\.05\]  { background-color: rgba(255 255 255 / 1); }
-.web-light .bg-white\/\[0\.06\]  { background-color: rgba(0 0 0 / 0.04); }
-.web-light .bg-white\/\[0\.07\]  { background-color: rgba(0 0 0 / 0.04); }
-.web-light .bg-white\/\[0\.08\]  { background-color: rgba(0 0 0 / 0.05); }
+.web-light .bg-white\/\[0\.04\]  { background-color: rgba(0 0 0 / 0.02); }
+.web-light .bg-white\/\[0\.05\]  { background-color: rgba(0 0 0 / 0.025); }
+.web-light .bg-white\/\[0\.06\]  { background-color: rgba(0 0 0 / 0.03); }  /* NEW — WebBlogPage newsletter input */
+.web-light .bg-white\/\[0\.07\]  { background-color: rgba(0 0 0 / 0.035); }
+.web-light .bg-white\/\[0\.08\]  { background-color: rgba(0 0 0 / 0.04); }
 .web-light .bg-white\/5          { background-color: rgba(0 0 0 / 0.03); }
 
 /* Section alternating backgrounds */
@@ -65,11 +65,11 @@
 .web-light .border-white\/\[0\.05\] { border-color: rgb(0 0 0 / 0.06); }
 .web-light .border-white\/\[0\.06\] { border-color: rgb(0 0 0 / 0.07); }
 .web-light .border-white\/\[0\.07\] { border-color: rgb(0 0 0 / 0.08); }
-.web-light .border-white\/\[0\.08\] { border-color: rgb(0 0 0 / 0.09); }
+.web-light .border-white\/\[0\.08\] { border-color: rgb(229 231 235 / 1); }
 .web-light .border-white\/\[0\.09\] { border-color: rgb(0 0 0 / 0.10); }
-.web-light .border-white\/\[0\.1\]  { border-color: rgb(0 0 0 / 0.10); }
+.web-light .border-white\/\[0\.1\]  { border-color: rgb(229 231 235 / 1); }
 .web-light .border-white\/\[0\.10\] { border-color: rgb(0 0 0 / 0.10); }
-.web-light .border-white\/\[0\.12\] { border-color: rgb(0 0 0 / 0.12); }
+.web-light .border-white\/\[0\.12\] { border-color: rgb(209 213 219 / 1); }  /* NEW — WebBlogPage newsletter input */
 .web-light .border-white\/\[0\.15\] { border-color: rgb(0 0 0 / 0.15); }
 .web-light .border-white\/5         { border-color: rgb(0 0 0 / 0.06); }
 .web-light .border-white\/10        { border-color: rgb(0 0 0 / 0.09); }
@@ -170,3 +170,23 @@
 .web-light [class*="bg-gradient"] .text-white { color: #ffffff; }
 .web-light [class*="bg-gradient"].text-white  { color: #ffffff; }
 .web-light [class*="from-"].text-white        { color: #ffffff; }
+
+/* ── Accent colour text: pastel-400 → richer -600 for light-bg readability ── */
+/* emerald-400 (#34d399) has ~2:1 contrast on white — map to emerald-600      */
+.web-light .text-emerald-400  { color: rgb(5 150 105 / 1); }   /* → emerald-600 */
+.web-light .text-emerald-300  { color: rgb(4 120 87 / 1); }    /* → emerald-700 */
+/* rose-400 (#fb7185) has ~2.7:1 contrast on white — map to rose-600          */
+.web-light .text-rose-400     { color: rgb(225 29 72 / 1); }   /* → rose-600    */
+
+/* ── Solid colored-bg exceptions for text-white ──────────────────────────── */
+/* Elements that carry their own solid coloured background AND text-white     */
+/* should keep white text for contrast (CTAs, floating badges).               */
+.web-light .bg-emerald-500\/90.text-white,
+.web-light .bg-emerald-500.text-white,
+.web-light .bg-emerald-600.text-white  { color: #ffffff; }
+.web-light .bg-emerald-500\/90 .text-white,
+.web-light .bg-emerald-500 .text-white,
+.web-light .bg-emerald-600 .text-white { color: #ffffff; }
+
+/* ── Text: white/15 — separator dots, decorative icons ─────────────────────── */
+.web-light .text-white\/15            { color: rgb(14 13 28 / 0.20); }   /* NEW — WebBlogPage BookOpen ghost icon */

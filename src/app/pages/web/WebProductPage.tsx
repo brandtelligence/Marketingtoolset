@@ -8,6 +8,7 @@ import {
   Sparkles, BarChart2, Globe, Users, Shield, Target, Zap,
   CheckCircle, ArrowRight, Star, Layers,
 } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 function fadeUp(delay = 0) {
   return { initial: { opacity: 0, y: 24 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.5, delay } };
@@ -137,6 +138,19 @@ const MODULES = [
 ];
 
 export function WebProductPage() {
+  useSEO({
+    title:       'Product — AI Content Studio, Analytics, Landing Pages & More',
+    description: 'Explore every Brandtelligence module: AI Content Studio, Campaign Analytics, Landing Page Builder, Contact Management, Brand Kit Manager, and Social Asset Library. One platform. Six unfair advantages.',
+    keywords:    'AI content studio, campaign analytics, landing page builder, contact management, brand kit manager, social asset library, marketing platform features',
+    type:        'website',
+    schema: webPageSchema({
+      name:        'Brandtelligence Product — AI Marketing Platform Modules',
+      description: 'Six integrated marketing modules: AI content generation, real-time analytics, landing pages, CRM, brand management, and social assets.',
+      url:         'https://brandtelligence.io/product',
+      breadcrumb:  [{ name: 'Product', url: 'https://brandtelligence.io/product' }],
+    }),
+  });
+
   return (
     <div className="text-white pt-16">
 

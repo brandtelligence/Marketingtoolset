@@ -3,6 +3,7 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
 import nodemailer from "npm:nodemailer";
+import postgres from "npm:postgres";
 import { requireAuth, requireRole, requireTenantScope, rateLimit, logSecurityEvent, generateCsrfToken, generateSigningKey, validateCsrf, validateRequestSignature, checkTokenFreshness, type AuthIdentity } from './auth.tsx';
 import { sanitizeString, sanitizeObject, validateEmail, validateLength, validateEnum } from './sanitize.tsx';
 import { encrypt, decrypt, isEncrypted, encryptFields, decryptFields } from './crypto.tsx';
@@ -4360,7 +4361,7 @@ app.delete("/make-server-309fe679/ai/content-history/:id", async (c) => {
   }
 });
 
-// ── GET /ai/content-usage ─────────────────────────────────────────────────────
+// ── GET /ai/content-usage ───────────────────────────��─────────────────────────
 
 app.get("/make-server-309fe679/ai/content-usage", async (c) => {
   try {
@@ -4459,7 +4460,7 @@ app.get("/make-server-309fe679/ai/platform-ai-usage", async (c) => {
   }
 });
 
-// ── GET /ai/token-limit/:tenantId — SUPER_ADMIN only ─────────────────────────
+// ── GET /ai/token-limit/:tenantId — SUPER_ADMIN only ─────────────────��───────
 // Returns the current monthly token limit for a specific tenant.
 // { limit, isCustom, defaultLimit, period, tokensUsed }
 
@@ -4941,7 +4942,7 @@ app.post("/make-server-309fe679/ai/generate-video", async (c) => {
 // AI Media Generation  ·  GET /ai/media-status/:predictionId
 // Polls Replicate for video completion. When done, downloads the MP4 and
 // uploads to Supabase Storage, returning a 2-hour signed URL.
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────��────────
 app.get("/make-server-309fe679/ai/media-status/:predictionId", async (c) => {
   try {
     // P3-FIX-22: Add auth guard (was unauthenticated — ISO 27001 A.9.4.1)
@@ -5889,7 +5890,7 @@ try {
   console.log(`[retention-purge] Deno.cron not available: ${cronErr instanceof Error ? cronErr.message : String(cronErr)}`);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────��───────────────────────────────────────────────────────────
 // AUDIT LOG INTEGRITY CHECK  (shared logic for cron + on-demand)
 // ISO 27001 A.12.4.2 — protection of log information; detect gaps/tampering.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6077,7 +6078,7 @@ app.put("/make-server-309fe679/compliance/alert-recipients", async (c) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────��────────────────────────────────────
 // PENETRATION TEST RESULTS  (server-side persistence for shared pen test state)
 // KV key: "pentest_results" → JSON object { results, updatedAt, updatedBy }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6906,6 +6907,862 @@ app.post("/make-server-309fe679/tenant-data-export", async (c) => {
   } catch (err) {
     console.log(`[tenant-data-export] ${errMsg(err)}`);
     return c.json({ error: `tenantDataExport: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GATE-2: Browser QA Checklist Results  (SOP — 125-item L/D/responsive matrix)
+// ─────────────────────────────────────────────────────────────────────────────
+// GET  /compliance/qa-results  → return latest saved QA results (SUPER_ADMIN)
+// POST /compliance/qa-results  → save results; key: qa_results:latest
+// SUPER_ADMIN only
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface QaResultEntry {
+  status:    'not_tested' | 'pass' | 'fail' | 'na';
+  notes:     string;
+  testedAt?: string;
+  tester?:   string;
+}
+interface QaResultsPayload {
+  results:    Record<string, QaResultEntry>;
+  updatedAt:  string;
+  updatedBy:  string | null;
+  passCount:  number;
+  failCount:  number;
+  totalItems: number;
+}
+function computeQaStats(results: Record<string, QaResultEntry>, totalItems: number) {
+  const vals = Object.values(results);
+  return {
+    passCount: vals.filter(r => r.status === 'pass').length,
+    failCount: vals.filter(r => r.status === 'fail').length,
+    totalItems,
+  };
+}
+
+app.get("/make-server-309fe679/compliance/qa-results", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    const raw = await kv.get('qa_results:latest');
+    if (!raw) return c.json({ payload: null });
+    const payload: QaResultsPayload = typeof raw === 'string' ? JSON.parse(raw) : raw as QaResultsPayload;
+    return c.json({ payload });
+  } catch (err) {
+    console.log(`[qa-results GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchQaResults: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.post("/make-server-309fe679/compliance/qa-results", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json() as { results: Record<string, QaResultEntry>; totalItems?: number };
+    if (!body?.results || typeof body.results !== 'object') {
+      return c.json({ error: 'results object is required' }, 400);
+    }
+
+    const VALID_STATUSES = new Set(['not_tested', 'pass', 'fail', 'na']);
+    const sanitised: Record<string, QaResultEntry> = {};
+    for (const [id, entry] of Object.entries(body.results)) {
+      if (!VALID_STATUSES.has(entry?.status)) continue;
+      sanitised[id] = {
+        status:   entry.status as QaResultEntry['status'],
+        notes:    sanitizeString(entry.notes ?? '', 500),
+        testedAt: typeof entry.testedAt === 'string' ? entry.testedAt : new Date().toISOString(),
+        tester:   typeof entry.tester === 'string' ? sanitizeString(entry.tester, 100) : undefined,
+      };
+    }
+
+    const totalItems = typeof body.totalItems === 'number' ? body.totalItems : 125;
+    const stats = computeQaStats(sanitised, totalItems);
+    const now = new Date().toISOString();
+    const payload: QaResultsPayload = { results: sanitised, updatedAt: now,
+      updatedBy: (auth as AuthIdentity).userId, ...stats };
+
+    await kv.set('qa_results:latest', JSON.stringify(payload));
+    logSecurityEvent({
+      ts: now, userId: (auth as AuthIdentity).userId,
+      action: 'QA_RESULTS_SAVED', route: '/compliance/qa-results',
+      detail: `pass=${stats.passCount} fail=${stats.failCount} total=${totalItems}`,
+    });
+    console.log(`[qa-results POST] pass=${stats.passCount} fail=${stats.failCount}`);
+    return c.json({ success: true, payload });
+  } catch (err) {
+    console.log(`[qa-results POST] ${errMsg(err)}`);
+    return c.json({ error: `saveQaResults: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GATE 3 + 5: Schema & RLS Health  (SOP — verify pg_tables RLS on all public tables)
+// ─────────────────────────────────────────────────────────────────────────────
+// GET  /compliance/schema-health        → live check via SUPABASE_DB_URL (SUPER_ADMIN)
+// GET  /compliance/schema-health/last   → last saved result from KV
+// POST /compliance/schema-health/save   → persist to KV + log SCHEMA_HEALTH_SAVED
+//
+// EXPECTED TABLES — any table NOT in this list is flagged as "unexpected".
+// On a fresh Brandtelligence deployment only the KV table should exist.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EXPECTED_PUBLIC_TABLES = ['kv_store_309fe679'];
+
+interface SchemaTable {
+  name:        string;
+  rlsEnabled:  boolean;
+  policyCount: number;
+  isExpected:  boolean;
+}
+interface SchemaHealthResult {
+  tables:     SchemaTable[];
+  unexpected: SchemaTable[];
+  missingRls: SchemaTable[];
+  healthy:    boolean;
+  checkedAt:  string;
+  checkedBy:  string | null;
+  savedAt?:   string;
+}
+
+async function runSchemaHealthQuery(userId: string): Promise<SchemaHealthResult> {
+  const dbUrl = Deno.env.get('SUPABASE_DB_URL');
+  if (!dbUrl) throw new Error('SUPABASE_DB_URL environment variable is not set');
+
+  // Short-lived single connection — edge function friendly
+  const sql = postgres(dbUrl, {
+    max:             1,
+    ssl:             { rejectUnauthorized: false },
+    connect_timeout: 10,
+    idle_timeout:    0,
+    max_lifetime:    null,
+    onnotice:        () => {},
+  });
+
+  try {
+    // 1. All public tables with RLS status
+    const tables = await sql<{ tablename: string; rowsecurity: boolean }[]>`
+      SELECT tablename, rowsecurity
+      FROM   pg_tables
+      WHERE  schemaname = 'public'
+      ORDER  BY tablename
+    `;
+
+    // 2. Policy counts per table (for informational display)
+    const policies = await sql<{ tablename: string; policy_count: string }[]>`
+      SELECT tablename, COUNT(*) AS policy_count
+      FROM   pg_policies
+      WHERE  schemaname = 'public'
+      GROUP  BY tablename
+    `;
+
+    const policyMap: Record<string, number> = {};
+    for (const p of policies) { policyMap[p.tablename] = Number(p.policy_count); }
+
+    const tableResults: SchemaTable[] = tables.map(t => ({
+      name:        t.tablename,
+      rlsEnabled:  Boolean(t.rowsecurity),
+      policyCount: policyMap[t.tablename] ?? 0,
+      isExpected:  EXPECTED_PUBLIC_TABLES.includes(t.tablename),
+    }));
+
+    const unexpected = tableResults.filter(r => !r.isExpected);
+    const missingRls = tableResults.filter(r => !r.rlsEnabled);
+
+    return {
+      tables:     tableResults,
+      unexpected,
+      missingRls,
+      healthy:    unexpected.length === 0 && missingRls.length === 0,
+      checkedAt:  new Date().toISOString(),
+      checkedBy:  userId,
+    };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+// GET /compliance/schema-health  — live query
+app.get("/make-server-309fe679/compliance/schema-health", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const result = await runSchemaHealthQuery((auth as AuthIdentity).userId);
+    console.log(`[schema-health] tables=${result.tables.length} unexpected=${result.unexpected.length} missingRls=${result.missingRls.length} healthy=${result.healthy}`);
+    return c.json({ result });
+  } catch (err) {
+    console.log(`[schema-health GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchSchemaHealth: ${errMsg(err)}` }, 500);
+  }
+});
+
+// GET /compliance/schema-health/last  — last persisted result from KV
+app.get("/make-server-309fe679/compliance/schema-health/last", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const raw = await kv.get('schema_health:latest');
+    if (!raw) return c.json({ result: null });
+    const result: SchemaHealthResult = typeof raw === 'string' ? JSON.parse(raw) : raw as SchemaHealthResult;
+    return c.json({ result });
+  } catch (err) {
+    console.log(`[schema-health/last GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchLastSchemaHealth: ${errMsg(err)}` }, 500);
+  }
+});
+
+// POST /compliance/schema-health/save  — re-run + persist to KV
+app.post("/make-server-309fe679/compliance/schema-health/save", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const result = await runSchemaHealthQuery((auth as AuthIdentity).userId);
+    result.savedAt = new Date().toISOString();
+
+    await kv.set('schema_health:latest', JSON.stringify(result));
+
+    logSecurityEvent({
+      ts:     result.savedAt,
+      userId: (auth as AuthIdentity).userId,
+      action: 'SCHEMA_HEALTH_SAVED',
+      route:  '/compliance/schema-health/save',
+      detail: `healthy=${result.healthy} tables=${result.tables.length} unexpected=${result.unexpected.length} missingRls=${result.missingRls.length}`,
+    });
+
+    console.log(`[schema-health/save] healthy=${result.healthy} tables=${result.tables.length}`);
+    return c.json({ success: true, result });
+  } catch (err) {
+    console.log(`[schema-health/save POST] ${errMsg(err)}`);
+    return c.json({ error: `saveSchemaHealth: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GATE-4: CWV Evidence  (SOP — persist browser-measured Core Web Vitals to KV)
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /compliance/cwv-report    → accept readings, persist to cwv_evidence:latest
+// GET  /compliance/cwv-evidence  → return last saved evidence
+// SUPER_ADMIN only
+// ─────────────────────────────────────────────────────────────────────────────
+
+type CwvRating = 'good' | 'needs-improvement' | 'poor';
+
+interface CwvServerReading {
+  name:       string;      // 'LCP' | 'FCP' | 'CLS' | 'INP' | 'TTFB'
+  value:      number;
+  rating:     CwvRating;
+  capturedAt: string;      // ISO-8601
+}
+
+interface CwvEvidencePayload {
+  readings:   CwvServerReading[];
+  pass:       boolean;          // true ↔ all 5 captured metrics are 'good'
+  capturedAt: string;
+  capturedBy: string | null;
+  sessionUrl: string | null;
+}
+
+const CWV_METRIC_NAMES = new Set(['LCP', 'FCP', 'CLS', 'INP', 'TTFB']);
+
+function isCwvPass(readings: CwvServerReading[]): boolean {
+  const covered = new Set(readings.map(r => r.name));
+  if (covered.size < CWV_METRIC_NAMES.size) return false;
+  return readings.every(r => r.rating === 'good');
+}
+
+app.get("/make-server-309fe679/compliance/cwv-evidence", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const raw = await kv.get('cwv_evidence:latest');
+    if (!raw) return c.json({ evidence: null });
+
+    const evidence: CwvEvidencePayload = typeof raw === 'string'
+      ? JSON.parse(raw)
+      : raw as CwvEvidencePayload;
+
+    return c.json({ evidence });
+  } catch (err) {
+    console.log(`[cwv-evidence GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchCwvEvidence: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.post("/make-server-309fe679/compliance/cwv-report", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json() as { readings: CwvServerReading[]; sessionUrl?: string };
+    if (!Array.isArray(body?.readings) || body.readings.length === 0) {
+      return c.json({ error: 'readings array is required and must be non-empty' }, 400);
+    }
+
+    // Validate and sanitise — reject unknown metric names or non-numeric values
+    const sanitised: CwvServerReading[] = [];
+    for (const r of body.readings) {
+      if (!CWV_METRIC_NAMES.has(r.name)) continue;
+      if (typeof r.value !== 'number' || !Number.isFinite(r.value) || r.value < 0) continue;
+      if (!['good', 'needs-improvement', 'poor'].includes(r.rating)) continue;
+      sanitised.push({
+        name:       r.name,
+        value:      Math.round(r.value * 10000) / 10000,
+        rating:     r.rating,
+        capturedAt: typeof r.capturedAt === 'string' ? r.capturedAt : new Date().toISOString(),
+      });
+    }
+
+    if (sanitised.length === 0) {
+      return c.json({ error: 'No valid CWV readings after validation' }, 400);
+    }
+
+    const now  = new Date().toISOString();
+    const pass = isCwvPass(sanitised);
+
+    const evidence: CwvEvidencePayload = {
+      readings:   sanitised,
+      pass,
+      capturedAt: now,
+      capturedBy: (auth as AuthIdentity).userId,
+      sessionUrl: typeof body.sessionUrl === 'string'
+        ? sanitizeString(body.sessionUrl, 300)
+        : null,
+    };
+
+    await kv.set('cwv_evidence:latest', JSON.stringify(evidence));
+
+    logSecurityEvent({
+      ts:     now,
+      userId: (auth as AuthIdentity).userId,
+      action: 'CWV_REPORT_SUBMITTED',
+      route:  '/compliance/cwv-report',
+      detail: `metrics=${sanitised.length} pass=${pass} ${sanitised.map(r => `${r.name}=${r.value}`).join(' ')}`,
+    });
+
+    console.log(`[cwv-report POST] metrics=${sanitised.length} pass=${pass}`);
+    return c.json({ success: true, evidence });
+  } catch (err) {
+    console.log(`[cwv-report POST] ${errMsg(err)}`);
+    return c.json({ error: `saveCwvEvidence: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GATE-6: UAT Sign-off Tracker  (SOP — human tester sign-off per scenario)
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /compliance/uat-signoff  →  read current state from KV
+// PUT /compliance/uat-signoff  →  upsert, audit-log
+// SUPER_ADMIN only · KV key: uat_signoff:latest
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface UatScenarioEntry {
+  status:   'pending' | 'pass' | 'fail' | 'blocked';
+  tester:   string;
+  note:     string;
+  signedAt: string | null;
+}
+
+interface UatSignoffStoredPayload {
+  scenarios: Record<string, UatScenarioEntry>;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+const UAT_SCENARIO_DEFS = [
+  { id: 'U1',  role: 'SUPER_ADMIN',  label: 'Log in, enroll MFA, navigate all Super Admin pages' },
+  { id: 'U2',  role: 'SUPER_ADMIN',  label: 'Create tenant, invite Tenant Admin, assign modules' },
+  { id: 'U3',  role: 'SUPER_ADMIN',  label: 'Generate monthly invoices, verify in Billing page' },
+  { id: 'U4',  role: 'SUPER_ADMIN',  label: 'Send email template preview, verify delivery in inbox' },
+  { id: 'U5',  role: 'SUPER_ADMIN',  label: 'Run PenTest Checklist in staging, export CSV' },
+  { id: 'U6',  role: 'TENANT_ADMIN', label: 'Log in, view overview, manage users, view invoices' },
+  { id: 'U7',  role: 'TENANT_ADMIN', label: 'Pay invoice via payment gateway, confirm status update' },
+  { id: 'U8',  role: 'TENANT_ADMIN', label: 'Submit module upgrade request' },
+  { id: 'U9',  role: 'EMPLOYEE',     label: 'Log in, generate AI content, submit for approval' },
+  { id: 'U10', role: 'EMPLOYEE',     label: 'View content board, receive notification, check activity feed' },
+  { id: 'U11', role: 'EMPLOYEE',     label: 'Use Social Calendar Planner, view mockups' },
+  { id: 'U12', role: 'PUBLIC',       label: 'Submit contact form, verify Super Admin inbox entry created' },
+  { id: 'U13', role: 'ALL',          label: 'Light/dark theme toggle — no contrast failures across all portals' },
+  { id: 'U14', role: 'ALL',          label: 'Mobile 375px — all portal pages usable on iPhone SE viewport' },
+];
+
+app.get("/make-server-309fe679/compliance/uat-signoff", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const raw = await kv.get('uat_signoff:latest');
+    const stored: UatSignoffStoredPayload = raw
+      ? (typeof raw === 'string' ? JSON.parse(raw) : raw as UatSignoffStoredPayload)
+      : { scenarios: {}, updatedAt: null, updatedBy: null };
+
+    // Merge: guarantee all 14 scenario IDs are present (adds missing ones as 'pending')
+    const scenarios: Record<string, UatScenarioEntry> = {};
+    for (const s of UAT_SCENARIO_DEFS) {
+      scenarios[s.id] = stored.scenarios[s.id]
+        ?? { status: 'pending', tester: '', note: '', signedAt: null };
+    }
+
+    return c.json({ scenarios, updatedAt: stored.updatedAt, updatedBy: stored.updatedBy, definitions: UAT_SCENARIO_DEFS });
+  } catch (err) {
+    console.log(`[uat-signoff GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchUatSignoff: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.put("/make-server-309fe679/compliance/uat-signoff", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json() as { scenarios: Record<string, UatScenarioEntry> };
+    if (!body?.scenarios || typeof body.scenarios !== 'object') {
+      return c.json({ error: 'scenarios object is required' }, 400);
+    }
+
+    // Allow only known IDs + valid status values
+    const knownIds = new Set(UAT_SCENARIO_DEFS.map(s => s.id));
+    const sanitized: Record<string, UatScenarioEntry> = {};
+    for (const [id, entry] of Object.entries(body.scenarios)) {
+      if (!knownIds.has(id)) continue;
+      if (!['pending','pass','fail','blocked'].includes(entry.status)) continue;
+      sanitized[id] = {
+        status:   entry.status,
+        tester:   sanitizeString(entry.tester ?? '', 100),
+        note:     sanitizeString(entry.note    ?? '', 500),
+        signedAt: entry.status !== 'pending'
+          ? (entry.signedAt ?? new Date().toISOString())
+          : null,
+      };
+    }
+
+    const now = new Date().toISOString();
+    const payload: UatSignoffStoredPayload = {
+      scenarios: sanitized,
+      updatedAt: now,
+      updatedBy: (auth as AuthIdentity).userId,
+    };
+    await kv.set('uat_signoff:latest', JSON.stringify(payload));
+
+    const passCnt = Object.values(sanitized).filter(e => e.status === 'pass').length;
+    const failCnt = Object.values(sanitized).filter(e => e.status === 'fail').length;
+
+    logSecurityEvent({
+      ts: now,
+      userId: (auth as AuthIdentity).userId,
+      action: 'UAT_SIGNOFF_UPDATED',
+      route: '/compliance/uat-signoff',
+      detail: `pass=${passCnt} fail=${failCnt} total=${UAT_SCENARIO_DEFS.length}`,
+    });
+
+    console.log(`[uat-signoff PUT] pass=${passCnt} fail=${failCnt} total=${UAT_SCENARIO_DEFS.length}`);
+    return c.json({ success: true, scenarios: sanitized, updatedAt: now });
+  } catch (err) {
+    console.log(`[uat-signoff PUT] ${errMsg(err)}`);
+    return c.json({ error: `saveUatSignoff: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GATE-5: Zero Demo Data Check  (SOP §12 — automated enforcement)
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /compliance/zero-demo-data-check
+//   → Scans Auth users, tenants, tenant_users and storage for demo/test data.
+//   → Result persisted to KV `zero_demo_check:latest` for UI display.
+//   → SUPER_ADMIN only · rate-limited 3 req/min
+//
+// GET /compliance/zero-demo-data-check/last
+//   → Returns last persisted result without re-running the scan.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Regex patterns for known demo/test data signatures
+const DEMO_EMAIL_RE   = /@(test|example|demo|fake|sample|placeholder)\.|^(test|demo|dummy)@/i;
+const DEMO_NAME_RE    = /^(john\s+doe|jane\s+(doe|admin)|test\s+user|demo\s+user|sample\s+user|dummy(\s+user)?|placeholder)$/i;
+const DEMO_COMPANY_RE = /^(acme(\s+(corp|inc|ltd|company))?|test(\s+(company|corp|tenant|org))?|demo(\s+(company|corp|tenant|org))?|sample(\s+(company|corp))?|dummy(\s+(company|corp))?|example(\s+(company|corp))?)$/i;
+
+interface ZeroDemoFinding {
+  table:  string;
+  field:  string;
+  value:  string;   // PII-safe: domain or name only, never full email local-part
+  reason: string;
+}
+
+app.get("/make-server-309fe679/compliance/zero-demo-data-check", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    const limited = rateLimit(c, 'compliance:zero-demo-check', 3, 60_000);
+    if (limited) return limited;
+
+    const checkedAt = new Date().toISOString();
+    const findings: ZeroDemoFinding[] = [];
+    let authUsersChecked  = 0;
+    let tenantRowsChecked = 0;
+    let userRowsChecked   = 0;
+    let storageFilesFound = 0;
+
+    // ── 1. Supabase Auth users ─────────────────────────────────────────────────
+    try {
+      const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 });
+      const users = listData?.users ?? [];
+      authUsersChecked = users.length;
+      for (const u of users) {
+        if (u.email && DEMO_EMAIL_RE.test(u.email)) {
+          // Mask: show domain only — never leak the local-part (ISO 27001 A.18.1.4)
+          const domain = (u.email as string).split('@')[1] ?? '?';
+          findings.push({ table: 'auth.users', field: 'email', value: `*@${domain}`, reason: 'Demo/test email domain detected' });
+        }
+        const uname: string = u.user_metadata?.name ?? '';
+        if (uname && DEMO_NAME_RE.test(uname)) {
+          findings.push({ table: 'auth.users', field: 'user_metadata.name', value: uname, reason: 'Placeholder name detected' });
+        }
+      }
+    } catch (err) {
+      console.log(`[zero-demo-check] auth.users scan error: ${errMsg(err)}`);
+    }
+
+    // ── 2. tenants table ───────────────────────────────────────────────────────
+    try {
+      const { data: tenants, error: tErr } = await supabaseAdmin
+        .from('tenants').select('id, name, contact_email, contact_name');
+      if (!tErr && tenants) {
+        tenantRowsChecked = tenants.length;
+        for (const t of tenants) {
+          if (t.contact_email && DEMO_EMAIL_RE.test(t.contact_email as string)) {
+            const domain = (t.contact_email as string).split('@')[1] ?? '?';
+            findings.push({ table: 'tenants', field: 'contact_email', value: `*@${domain}`, reason: 'Demo/test email domain detected' });
+          }
+          if (t.name && DEMO_COMPANY_RE.test(t.name as string)) {
+            findings.push({ table: 'tenants', field: 'name', value: t.name as string, reason: 'Placeholder company name detected' });
+          }
+          if (t.contact_name && DEMO_NAME_RE.test(t.contact_name as string)) {
+            findings.push({ table: 'tenants', field: 'contact_name', value: t.contact_name as string, reason: 'Placeholder contact name detected' });
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[zero-demo-check] tenants scan error: ${errMsg(err)}`);
+    }
+
+    // ── 3. tenant_users table ──────────────────────────────────────────────────
+    try {
+      const { data: tusers, error: uErr } = await supabaseAdmin
+        .from('tenant_users').select('id, email, name');
+      if (!uErr && tusers) {
+        userRowsChecked = tusers.length;
+        for (const u of tusers) {
+          if (u.email && DEMO_EMAIL_RE.test(u.email as string)) {
+            const domain = (u.email as string).split('@')[1] ?? '?';
+            findings.push({ table: 'tenant_users', field: 'email', value: `*@${domain}`, reason: 'Demo/test email domain detected' });
+          }
+          if (u.name && DEMO_NAME_RE.test(u.name as string)) {
+            findings.push({ table: 'tenant_users', field: 'name', value: u.name as string, reason: 'Placeholder name detected' });
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[zero-demo-check] tenant_users scan error: ${errMsg(err)}`);
+    }
+
+    // ── 4. Storage bucket — sample file name check ─────────────────────────────
+    try {
+      const { data: files } = await supabaseAdmin.storage
+        .from(AI_MEDIA_BUCKET).list('', { limit: 20 });
+      storageFilesFound = files?.length ?? 0;
+      if (files) {
+        for (const f of files) {
+          if (/^(sample|demo|test|dummy|placeholder)/i.test(f.name)) {
+            findings.push({ table: `storage/${AI_MEDIA_BUCKET}`, field: 'name', value: f.name, reason: 'Sample/demo file name detected in storage bucket' });
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[zero-demo-check] storage scan error: ${errMsg(err)}`);
+    }
+
+    const pass = findings.length === 0;
+    const result = {
+      pass,
+      checkedAt,
+      findings,
+      summary: {
+        authUsersChecked,
+        tenantRowsChecked,
+        userRowsChecked,
+        storageFilesFound,
+        findingsCount: findings.length,
+      },
+    };
+
+    // Persist result for dashboard display (no expiry — always shows last run)
+    await kv.set('zero_demo_check:latest', JSON.stringify(result));
+
+    // Audit trail (ISO 27001 A.12.4.1)
+    logSecurityEvent({
+      ts: checkedAt,
+      userId: (auth as AuthIdentity).userId,
+      action: pass ? 'ZERO_DEMO_CHECK_PASS' : 'ZERO_DEMO_CHECK_FAIL',
+      route: '/compliance/zero-demo-data-check',
+      detail: `findings=${findings.length} auth=${authUsersChecked} tenants=${tenantRowsChecked} users=${userRowsChecked}`,
+    });
+
+    console.log(`[zero-demo-check] ${pass ? 'PASS' : 'FAIL'} — ${findings.length} finding(s)`);
+    return c.json(result);
+  } catch (err) {
+    console.log(`[zero-demo-check] ${errMsg(err)}`);
+    return c.json({ error: `zeroDemoDataCheck: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.get("/make-server-309fe679/compliance/zero-demo-data-check/last", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    const raw = await kv.get('zero_demo_check:latest');
+    if (!raw) return c.json({ result: null });
+    const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return c.json({ result });
+  } catch (err) {
+    console.log(`[zero-demo-check/last] ${errMsg(err)}`);
+    return c.json({ error: `fetchLastZeroDemoCheck: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPLOYMENT SEQUENCE TRACKER  (SOP — 6-phase 24-step go-live checklist)
+// ─────────────────────────────────────────────────────────────────────────────
+// GET  /compliance/deployment-sequence          → phase defs merged with KV progress
+// PUT  /compliance/deployment-sequence          → upsert step progress, log event
+// POST /compliance/deployment-sequence/approve  → record go-live approval
+// POST /compliance/deployment-sequence/reset    → clear all progress
+// SUPER_ADMIN only · KV key: deployment_sequence:latest
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DeployStep {
+  id:          string;
+  description: string;
+  hint?:       string;
+}
+interface DeployPhase {
+  id:    string;
+  label: string;
+  icon:  string;
+  steps: DeployStep[];
+}
+interface DeployStepProgress {
+  status:       'pending' | 'complete' | 'skipped';
+  completedBy?: string;
+  completedAt?: string;
+  notes?:       string;
+}
+interface DeploySeqKv {
+  steps:             Record<string, DeployStepProgress>;
+  goLiveApprovedAt?: string;
+  goLiveApprovedBy?: string;
+  approvedVersion?:  string;
+  updatedAt:         string;
+  updatedBy?:        string;
+}
+
+const DEPLOY_PHASES: DeployPhase[] = [
+  {
+    id: 'P1', label: 'Staging Verification', icon: '🔬',
+    steps: [
+      { id: 'D1-1', description: 'Deploy backend to staging',                                        hint: 'supabase functions deploy make-server-309fe679' },
+      { id: 'D1-2', description: 'Confirm 0 schema drift in staging',                                hint: 'supabase db diff --linked → 0 changes' },
+      { id: 'D1-3', description: 'Run Zero Demo Data Check → PASSED (0 findings)',                   hint: 'Super Admin → Compliance Health → Run Check' },
+      { id: 'D1-4', description: 'Smoke-test all 3 roles in staging (SUPER_ADMIN / TENANT_ADMIN / EMPLOYEE)' },
+      { id: 'D1-5', description: 'Run PenTestChecklist in staging → all items pass',                 hint: 'Super Admin → Penetration Test tab' },
+    ],
+  },
+  {
+    id: 'P2', label: 'Production Build', icon: '🏗️',
+    steps: [
+      { id: 'D2-1', description: 'Confirm VITE_APP_ENV is absent from production .env',              hint: 'grep VITE_APP_ENV .env.production → no result' },
+      { id: 'D2-2', description: 'Run production build and verify hashed assets in dist/',           hint: 'npm run build' },
+      { id: 'D2-3', description: 'Build log shows 0 TypeScript errors, 0 Vite warnings' },
+    ],
+  },
+  {
+    id: 'P3', label: 'Frontend Deploy (cPanel)', icon: '🌐',
+    steps: [
+      { id: 'D3-1', description: 'Upload dist/ contents to public_html (or configured document root)' },
+      { id: 'D3-2', description: 'Configure HTTP → HTTPS 301 redirect',                             hint: '.htaccess: RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]' },
+      { id: 'D3-3', description: 'Apply HSTS, CSP, X-Frame-Options, Referrer-Policy at cPanel/nginx', hint: 'cPanel → Security → ModSecurity or .htaccess Header directives' },
+      { id: 'D3-4', description: 'Verify SSL certificate is valid and auto-renewing',               hint: "cPanel → SSL/TLS → Let's Encrypt" },
+    ],
+  },
+  {
+    id: 'P4', label: 'Backend Deploy (Supabase)', icon: '⚙️',
+    steps: [
+      { id: 'D4-1', description: 'Deploy backend to production Supabase project',                   hint: 'supabase functions deploy make-server-309fe679 --project-ref <ref>' },
+      { id: 'D4-2', description: 'Confirm 0 schema drift in production',                            hint: 'supabase db diff --linked → 0 changes' },
+      { id: 'D4-3', description: 'Confirm edge function cold-start < 1 s',                          hint: 'curl -w "%{time_total}" https://<ref>.supabase.co/functions/v1/make-server-309fe679/ping' },
+      { id: 'D4-4', description: 'Verify SERVICE_ROLE_KEY is NOT in the frontend bundle',           hint: "grep -r 'SERVICE_ROLE' dist/ → 0 results" },
+    ],
+  },
+  {
+    id: 'P5', label: 'Post-Deploy Smoke Tests', icon: '🧪',
+    steps: [
+      { id: 'D5-1', description: 'SUPER_ADMIN: log in, navigate all super admin pages — 0 console errors' },
+      { id: 'D5-2', description: 'TENANT_ADMIN: tenant portal, invoices, and billing page load correctly' },
+      { id: 'D5-3', description: 'EMPLOYEE: content board loads, AI content generation returns output' },
+      { id: 'D5-4', description: 'PUBLIC: contact form submission → email received in Super Admin inbox' },
+    ],
+  },
+  {
+    id: 'P6', label: 'Monitoring Sign-Off', icon: '📊',
+    steps: [
+      { id: 'D6-1', description: 'Monitor Supabase edge function logs for 30 min — no 5xx errors',  hint: 'Supabase Dashboard → Edge Functions → Logs' },
+      { id: 'D6-2', description: 'Confirm Auth email_confirm: true is active (auto-confirm in seed)' },
+      { id: 'D6-3', description: 'Tag the production release in git',                               hint: 'git tag -a v1.0.0-prod -m "Production release <date>" && git push --tags' },
+      { id: 'D6-4', description: 'Archive gate-status-report.md and theme-qa-checklist.md in deployment log' },
+    ],
+  },
+];
+
+function mergeDeploySeq(stored: DeploySeqKv | null) {
+  const phases = DEPLOY_PHASES.map(phase => ({
+    ...phase,
+    steps: phase.steps.map(step => {
+      const s = stored?.steps?.[step.id];
+      return s
+        ? { ...step, status: s.status, completedBy: s.completedBy, completedAt: s.completedAt, notes: s.notes }
+        : { ...step, status: 'pending' as const };
+    }),
+  }));
+  return {
+    phases,
+    goLiveApprovedAt: stored?.goLiveApprovedAt,
+    goLiveApprovedBy: stored?.goLiveApprovedBy,
+    approvedVersion:  stored?.approvedVersion,
+    updatedAt:        stored?.updatedAt ?? new Date().toISOString(),
+    updatedBy:        stored?.updatedBy,
+  };
+}
+
+async function readDeployKv(): Promise<DeploySeqKv | null> {
+  const raw = await kv.get('deployment_sequence:latest');
+  if (!raw) return null;
+  return (typeof raw === 'string' ? JSON.parse(raw) : raw) as DeploySeqKv;
+}
+
+// GET /compliance/deployment-sequence
+app.get("/make-server-309fe679/compliance/deployment-sequence", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+    return c.json(mergeDeploySeq(await readDeployKv()));
+  } catch (err) {
+    console.log(`[deployment-sequence GET] ${errMsg(err)}`);
+    return c.json({ error: `fetchDeploymentSequence: ${errMsg(err)}` }, 500);
+  }
+});
+
+// PUT /compliance/deployment-sequence  — upsert step progress
+app.put("/make-server-309fe679/compliance/deployment-sequence", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json() as { steps?: Record<string, Partial<DeployStepProgress>> };
+    if (!body.steps || typeof body.steps !== 'object') return c.json({ error: 'Missing steps' }, 400);
+
+    const now    = new Date().toISOString();
+    const userId = (auth as AuthIdentity).userId;
+    const stored = await readDeployKv() ?? { steps: {}, updatedAt: now, updatedBy: userId };
+
+    for (const [stepId, prog] of Object.entries(body.steps)) {
+      const prev = stored.steps[stepId];
+      stored.steps[stepId] = {
+        status:      (prog.status ?? prev?.status ?? 'pending') as 'pending' | 'complete' | 'skipped',
+        completedBy: prog.completedBy ?? prev?.completedBy,
+        completedAt: prog.status === 'complete' ? (prev?.completedAt ?? now) : undefined,
+        notes:       prog.notes !== undefined ? prog.notes : prev?.notes,
+      };
+    }
+    stored.updatedAt = now;
+    stored.updatedBy = userId;
+
+    await kv.set('deployment_sequence:latest', JSON.stringify(stored));
+
+    const done = Object.values(stored.steps).filter(s => s.status !== 'pending').length;
+    const total = DEPLOY_PHASES.flatMap(p => p.steps).length;
+    logSecurityEvent({
+      ts: now, userId, action: 'DEPLOYMENT_STEP_UPDATED',
+      route: '/compliance/deployment-sequence',
+      detail: `steps=${Object.keys(body.steps).join(',')} progress=${done}/${total}`,
+    });
+
+    return c.json(mergeDeploySeq(stored));
+  } catch (err) {
+    console.log(`[deployment-sequence PUT] ${errMsg(err)}`);
+    return c.json({ error: `saveDeploymentSequence: ${errMsg(err)}` }, 500);
+  }
+});
+
+// POST /compliance/deployment-sequence/approve  — record go-live approval
+app.post("/make-server-309fe679/compliance/deployment-sequence/approve", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json() as { approvedBy?: string; version?: string };
+    const approvedBy = sanitizeString(body.approvedBy ?? '').trim();
+    if (!approvedBy) return c.json({ error: 'approvedBy is required' }, 400);
+
+    const now    = new Date().toISOString();
+    const userId = (auth as AuthIdentity).userId;
+    const stored = await readDeployKv() ?? { steps: {}, updatedAt: now, updatedBy: userId };
+
+    stored.goLiveApprovedAt = now;
+    stored.goLiveApprovedBy = approvedBy;
+    stored.approvedVersion  = sanitizeString(body.version ?? 'v1.0.0-prod').trim() || 'v1.0.0-prod';
+    stored.updatedAt        = now;
+    stored.updatedBy        = userId;
+
+    await kv.set('deployment_sequence:latest', JSON.stringify(stored));
+
+    logSecurityEvent({
+      ts: now, userId, action: 'DEPLOYMENT_GO_LIVE_APPROVED',
+      route: '/compliance/deployment-sequence/approve',
+      detail: `approvedBy=${approvedBy} version=${stored.approvedVersion}`,
+    });
+    console.log(`[deployment-sequence] GO-LIVE APPROVED by=${approvedBy} version=${stored.approvedVersion}`);
+
+    return c.json({ success: true, ...mergeDeploySeq(stored) });
+  } catch (err) {
+    console.log(`[deployment-sequence/approve] ${errMsg(err)}`);
+    return c.json({ error: `approveGoLive: ${errMsg(err)}` }, 500);
+  }
+});
+
+// POST /compliance/deployment-sequence/reset  — wipe all progress
+app.post("/make-server-309fe679/compliance/deployment-sequence/reset", async (c) => {
+  try {
+    const auth = await requireRole(c, 'SUPER_ADMIN');
+    if (auth instanceof Response) return auth;
+
+    const now    = new Date().toISOString();
+    const userId = (auth as AuthIdentity).userId;
+    const blank: DeploySeqKv = { steps: {}, updatedAt: now, updatedBy: userId };
+
+    await kv.set('deployment_sequence:latest', JSON.stringify(blank));
+
+    logSecurityEvent({
+      ts: now, userId, action: 'DEPLOYMENT_SEQ_RESET',
+      route: '/compliance/deployment-sequence/reset',
+      detail: 'All deployment sequence progress cleared by SUPER_ADMIN',
+    });
+
+    return c.json({ success: true, ...mergeDeploySeq(blank) });
+  } catch (err) {
+    console.log(`[deployment-sequence/reset] ${errMsg(err)}`);
+    return c.json({ error: `resetDeploymentSequence: ${errMsg(err)}` }, 500);
   }
 });
 

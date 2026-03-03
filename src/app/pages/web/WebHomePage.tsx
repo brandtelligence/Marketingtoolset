@@ -10,6 +10,8 @@ import {
   CheckCircle, Star, TrendingUp, Target, Layers, Play, ChevronRight,
 } from 'lucide-react';
 
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -66,6 +68,20 @@ const LOGOS = ['Apex Financial', 'Luxe Commerce', 'Meridian Agency', 'Nova Brand
 
 export function WebHomePage() {
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+
+  useSEO({
+    title:       'AI-Powered Marketing Intelligence Platform',
+    description: 'Brandtelligence unifies AI content creation, campaign analytics, landing pages, and client reporting in one powerful multi-tenant platform. Trusted by 1,200+ marketing teams in 40+ countries. Start your 14-day free trial.',
+    keywords:    'AI marketing platform, marketing intelligence, AI content creation, campaign analytics, landing page builder, marketing automation, multi-tenant SaaS, brand management',
+    type:        'website',
+    schema: [
+      webPageSchema({
+        name:        'Brandtelligence — AI-Powered Marketing Intelligence Platform',
+        description: 'AI content creation, campaign analytics, landing pages, CRM, and brand management in one platform.',
+        url:         'https://brandtelligence.io/',
+      }),
+    ],
+  });
 
   return (
     <div className="text-white">

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Brandtelligence XML Sitemap
+  ────────────────────────────────────────────────────────────────────────────
+  Covers all public-facing marketing pages.
+  Private portals (/app/*, /super/*, /tenant/*) are intentionally excluded
+  and blocked in robots.txt.
+
+  Submit this sitemap to Google Search Console at:
+    https://search.google.com/search-console
+  Property URL:  https://brandtelligence.io
+  Sitemap URL:   https://brandtelligence.io/sitemap.xml
+
+  Priorities:
+    1.0  — Homepage (highest priority)
+    0.9  — Core conversion pages (Pricing, Product)
+    0.8  — Feature/content pages (Features, Blog, Testimonials)
+    0.7  — Supporting pages (About, Contact, FAQ)
+    0.5  — Legal / utility pages (Privacy, Terms, Cookies)
+
+  Change frequencies:
+    weekly   — Homepage, Blog (content updated regularly)
+    monthly  — Product, Features, Pricing, Testimonials
+    yearly   — About, Contact, FAQ, Legal pages
+-->
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+  xsi:schemaLocation="
+    http://www.sitemaps.org/schemas/sitemap/0.9
+    http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+
+  <!-- ── Homepage ──────────────────────────────────────────────────────────── -->
+  <url>
+    <loc>https://brandtelligence.io/</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://brandtelligence.io/og-image.jpg</image:loc>
+      <image:title>Brandtelligence — AI-Powered Marketing Intelligence Platform</image:title>
+      <image:caption>The marketing intelligence platform built to scale</image:caption>
+    </image:image>
+  </url>
+
+  <!-- ── Core Conversion Pages ─────────────────────────────────────────────── -->
+  <url>
+    <loc>https://brandtelligence.io/pricing</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/product</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <!-- ── Feature & Content Pages ───────────────────────────────────────────── -->
+  <url>
+    <loc>https://brandtelligence.io/features</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/blog</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/testimonials</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- ── Supporting Pages ──────────────────────────────────────────────────── -->
+  <url>
+    <loc>https://brandtelligence.io/about</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/contact</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/faq</loc>
+    <lastmod>2025-03-03</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- ── Legal & Utility Pages ─────────────────────────────────────────────── -->
+  <url>
+    <loc>https://brandtelligence.io/privacy</loc>
+    <lastmod>2025-01-15</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/terms</loc>
+    <lastmod>2025-01-15</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/cookies</loc>
+    <lastmod>2025-01-15</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <!-- ── Blog Articles ──────────────────────────────────────────────────────── -->
+  <!-- Individual blog post pages (add as content is published) -->
+  <url>
+    <loc>https://brandtelligence.io/blog/10-ai-prompts-marketing-2025</loc>
+    <lastmod>2025-01-15</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/blog/utm-tracking-best-practices-2025</loc>
+    <lastmod>2025-01-08</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://brandtelligence.io/blog/landing-page-conversion-2025</loc>
+    <lastmod>2024-12-28</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+</urlset>

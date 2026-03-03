@@ -960,6 +960,399 @@ export async function savePenTestResults(results: Record<string, PenTestResultEn
   });
 }
 
+// ─── Zero Demo Data Check (Gate 5 — SOP §12 automated enforcement) ────────────
+
+export interface ZeroDemoDataFinding {
+  table:  string;
+  field:  string;
+  value:  string;   // PII-safe value (masked email domain or name)
+  reason: string;
+}
+
+export interface ZeroDemoDataCheckResult {
+  pass:      boolean;
+  checkedAt: string;
+  findings:  ZeroDemoDataFinding[];
+  summary: {
+    authUsersChecked:  number;
+    tenantRowsChecked: number;
+    userRowsChecked:   number;
+    storageFilesFound: number;
+    findingsCount:     number;
+  };
+}
+
+/**
+ * Run a fresh zero-demo-data scan against the live Supabase database.
+ * Scans: auth.users · tenants · tenant_users · storage bucket.
+ * Persists result to KV `zero_demo_check:latest`.
+ * SUPER_ADMIN only · rate-limited 3 req/min on the server.
+ */
+export async function runZeroDemoDataCheck(): Promise<ZeroDemoDataCheckResult> {
+  if (!IS_PRODUCTION) {
+    // Demo mode — simulate a clean scan so the UI renders correctly
+    return {
+      pass: true,
+      checkedAt: new Date().toISOString(),
+      findings: [],
+      summary: {
+        authUsersChecked:  3,
+        tenantRowsChecked: 5,
+        userRowsChecked:   12,
+        storageFilesFound: 0,
+        findingsCount:     0,
+      },
+    };
+  }
+  return api<ZeroDemoDataCheckResult>('/compliance/zero-demo-data-check');
+}
+
+/**
+ * Fetch the last persisted zero-demo-data result without re-running the scan.
+ * Returns null if no check has ever been run.
+ */
+export async function fetchLastZeroDemoDataCheck(): Promise<ZeroDemoDataCheckResult | null> {
+  if (!IS_PRODUCTION) return null;
+  const res = await api<{ result: ZeroDemoDataCheckResult | null }>('/compliance/zero-demo-data-check/last');
+  return res.result;
+}
+
+// ─── Schema & RLS Health (Gates 3 + 5) ────────────────────────────────────────
+
+export interface SchemaTable {
+  name:        string;
+  rlsEnabled:  boolean;
+  policyCount: number;
+  isExpected:  boolean;
+}
+
+export interface SchemaHealthResult {
+  tables:     SchemaTable[];
+  unexpected: SchemaTable[];
+  missingRls: SchemaTable[];
+  healthy:    boolean;
+  checkedAt:  string;
+  checkedBy:  string | null;
+  savedAt?:   string;
+}
+
+/** Run a live schema + RLS check against the Supabase DB (SUPER_ADMIN only). */
+export async function fetchSchemaHealth(): Promise<SchemaHealthResult> {
+  if (!IS_PRODUCTION) {
+    // Demo stub — simulate a healthy schema with only the KV table
+    return {
+      tables:     [{ name: 'kv_store_309fe679', rlsEnabled: true, policyCount: 2, isExpected: true }],
+      unexpected: [],
+      missingRls: [],
+      healthy:    true,
+      checkedAt:  new Date().toISOString(),
+      checkedBy:  'demo-user',
+    };
+  }
+  const res = await api<{ result: SchemaHealthResult }>('/compliance/schema-health');
+  return res.result;
+}
+
+/** Return the last persisted schema health check from KV (SUPER_ADMIN only). */
+export async function fetchLastSchemaHealth(): Promise<SchemaHealthResult | null> {
+  if (!IS_PRODUCTION) return null;
+  const res = await api<{ result: SchemaHealthResult | null }>('/compliance/schema-health/last');
+  return res.result;
+}
+
+/** Re-run the live schema check and persist to KV (SUPER_ADMIN only). */
+export async function saveSchemaHealth(): Promise<SchemaHealthResult> {
+  if (!IS_PRODUCTION) return fetchSchemaHealth();
+  const res = await api<{ success: boolean; result: SchemaHealthResult }>(
+    '/compliance/schema-health/save',
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+  return res.result;
+}
+
+// ─── Browser QA Checklist Results (Gate 2) ────────────────────────────────────
+
+export type QaItemStatus = 'not_tested' | 'pass' | 'fail' | 'na';
+
+export interface QaResultEntry {
+  status:    QaItemStatus;
+  notes:     string;
+  testedAt?: string;
+  tester?:   string;
+}
+
+export interface QaResultsPayload {
+  results:    Record<string, QaResultEntry>;
+  updatedAt:  string;
+  updatedBy:  string | null;
+  passCount:  number;
+  failCount:  number;
+  totalItems: number;
+}
+
+/** Fetch the latest QA results from KV (SUPER_ADMIN only). Returns null if none saved. */
+export async function fetchQaResults(): Promise<QaResultsPayload | null> {
+  if (!IS_PRODUCTION) return null;
+  const res = await api<{ payload: QaResultsPayload | null }>('/compliance/qa-results');
+  return res.payload;
+}
+
+/** Persist QA results to KV + log QA_RESULTS_SAVED (SUPER_ADMIN only). */
+export async function saveQaResults(
+  results: Record<string, QaResultEntry>,
+  totalItems: number,
+): Promise<QaResultsPayload> {
+  if (!IS_PRODUCTION) {
+    const vals = Object.values(results);
+    return {
+      results,
+      updatedAt:  new Date().toISOString(),
+      updatedBy:  'demo-user',
+      passCount:  vals.filter(r => r.status === 'pass').length,
+      failCount:  vals.filter(r => r.status === 'fail').length,
+      totalItems,
+    };
+  }
+  const res = await api<{ success: boolean; payload: QaResultsPayload }>(
+    '/compliance/qa-results',
+    { method: 'POST', body: JSON.stringify({ results, totalItems }) },
+  );
+  return res.payload;
+}
+
+// ─── CWV Evidence (Gate 4) ────────────────────────────────────────────────────
+
+export type CwvRating = 'good' | 'needs-improvement' | 'poor';
+
+export interface CwvReading {
+  name:       'LCP' | 'FCP' | 'CLS' | 'INP' | 'TTFB';
+  value:      number;
+  rating:     CwvRating;
+  capturedAt: string;   // ISO-8601
+}
+
+export interface CwvEvidencePayload {
+  readings:   CwvReading[];
+  pass:       boolean;          // true ↔ all 5 metrics captured and 'good'
+  capturedAt: string;
+  capturedBy: string | null;
+  sessionUrl: string | null;
+}
+
+/**
+ * Fetch the last SUPER_ADMIN-submitted CWV evidence record from KV.
+ * Returns null if no evidence has ever been saved.
+ */
+export async function fetchCwvEvidence(): Promise<CwvEvidencePayload | null> {
+  if (!IS_PRODUCTION) return null;
+  const res = await api<{ evidence: CwvEvidencePayload | null }>('/compliance/cwv-evidence');
+  return res.evidence;
+}
+
+/**
+ * Save the current in-session CWV readings as an audit record (SUPER_ADMIN only).
+ * Persists to KV cwv_evidence:latest and logs CWV_REPORT_SUBMITTED.
+ */
+export async function saveCwvEvidence(
+  readings: CwvReading[],
+  sessionUrl?: string,
+): Promise<CwvEvidencePayload> {
+  if (!IS_PRODUCTION) {
+    const pass = readings.length >= 5 && readings.every(r => r.rating === 'good');
+    return {
+      readings,
+      pass,
+      capturedAt: new Date().toISOString(),
+      capturedBy: 'demo-user',
+      sessionUrl: sessionUrl ?? null,
+    };
+  }
+  const res = await api<{ success: boolean; evidence: CwvEvidencePayload }>(
+    '/compliance/cwv-report',
+    { method: 'POST', body: JSON.stringify({ readings, sessionUrl }) },
+  );
+  return res.evidence;
+}
+
+// ─── UAT Sign-off Tracker (Gate 6) ────────────────────────────────────────────
+
+export interface UatScenarioDefinition {
+  id:    string;
+  role:  string;
+  label: string;
+}
+
+export interface UatScenarioEntry {
+  status:   'pending' | 'pass' | 'fail' | 'blocked';
+  tester:   string;
+  note:     string;
+  signedAt: string | null;
+}
+
+export interface UatSignoffPayload {
+  scenarios:   Record<string, UatScenarioEntry>;
+  updatedAt:   string | null;
+  updatedBy:   string | null;
+  definitions: UatScenarioDefinition[];
+}
+
+/** Fallback scenario definitions used in demo mode (mirrors the server list). */
+const UAT_DEMO_DEFS: UatScenarioDefinition[] = [
+  { id: 'U1',  role: 'SUPER_ADMIN',  label: 'Log in, enroll MFA, navigate all Super Admin pages' },
+  { id: 'U2',  role: 'SUPER_ADMIN',  label: 'Create tenant, invite Tenant Admin, assign modules' },
+  { id: 'U3',  role: 'SUPER_ADMIN',  label: 'Generate monthly invoices, verify in Billing page' },
+  { id: 'U4',  role: 'SUPER_ADMIN',  label: 'Send email template preview, verify delivery in inbox' },
+  { id: 'U5',  role: 'SUPER_ADMIN',  label: 'Run PenTest Checklist in staging, export CSV' },
+  { id: 'U6',  role: 'TENANT_ADMIN', label: 'Log in, view overview, manage users, view invoices' },
+  { id: 'U7',  role: 'TENANT_ADMIN', label: 'Pay invoice via payment gateway, confirm status update' },
+  { id: 'U8',  role: 'TENANT_ADMIN', label: 'Submit module upgrade request' },
+  { id: 'U9',  role: 'EMPLOYEE',     label: 'Log in, generate AI content, submit for approval' },
+  { id: 'U10', role: 'EMPLOYEE',     label: 'View content board, receive notification, check activity feed' },
+  { id: 'U11', role: 'EMPLOYEE',     label: 'Use Social Calendar Planner, view mockups' },
+  { id: 'U12', role: 'PUBLIC',       label: 'Submit contact form, verify Super Admin inbox entry created' },
+  { id: 'U13', role: 'ALL',          label: 'Light/dark theme toggle — no contrast failures across all portals' },
+  { id: 'U14', role: 'ALL',          label: 'Mobile 375px — all portal pages usable on iPhone SE viewport' },
+];
+
+function makeBlankUatPayload(): UatSignoffPayload {
+  const scenarios: Record<string, UatScenarioEntry> = {};
+  for (const d of UAT_DEMO_DEFS) {
+    scenarios[d.id] = { status: 'pending', tester: '', note: '', signedAt: null };
+  }
+  return { scenarios, updatedAt: null, updatedBy: null, definitions: UAT_DEMO_DEFS };
+}
+
+export async function fetchUatSignoff(): Promise<UatSignoffPayload> {
+  if (!IS_PRODUCTION) return makeBlankUatPayload();
+  return api<UatSignoffPayload>('/compliance/uat-signoff');
+}
+
+export async function saveUatSignoff(
+  scenarios: Record<string, UatScenarioEntry>,
+): Promise<UatSignoffPayload> {
+  if (!IS_PRODUCTION) {
+    const payload = makeBlankUatPayload();
+    payload.scenarios = scenarios;
+    payload.updatedAt = new Date().toISOString();
+    return payload;
+  }
+  return api<UatSignoffPayload>('/compliance/uat-signoff', {
+    method: 'PUT',
+    body: JSON.stringify({ scenarios }),
+  });
+}
+
+// ─── Deployment Sequence Tracker (6-phase go-live checklist) ──────────────��──
+
+export interface DeployStepData {
+  id:           string;
+  description:  string;
+  hint?:        string;
+  status:       'pending' | 'complete' | 'skipped';
+  completedBy?: string;
+  completedAt?: string;
+  notes?:       string;
+}
+
+export interface DeployPhaseData {
+  id:    string;
+  label: string;
+  icon:  string;
+  steps: DeployStepData[];
+}
+
+export interface DeploymentSequencePayload {
+  phases:            DeployPhaseData[];
+  goLiveApprovedAt?: string;
+  goLiveApprovedBy?: string;
+  approvedVersion?:  string;
+  updatedAt:         string;
+  updatedBy?:        string;
+}
+
+/** Merge local demo data for IS_PRODUCTION=false. */
+function _demoSeqPayload(): DeploymentSequencePayload {
+  const phases: DeployPhaseData[] = [
+    { id: 'P1', label: 'Staging Verification',      icon: '🔬', steps: [
+        { id: 'D1-1', description: 'Deploy backend to staging',                                       hint: 'supabase functions deploy make-server-309fe679', status: 'pending' },
+        { id: 'D1-2', description: 'Confirm 0 schema drift in staging',                              hint: 'supabase db diff --linked',                       status: 'pending' },
+        { id: 'D1-3', description: 'Run Zero Demo Data Check → PASSED (0 findings)',                                                                           status: 'pending' },
+        { id: 'D1-4', description: 'Smoke-test all 3 roles in staging',                                                                                        status: 'pending' },
+        { id: 'D1-5', description: 'Run PenTestChecklist in staging → all items pass',                                                                         status: 'pending' },
+    ]},
+    { id: 'P2', label: 'Production Build',           icon: '🏗️', steps: [
+        { id: 'D2-1', description: 'Confirm VITE_APP_ENV is absent from production .env',             status: 'pending' },
+        { id: 'D2-2', description: 'Run production build, verify hashed assets in dist/',            hint: 'npm run build', status: 'pending' },
+        { id: 'D2-3', description: 'Build log: 0 TypeScript errors, 0 Vite warnings',                status: 'pending' },
+    ]},
+    { id: 'P3', label: 'Frontend Deploy (cPanel)',   icon: '🌐', steps: [
+        { id: 'D3-1', description: 'Upload dist/ to public_html',                                    status: 'pending' },
+        { id: 'D3-2', description: 'Configure HTTP → HTTPS 301 redirect',                           hint: '.htaccess RewriteRule', status: 'pending' },
+        { id: 'D3-3', description: 'Apply HSTS, CSP, X-Frame-Options, Referrer-Policy at cPanel',   status: 'pending' },
+        { id: 'D3-4', description: 'Verify SSL certificate is valid and auto-renewing',              status: 'pending' },
+    ]},
+    { id: 'P4', label: 'Backend Deploy (Supabase)',  icon: '⚙️', steps: [
+        { id: 'D4-1', description: 'Deploy backend to production Supabase project',                  hint: 'supabase functions deploy --project-ref <ref>', status: 'pending' },
+        { id: 'D4-2', description: 'Confirm 0 schema drift in production',                          status: 'pending' },
+        { id: 'D4-3', description: 'Confirm edge function cold-start < 1 s',                        status: 'pending' },
+        { id: 'D4-4', description: 'Verify SERVICE_ROLE_KEY is NOT in frontend bundle',             status: 'pending' },
+    ]},
+    { id: 'P5', label: 'Post-Deploy Smoke Tests',    icon: '🧪', steps: [
+        { id: 'D5-1', description: 'SUPER_ADMIN: navigate all pages — 0 console errors',            status: 'pending' },
+        { id: 'D5-2', description: 'TENANT_ADMIN: portal, invoices, billing load correctly',        status: 'pending' },
+        { id: 'D5-3', description: 'EMPLOYEE: content board loads, AI generation works',            status: 'pending' },
+        { id: 'D5-4', description: 'PUBLIC: contact form → email in Super Admin inbox',             status: 'pending' },
+    ]},
+    { id: 'P6', label: 'Monitoring Sign-Off',        icon: '📊', steps: [
+        { id: 'D6-1', description: 'Monitor edge function logs for 30 min — no 5xx errors',         status: 'pending' },
+        { id: 'D6-2', description: 'Confirm Auth email_confirm: true is active',                    status: 'pending' },
+        { id: 'D6-3', description: 'Tag production release in git',                                 hint: 'git tag -a v1.0.0-prod', status: 'pending' },
+        { id: 'D6-4', description: 'Archive gate-status-report.md in deployment log',               status: 'pending' },
+    ]},
+  ];
+  return { phases, updatedAt: new Date().toISOString() };
+}
+
+export async function fetchDeploymentSequence(): Promise<DeploymentSequencePayload> {
+  if (!IS_PRODUCTION) return _demoSeqPayload();
+  return api<DeploymentSequencePayload>('/compliance/deployment-sequence');
+}
+
+export async function saveDeploymentSequence(
+  steps: Record<string, { status: 'pending' | 'complete' | 'skipped'; completedBy?: string; notes?: string }>,
+): Promise<DeploymentSequencePayload> {
+  if (!IS_PRODUCTION) return _demoSeqPayload();
+  return api<DeploymentSequencePayload>('/compliance/deployment-sequence', {
+    method: 'PUT',
+    body:   JSON.stringify({ steps }),
+  });
+}
+
+export async function approveGoLive(
+  approvedBy: string,
+  version:    string,
+): Promise<DeploymentSequencePayload> {
+  if (!IS_PRODUCTION) {
+    const p = _demoSeqPayload();
+    p.goLiveApprovedAt = new Date().toISOString();
+    p.goLiveApprovedBy = approvedBy;
+    p.approvedVersion  = version;
+    return p;
+  }
+  return api<DeploymentSequencePayload>('/compliance/deployment-sequence/approve', {
+    method: 'POST',
+    body:   JSON.stringify({ approvedBy, version }),
+  });
+}
+
+export async function resetDeploymentSequence(): Promise<DeploymentSequencePayload> {
+  if (!IS_PRODUCTION) return _demoSeqPayload();
+  return api<DeploymentSequencePayload>('/compliance/deployment-sequence/reset', {
+    method: 'POST',
+    body:   JSON.stringify({}),
+  });
+}
+
 // ─── Team Activity Feed ─────────────────────────────────────────────────────
 
 export type ActivityAction =

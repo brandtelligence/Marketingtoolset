@@ -9,6 +9,7 @@ import {
   Sparkles, BarChart2, Globe, Users, Shield, Target, Zap, CheckCircle,
   ArrowRight, Lock, Bell, FileText, Database, Layers, Code, RefreshCw,
 } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 function fadeUp(delay = 0) {
   return { initial: { opacity: 0, y: 24 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.5, delay } };
@@ -91,7 +92,20 @@ const accentClasses: Record<string, { border: string; text: string; bg: string }
 export function WebFeaturesPage() {
   const [activeTab, setActiveTab] = useState('ai');
   const content = TAB_CONTENT[activeTab];
-  const ac = accentClasses[content.accent];
+  const ac      = accentClasses[content.accent];
+
+  useSEO({
+    title:       'Features — Complete Marketing Automation & AI Tools Suite',
+    description: 'Discover every Brandtelligence feature: AI content generation in 50+ languages, real-time UTM analytics, drag-and-drop landing pages, CRM, brand management, enterprise security, API access, and 50+ integrations.',
+    keywords:    'marketing automation features, AI content generation, UTM analytics, landing page builder features, CRM features, brand management, multi-tenant RBAC, API access, marketing integrations',
+    type:        'website',
+    schema: webPageSchema({
+      name:        'Brandtelligence Features — Full Marketing Automation Suite',
+      description: 'Complete feature list for Brandtelligence: AI Studio, analytics, landing pages, CRM, brand kit, security, API, and 50+ integrations.',
+      url:         'https://brandtelligence.io/features',
+      breadcrumb:  [{ name: 'Features', url: 'https://brandtelligence.io/features' }],
+    }),
+  });
 
   return (
     <div className="text-white pt-16">

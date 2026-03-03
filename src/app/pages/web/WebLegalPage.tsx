@@ -5,6 +5,7 @@
 import { useLocation } from 'react-router';
 import { motion } from 'motion/react';
 import { Shield, FileText, Cookie } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 const LAST_UPDATED = 'January 15, 2025';
 
@@ -209,6 +210,35 @@ function LegalPage({ type }: { type: 'privacy' | 'terms' | 'cookies' }) {
   }[type];
 
   const { icon: Icon, title, subtitle, Content } = config;
+
+  const seoConfig = {
+    privacy: {
+      title:       'Privacy Policy',
+      description: 'Read the Brandtelligence Privacy Policy — how we collect, use, disclose, and protect your personal data. Compliant with GDPR, PDPA (Malaysia), and CCPA.',
+      keywords:    'Brandtelligence privacy policy, data protection, GDPR, PDPA, personal data',
+    },
+    terms: {
+      title:       'Terms of Service',
+      description: 'Read the Brandtelligence Terms of Service — the legal agreement governing your use of the Brandtelligence marketing platform and related services.',
+      keywords:    'Brandtelligence terms of service, user agreement, platform terms, SaaS terms',
+    },
+    cookies: {
+      title:       'Cookie Policy',
+      description: 'Learn how Brandtelligence uses cookies and similar tracking technologies to improve your experience, analyse usage, and support marketing activities.',
+      keywords:    'Brandtelligence cookie policy, cookies, tracking technologies, analytics cookies',
+    },
+  }[type];
+
+  useSEO({
+    ...seoConfig,
+    type:    'website',
+    schema:  webPageSchema({
+      name:        `Brandtelligence ${seoConfig.title}`,
+      description: seoConfig.description,
+      url:         `https://brandtelligence.io/${type === 'privacy' ? 'privacy' : type === 'terms' ? 'terms' : 'cookies'}`,
+      breadcrumb:  [{ name: seoConfig.title, url: `https://brandtelligence.io/${type}` }],
+    }),
+  });
 
   return (
     <div className="text-white pt-16">

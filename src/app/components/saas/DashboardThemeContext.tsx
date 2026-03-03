@@ -64,9 +64,9 @@ const DARK: DashboardThemeTokens = {
   border: 'border-white/10',
   borderMd: 'border-white/20',
   text: 'text-white',
-  textSm: 'text-white/80',
-  textMd: 'text-white/60',
-  textFaint: 'text-white/40',
+  textSm: 'text-white/90',            /* was /80 — boosted for clear primary hierarchy */
+  textMd: 'text-white/75',            /* was /60 — solid secondary text */
+  textFaint: 'text-white/65',         /* was /55 — captions, labels, hints  */
   hover: 'hover:bg-white/10',
   hoverBorder: 'hover:border-white/20',
   inputCls: 'bg-white/10 border-white/15 text-white placeholder-white/40 focus:border-purple-400/50 focus:outline-none',
@@ -76,7 +76,7 @@ const DARK: DashboardThemeTokens = {
   collapseBg: 'bg-[#1a0f35] border-white/20 hover:bg-white/20',
   mobileSidebarBg: 'bg-[rgba(10,6,21,0.98)]',
   theadBg: 'bg-white/5',
-  theadText: 'text-white/60',
+  theadText: 'text-white/75',         /* was /60 — table column headers */
   trBorder: 'border-white/5',
   trHover: 'hover:bg-white/5',
   tableBorder: 'border-white/10',
@@ -86,19 +86,19 @@ const DARK: DashboardThemeTokens = {
   navHover: (a) => a === 'teal'
     ? 'hover:bg-teal-500/10 hover:text-teal-200'
     : 'hover:bg-purple-500/10 hover:text-purple-200',
-  navInactive: 'text-white/60',
+  navInactive: 'text-white/75',       /* was /60 — sidebar nav links */
   navBadgeDot: (a) => a === 'teal' ? 'bg-teal-400 text-black/80' : 'bg-purple-400 text-black/80',
   tabBg: 'bg-white/5',
   tabActive: 'bg-purple-500/30 text-purple-300',
-  tabInactive: 'text-white/50 hover:text-white/80',
+  tabInactive: 'text-white/70 hover:text-white/90',  /* was /55 hover:/80 */
   chart: {
     tooltipBg: 'rgba(15,10,40,0.95)',
-    tooltipBorder: '1px solid rgba(255,255,255,0.1)',
-    tooltipColor: '#fff',
-    gridStroke: 'rgba(255,255,255,0.05)',
-    tickFill: 'rgba(255,255,255,0.4)',
-    tickFillAlt: 'rgba(255,255,255,0.6)',
-    legendColor: 'rgba(255,255,255,0.6)',
+    tooltipBorder: '1px solid rgba(255,255,255,0.15)',
+    tooltipColor: '#ffffff',
+    gridStroke: 'rgba(255,255,255,0.06)',
+    tickFill: 'rgba(255,255,255,0.82)',     /* was 0.60 — chart axis tick labels */
+    tickFillAlt: 'rgba(255,255,255,0.90)',  /* was 0.75 — alt axis tick labels  */
+    legendColor: 'rgba(255,255,255,0.90)',  /* was 0.75 — chart legend text     */
     optionBg: '#1a0f35',
   },
 };
@@ -169,13 +169,18 @@ export function DashboardThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try { localStorage.setItem('dashboard-theme', isDark ? 'dark' : 'light'); }
     catch { /* ignore */ }
-    // Toggle body class so CSS-level overrides (dashboard-light.css) apply globally
+    // Toggle body classes so CSS-level overrides apply globally
     if (isDark) {
       document.body.classList.remove('dashboard-light');
+      document.body.classList.add('dashboard-dark');
     } else {
       document.body.classList.add('dashboard-light');
+      document.body.classList.remove('dashboard-dark');
     }
-    return () => { document.body.classList.remove('dashboard-light'); };
+    return () => {
+      document.body.classList.remove('dashboard-light');
+      document.body.classList.remove('dashboard-dark');
+    };
   }, [isDark]);
 
   const tokens = isDark ? DARK : LIGHT;

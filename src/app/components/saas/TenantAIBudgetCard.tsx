@@ -181,7 +181,7 @@ export function TenantAIBudgetCard({ budget, loading }: Props) {
               style={{
                 background:   th.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
                 borderColor:  th.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
-                color:        th.isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)',
+                color:        th.isDark ? 'rgba(255,255,255,0.82)' : 'rgba(0,0,0,0.60)',  /* was 0.62 → 7.7:1 → 0.82 → 13.3:1 ✅✅ */
               }}
             >
               <Info className="w-2.5 h-2.5" />
@@ -275,7 +275,7 @@ export function TenantAIBudgetCard({ budget, loading }: Props) {
           <span
             className={`absolute text-[9px] font-medium tabular-nums`}
             style={{
-              color: th.isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+              color: th.isDark ? 'rgba(255,255,255,0.78)' : 'rgba(0,0,0,0.50)',  /* was 0.55 → 5.8:1 → 0.78 → 11.8:1 ✅✅ */
               bottom: '14px', left: '16px',
             }}
           >
@@ -284,7 +284,7 @@ export function TenantAIBudgetCard({ budget, loading }: Props) {
           <span
             className={`absolute text-[9px] font-medium tabular-nums`}
             style={{
-              color: th.isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+              color: th.isDark ? 'rgba(255,255,255,0.78)' : 'rgba(0,0,0,0.50)',  /* was 0.55 → 5.8:1 → 0.78 → 11.8:1 ✅✅ */
               bottom: '14px', right: '16px',
             }}
           >

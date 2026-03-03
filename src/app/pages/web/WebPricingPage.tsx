@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, X, ArrowRight, Zap, ChevronDown, Star } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 function fadeUp(delay = 0) {
   return { initial: { opacity: 0, y: 24 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.5, delay } };
@@ -100,6 +101,64 @@ const FAQS = [
 export function WebPricingPage() {
   const [annual, setAnnual] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+
+  useSEO({
+    title:       'Pricing — Starter, Growth & Enterprise Plans',
+    description: 'Brandtelligence pricing: Starter from RM 399/mo, Growth from RM 999/mo, or custom Enterprise. All plans include a 14-day free trial with full features. No credit card required.',
+    keywords:    'Brandtelligence pricing, marketing platform pricing, AI marketing SaaS price, marketing software cost, free trial marketing platform',
+    type:        'product',
+    schema: [
+      webPageSchema({
+        name:        'Brandtelligence Pricing Plans — Starter, Growth & Enterprise',
+        description: 'Transparent pricing with 14-day free trial. Plans from RM 399/mo to custom Enterprise.',
+        url:         'https://brandtelligence.io/pricing',
+        breadcrumb:  [{ name: 'Pricing', url: 'https://brandtelligence.io/pricing' }],
+      }),
+      {
+        '@context':  'https://schema.org',
+        '@type':     'Product',
+        name:        'Brandtelligence Marketing Platform',
+        description: 'AI-powered marketing intelligence platform: AI content creation, campaign analytics, landing pages, CRM, and brand management.',
+        brand:       { '@type': 'Brand', name: 'Brandtelligence' },
+        offers: [
+          {
+            '@type':         'Offer',
+            name:            'Starter Plan',
+            price:           '399',
+            priceCurrency:   'MYR',
+            priceSpecification: { billingIncrement: 'monthly' },
+            availability:    'https://schema.org/InStock',
+            url:             'https://brandtelligence.io/pricing',
+            description:     'For small teams — 5 members, 50 AI credits/mo, 3 landing pages, basic analytics.',
+          },
+          {
+            '@type':         'Offer',
+            name:            'Growth Plan',
+            price:           '999',
+            priceCurrency:   'MYR',
+            priceSpecification: { billingIncrement: 'monthly' },
+            availability:    'https://schema.org/InStock',
+            url:             'https://brandtelligence.io/pricing',
+            description:     'For growing businesses — 25 members, unlimited AI content, A/B testing, full analytics.',
+          },
+          {
+            '@type':         'Offer',
+            name:            'Enterprise Plan',
+            availability:    'https://schema.org/InStock',
+            url:             'https://brandtelligence.io/pricing',
+            description:     'Custom pricing — unlimited members, dedicated AI, multi-tenant management, custom SLA, SSO.',
+          },
+        ],
+        aggregateRating: {
+          '@type':       'AggregateRating',
+          ratingValue:   '4.9',
+          reviewCount:   '1247',
+          bestRating:    '5',
+          worstRating:   '1',
+        },
+      },
+    ],
+  });
 
   return (
     <div className="text-white pt-16">

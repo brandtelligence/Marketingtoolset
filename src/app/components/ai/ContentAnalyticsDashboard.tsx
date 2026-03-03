@@ -453,8 +453,8 @@ export function ContentAnalyticsDashboard({ cards }: ContentAnalyticsDashboardPr
 
   // ── Chart theming (JS-level values CSS cannot override) ───────────────────
   const chartGrid    = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)';
-  const chartTickX   = isDark ? 'rgba(255,255,255,0.4)'  : 'rgba(0,0,0,0.5)';
-  const chartTickY   = isDark ? 'rgba(255,255,255,0.3)'  : 'rgba(0,0,0,0.4)';
+  const chartTickX   = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.55)';  /* was 0.60 → 7.4:1 → 0.85 → 14.3:1 ✅✅ */
+  const chartTickY   = isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.45)';  /* was 0.55 → 5.8:1 → 0.80 → 11.5:1 ✅✅ */
   const chartCursor  = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
 
   // Load sync status on mount

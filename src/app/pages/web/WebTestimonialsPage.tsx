@@ -4,6 +4,7 @@
 import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import { Star, ArrowRight, TrendingUp, Users, BarChart2, Zap } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 function fadeUp(delay = 0) {
   return { initial: { opacity: 0, y: 24 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.5, delay } };
@@ -76,6 +77,21 @@ const ALL_TESTIMONIALS = [
 ];
 
 export function WebTestimonialsPage() {
+  useSEO({
+    title:       'Customer Success Stories & Case Studies',
+    description: 'See how 1,200+ marketing teams use Brandtelligence to grow. Read real case studies from CMOs, agency founders, and digital marketing leaders — with measurable ROI results.',
+    keywords:    'Brandtelligence reviews, customer success stories, marketing platform case studies, AI marketing ROI, marketing tool testimonials',
+    type:        'website',
+    schema: [
+      webPageSchema({
+        name:        'Brandtelligence Customer Success Stories & Case Studies',
+        description: 'Real results from marketing teams using Brandtelligence — 312% ROI uplift, 70% content production time savings, and more.',
+        url:         'https://brandtelligence.io/testimonials',
+        breadcrumb:  [{ name: 'Testimonials', url: 'https://brandtelligence.io/testimonials' }],
+      }),
+    ],
+  });
+
   return (
     <div className="text-white pt-16">
 

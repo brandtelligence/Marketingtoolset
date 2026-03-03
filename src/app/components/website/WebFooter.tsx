@@ -78,10 +78,10 @@ export function WebFooter() {
   const legalLink    = isDark ? 'text-white/25 hover:text-bt-teal' : 'text-gray-400 hover:text-bt-teal';
 
   return (
-    <footer className={`border-t ${borderTop} ${footerBg} transition-colors duration-300`}>
+    <footer className={`border-t ${borderTop} ${footerBg} transition-colors duration-300`} aria-label="Site footer">
 
       {/* CTA strip */}
-      <div className={`border-b ${borderInner}`}>
+      <section aria-label="Free trial call to action" className={`border-b ${borderInner}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-5">
           <div>
             <p className={`font-bold text-lg ${ctaTitle}`}>Ready to transform your marketing?</p>
@@ -94,7 +94,7 @@ export function WebFooter() {
             Start Free Trial <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
-      </div>
+      </section>
 
       {/* Main grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
@@ -102,39 +102,44 @@ export function WebFooter() {
 
           {/* Brand column */}
           <div className="col-span-2">
-            <Link to="/" className="flex items-center gap-2.5 mb-4 group">
-              <img src={brandLogo} alt="Brandtelligence" className="h-8 w-auto object-contain" />
+            <Link to="/" aria-label="Brandtelligence — go to homepage" className="flex items-center gap-2.5 mb-4 group">
+              <img src={brandLogo} alt="Brandtelligence logo" width={140} height={32} className="h-8 w-auto object-contain" />
             </Link>
             <p className={`text-sm leading-relaxed mb-5 max-w-[240px] ${brandDesc}`}>
               The AI-powered marketing intelligence platform for ambitious brands and agencies managing clients at scale.
             </p>
-            <div className="flex gap-2.5 mb-6">
-              {SOCIALS.map(({ Icon, href, label }) => (
-                <a
-                  key={label}
-                  href={href}
-                  aria-label={label}
-                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${socialCls}`}
-                >
-                  <Icon className="w-4 h-4" />
-                </a>
-              ))}
-            </div>
+            {/* Social links */}
+            <nav aria-label="Brandtelligence social media profiles">
+              <div className="flex gap-2.5 mb-6">
+                {SOCIALS.map(({ Icon, href, label }) => (
+                  <a
+                    key={label}
+                    href={href}
+                    aria-label={`Brandtelligence on ${label}`}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                    className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${socialCls}`}
+                  >
+                    <Icon className="w-4 h-4" aria-hidden="true" />
+                  </a>
+                ))}
+              </div>
+            </nav>
             {/* Trust badges */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2" aria-label="Security certifications">
               {BADGES.map(b => (
                 <div key={b.text} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${badgeBg}`}>
-                  <span className="text-xs">{b.emoji}</span>
+                  <span className="text-xs" aria-hidden="true">{b.emoji}</span>
                   <span className={`text-xs ${badgeText}`}>{b.text}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Link columns */}
+          {/* Link columns — each rendered as a <nav> with semantic <h3> headings */}
           {Object.entries(FOOTER_COLS).map(([title, links]) => (
-            <div key={title}>
-              <p className={`text-sm font-semibold mb-5 ${colTitle}`}>{title}</p>
+            <nav key={title} aria-label={`${title} links`}>
+              <h3 className={`text-sm font-semibold mb-5 ${colTitle}`}>{title}</h3>
               <ul className="space-y-3">
                 {links.map(link => (
                   <li key={link.label}>
@@ -144,20 +149,25 @@ export function WebFooter() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </nav>
           ))}
         </div>
       </div>
 
-      {/* Bottom bar */}
+      {/* Bottom legal bar */}
       <div className={`border-t ${borderInner}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className={`text-xs ${copyright}`}>© 2025 Brandtelligence Sdn Bhd. All rights reserved. Built for global marketing teams.</p>
-          <div className="flex items-center gap-4">
-            <Link to="/privacy" className={`text-xs transition-colors ${legalLink}`}>Privacy</Link>
-            <Link to="/terms"   className={`text-xs transition-colors ${legalLink}`}>Terms</Link>
-            <Link to="/cookies" className={`text-xs transition-colors ${legalLink}`}>Cookies</Link>
-          </div>
+          <p className={`text-xs ${copyright}`}>
+            <span>© 2025 Brandtelligence Sdn Bhd. All rights reserved.</span>
+            {' '}Built for global marketing teams.
+          </p>
+          <nav aria-label="Legal pages">
+            <div className="flex items-center gap-4">
+              <Link to="/privacy" className={`text-xs transition-colors ${legalLink}`}>Privacy Policy</Link>
+              <Link to="/terms"   className={`text-xs transition-colors ${legalLink}`}>Terms of Service</Link>
+              <Link to="/cookies" className={`text-xs transition-colors ${legalLink}`}>Cookie Policy</Link>
+            </div>
+          </nav>
         </div>
       </div>
     </footer>

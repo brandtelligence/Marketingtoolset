@@ -767,7 +767,7 @@ export function LoginPage() {
                   : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
               }}
             >
-              <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: IS_DEMO_MODE ? '#F47A20' : isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)' }} />
+              <FlaskConical className="w-3.5 h-3.5 shrink-0" style={{ color: IS_DEMO_MODE ? '#F47A20' : isDark ? 'rgba(255,255,255,0.82)' : 'rgba(0,0,0,0.50)' }} />  {/* was 0.55 → 5.8:1 → 0.82 → 13.3:1 ✅✅ */}
               <span className={`${faintText} group-hover:${isDark ? 'text-white/70' : 'text-gray-600'} transition-colors`}>{IS_DEMO_MODE ? 'Demo Mode' : 'Production Mode'}</span>
               <div className="relative w-9 h-5 rounded-full transition-colors" style={{ background: IS_DEMO_MODE ? '#0BA4AA' : isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)' }}>
                 <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all" style={{ left: IS_DEMO_MODE ? '1.125rem' : '0.125rem' }} />

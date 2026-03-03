@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, HelpCircle, ArrowRight, MessageCircle } from 'lucide-react';
+import { useSEO, webPageSchema } from '../../hooks/useSEO';
 
 function fadeUp(delay = 0) {
   return { initial: { opacity: 0, y: 20 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true }, transition: { duration: 0.45, delay } };
@@ -72,6 +73,37 @@ export function WebFAQPage() {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
 
   const category = FAQ_CATEGORIES.find(c => c.id === activeCategory)!;
+
+  /* Build FAQ structured data from all Q&A pairs across all categories */
+  const allQuestions = FAQ_CATEGORIES.flatMap(cat => cat.questions);
+
+  useSEO({
+    title:       'FAQ — Frequently Asked Questions',
+    description: 'Find answers to the most common questions about Brandtelligence: features, pricing, security, GDPR, integrations, API, billing, onboarding, and more.',
+    keywords:    'Brandtelligence FAQ, marketing platform questions, AI content platform help, pricing questions, security compliance FAQ',
+    type:        'website',
+    schema: [
+      webPageSchema({
+        name:        'Brandtelligence FAQ — Frequently Asked Questions',
+        description: 'Common questions about Brandtelligence platform covering features, pricing, security, integrations, and support.',
+        url:         'https://brandtelligence.io/faq',
+        breadcrumb:  [{ name: 'FAQ', url: 'https://brandtelligence.io/faq' }],
+      }),
+      {
+        /* FAQPage — enables Google's expandable Q&A rich results in search */
+        '@context':   'https://schema.org',
+        '@type':      'FAQPage',
+        mainEntity:   allQuestions.map(({ q, a }) => ({
+          '@type':          'Question',
+          name:             q,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text:    a,
+          },
+        })),
+      },
+    ],
+  });
 
   return (
     <div className="text-white pt-16">

@@ -1,0 +1,260 @@
+/*
+ * dashboard-dark.css — Maximum-contrast text booster for ALL dark contexts.
+ *
+ * Covers two separate dark-mode scopes:
+ *   1. `.dashboard-dark` on <body>  — internal SaaS dashboard
+ *   2. `.dark` on wrapper <div>     — public marketing web pages (WebLayout)
+ *
+ * TARGET: Every text element achieves ≥ 7:1 contrast (WCAG AAA for normal text).
+ * Pure primary text remains white (21:1). Opacity tiers maintain hierarchy but
+ * all land at or above 7:1.
+ *
+ * ── CONTRAST VERIFICATION (against #0a0615 / #06070f, L ≈ 0.002–0.003) ───────
+ *
+ *  Original   Old boost   Old ratio    New opacity   New ratio
+ *  /5         (none)      ~1.2:1  ❌  →  0.60        ~7.3:1  ✅
+ *  /10        (none)      ~1.4:1  ❌  →  0.60        ~7.3:1  ✅
+ *  /12        0.46        ~4.8:1  ❌  →  0.62        ~7.7:1  ✅
+ *  /15        0.48        ~5.0:1  ❌  →  0.65        ~8.4:1  ✅
+ *  /20        0.50        ~5.3:1  ❌  →  0.68        ~9.0:1  ✅
+ *  /25        0.52        ~5.5:1  ❌  →  0.72        ~9.8:1  ✅
+ *  /30        0.55        ~5.8:1  ❌  →  0.75        ~10.9:1 ✅
+ *  /35        0.58        ~6.4:1  ❌  →  0.78        ~11.8:1 ✅
+ *  /40        0.62        ~7.8:1  ✅  →  0.82        ~13.3:1 ✅✅
+ *  /45        0.65        ~8.7:1  ✅  →  0.85        ~14.3:1 ✅✅
+ *  /50        (none)      ~5.5:1  ❌  →  0.88        ~15.5:1 ✅✅
+ *  /55        (none)      ~6.0:1  ❌  →  0.90        ~16.3:1 ✅✅
+ *  /60        (none)      ~7.4:1  ✅  →  0.93        ~17.7:1 ✅✅
+ *  /65        (none)      ~8.5:1  ✅  →  0.95        ~19.0:1 ✅✅
+ *  /70+       (none)      ≥9.5:1  ✅  →  unchanged
+ *
+ * NOTE: WCAG 1.4.3 exempts "inactive UI components" from contrast requirements.
+ * Disabled states are boosted for readability but the exemption is noted.
+ *
+ * ── CSS APPROACH ─────────────────────────────────────────────────────────────
+ * Using unlayered selectors which automatically win over Tailwind's @layer
+ * utilities in Tailwind v4 without needing !important.
+ */
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 1 — CORE TEXT OPACITY LADDER                                   ║
+   ║  Covers text-white/[N] Tailwind utilities in both dark contexts.        ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+/* /5 — decorative-only text (rare; icon labels, bg texture text) */
+.dashboard-dark .text-white\/5,
+.dark            .text-white\/5  { color: rgba(255, 255, 255, 0.60); }
+
+/* /8 — very subtle text used as dividers or watermark-style labels */
+.dashboard-dark .text-white\/8,
+.dark            .text-white\/8  { color: rgba(255, 255, 255, 0.60); }
+
+/* /10 — icon-area faint text, progress sub-labels */
+.dashboard-dark .text-white\/10,
+.dark            .text-white\/10 { color: rgba(255, 255, 255, 0.60); }
+
+/* /12 — decorative placeholder icons, footnote watermarks
+   Was 0.46 (~4.8:1 ❌) → Now 0.62 (~7.7:1 ✅) */
+.dashboard-dark .text-white\/12,
+.dark            .text-white\/12 { color: rgba(255, 255, 255, 0.62); }
+
+/* /15 — separator dots, footnote captions, progress axis labels
+   Was 0.48 (~5.0:1 ❌) → Now 0.65 (~8.4:1 ✅) */
+.dashboard-dark .text-white\/15,
+.dark            .text-white\/15 { color: rgba(255, 255, 255, 0.65); }
+
+/* /20 — hint copy, upload sub-labels, engagement sub-text
+   Was 0.50 (~5.3:1 ❌) → Now 0.68 (~9.0:1 ✅) */
+.dashboard-dark .text-white\/20,
+.dark            .text-white\/20 { color: rgba(255, 255, 255, 0.68); }
+
+/* /25 — meta separators, char-count badges, ticker labels, disclaimer text
+   Was 0.52 (~5.5:1 ❌) → Now 0.72 (~9.8:1 ✅) */
+.dashboard-dark .text-white\/25,
+.dark            .text-white\/25 { color: rgba(255, 255, 255, 0.72); }
+
+/* /30 — field labels, caption text, SLA labels, upload hints, wizard descriptions
+   Was 0.55 (~5.8:1 ❌) → Now 0.75 (~10.9:1 ✅) */
+.dashboard-dark .text-white\/30,
+.dark            .text-white\/30 { color: rgba(255, 255, 255, 0.75); }
+
+/* /35 — description lines, char counters, inline hints, blog meta dates
+   Was 0.58 (~6.4:1 ❌) → Now 0.78 (~11.8:1 ✅) */
+.dashboard-dark .text-white\/35,
+.dark            .text-white\/35 { color: rgba(255, 255, 255, 0.78); }
+
+/* /40 — textFaint labels, counters, info text, author roles, testimonial roles
+   Was 0.62 (~7.8:1 ✅) → Now 0.82 (~13.3:1 ✅✅) — well above 7:1 */
+.dashboard-dark .text-white\/40,
+.dark            .text-white\/40 { color: rgba(255, 255, 255, 0.82); }
+
+/* /45 — stats sub-labels, platform descriptions, secondary page body text
+   Was 0.65 (~8.7:1 ✅) → Now 0.85 (~14.3:1 ✅✅) */
+.dashboard-dark .text-white\/45,
+.dark            .text-white\/45 { color: rgba(255, 255, 255, 0.85); }
+
+/* /50 — standard secondary text (previously had no rule, raw 0.50 → ~5.5:1 ❌)
+   Now 0.88 (~15.5:1 ✅✅) */
+.dashboard-dark .text-white\/50,
+.dark            .text-white\/50 { color: rgba(255, 255, 255, 0.88); }
+
+/* /55 — body descriptions, paragraph text in cards (previously no rule → ~6.0:1 ❌)
+   Now 0.90 (~16.3:1 ✅✅) */
+.dashboard-dark .text-white\/55,
+.dark            .text-white\/55 { color: rgba(255, 255, 255, 0.90); }
+
+/* /60 — nav inactive, thead headers, overview text (was ~7.4:1 ✅, boosting further)
+   Now 0.93 (~17.7:1 ✅✅) */
+.dashboard-dark .text-white\/60,
+.dark            .text-white\/60 { color: rgba(255, 255, 255, 0.93); }
+
+/* /65 — near-primary text, strong secondary
+   Now 0.95 (~19.0:1 ✅✅) */
+.dashboard-dark .text-white\/65,
+.dark            .text-white\/65 { color: rgba(255, 255, 255, 0.95); }
+
+/* /70 and above — already achieve ≥ 9.5:1; leave untouched to preserve
+   the slight hierarchy gap between secondary and primary text */
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 2 — HOVER STATE COMPANIONS                                     ║
+   ║  Hover targets must exceed the resting values — not fall below them.    ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+.dashboard-dark .hover\:text-white\/50:hover,
+.dark            .hover\:text-white\/50:hover { color: rgba(255, 255, 255, 0.92); }
+
+.dashboard-dark .hover\:text-white\/60:hover,
+.dark            .hover\:text-white\/60:hover { color: rgba(255, 255, 255, 0.94); }
+
+.dashboard-dark .hover\:text-white\/70:hover,
+.dark            .hover\:text-white\/70:hover { color: rgba(255, 255, 255, 0.97); }
+
+.dashboard-dark .hover\:text-white\/80:hover,
+.dark            .hover\:text-white\/80:hover { color: rgba(255, 255, 255, 1.00); }
+
+/* Hover on faint text → lift to near-white */
+.dashboard-dark .hover\:text-white\/40:hover,
+.dark            .hover\:text-white\/40:hover { color: rgba(255, 255, 255, 0.90); }
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 3 — GROUP-HOVER COMPANIONS                                     ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+.dashboard-dark .group:hover .group-hover\:text-white\/60,
+.dark            .group:hover .group-hover\:text-white\/60 { color: rgba(255, 255, 255, 0.94); }
+
+.dashboard-dark .group:hover .group-hover\:text-white\/80,
+.dark            .group:hover .group-hover\:text-white\/80 { color: rgba(255, 255, 255, 1.00); }
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 4 — INPUT PLACEHOLDER CONTRAST                                 ║
+   ║  Placeholders must be ≥ 4.5:1 (WCAG AA for UI text). Aim for 7:1.      ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+/* Tailwind classic placeholder-white/XX syntax */
+.dashboard-dark .placeholder-white\/40::placeholder,
+.dark            .placeholder-white\/40::placeholder { color: rgba(255, 255, 255, 0.68); }
+
+.dashboard-dark .placeholder-white\/30::placeholder,
+.dark            .placeholder-white\/30::placeholder { color: rgba(255, 255, 255, 0.65); }
+
+.dashboard-dark .placeholder-white\/20::placeholder,
+.dark            .placeholder-white\/20::placeholder { color: rgba(255, 255, 255, 0.62); }
+
+/* Tailwind v4 colon-notation placeholder variants */
+.dashboard-dark .placeholder\:text-white\/40::placeholder,
+.dark            .placeholder\:text-white\/40::placeholder { color: rgba(255, 255, 255, 0.68); }
+
+.dashboard-dark .placeholder\:text-white\/30::placeholder,
+.dark            .placeholder\:text-white\/30::placeholder { color: rgba(255, 255, 255, 0.65); }
+
+.dashboard-dark .placeholder\:text-white\/20::placeholder,
+.dark            .placeholder\:text-white\/20::placeholder { color: rgba(255, 255, 255, 0.62); }
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 5 — TABLE HEADERS                                              ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+/* Table column headers that use low-opacity classes */
+.dashboard-dark th.text-white\/40,
+.dashboard-dark th > .text-white\/40,
+.dark            th.text-white\/40,
+.dark            th > .text-white\/40 { color: rgba(255, 255, 255, 0.82); }
+
+.dashboard-dark th.text-white\/30,
+.dashboard-dark th > .text-white\/30,
+.dark            th.text-white\/30,
+.dark            th > .text-white\/30 { color: rgba(255, 255, 255, 0.75); }
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 6 — RECHARTS SVG TEXT (CSS-addressable chart ticks)            ║
+   ║  JS-driven tickFill values are fixed in DashboardThemeContext.tsx.      ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+.dashboard-dark .recharts-cartesian-axis-tick-value,
+.dark            .recharts-cartesian-axis-tick-value { fill: rgba(255, 255, 255, 0.85) !important; }
+
+.dashboard-dark .recharts-legend-item-text,
+.dark            .recharts-legend-item-text          { color: rgba(255, 255, 255, 0.90) !important; }
+
+.dashboard-dark .recharts-tooltip-label,
+.dark            .recharts-tooltip-label             { color: rgba(255, 255, 255, 0.95) !important; }
+
+.dashboard-dark .recharts-tooltip-item,
+.dark            .recharts-tooltip-item              { color: rgba(255, 255, 255, 0.90) !important; }
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 7 — DISABLED / INACTIVE STATES                                 ║
+   ║  WCAG exempts "inactive UI components" but we still boost for           ║
+   ║  readability. Disabled text should never be invisible.                  ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+/* Disabled button text (cursor-not-allowed buttons with faint text) */
+.dashboard-dark [disabled] .text-white\/30,
+.dashboard-dark .cursor-not-allowed .text-white\/30,
+.dark            [disabled] .text-white\/30,
+.dark            .cursor-not-allowed .text-white\/30 { color: rgba(255, 255, 255, 0.60); }
+
+/* Inactive wizard step indicators */
+.dashboard-dark .text-white\/30.border,
+.dark            .text-white\/30.border { color: rgba(255, 255, 255, 0.65); }
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 8 — FILL ATTRIBUTE EQUIVALENTS (SVG text / icon context)       ║
+   ║  Some SVG icons use fill instead of color.                              ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+/* Ensure SVG icons used as text hints are also boosted */
+.dashboard-dark svg.text-white\/30,
+.dark            svg.text-white\/30 { color: rgba(255, 255, 255, 0.70); }
+
+.dashboard-dark svg.text-white\/40,
+.dark            svg.text-white\/40 { color: rgba(255, 255, 255, 0.78); }
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  SECTION 9 — PRESERVED EXCEPTIONS                                       ║
+   ║  Elements where translucent white IS the intentional visual style       ║
+   ║  (backgrounds, borders, decorative glows — NOT text).                  ║
+   ║  These are bg-white/X and border-white/X — not text — so they are      ║
+   ║  correctly unaffected by the text-only rules above.                     ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+/*
+  bg-white/[0-10]  — card surfaces, input backgrounds    → NOT touched (bg)
+  border-white/[x] — card/input borders                  → NOT touched (border)
+  bg-gradient-to-* — hero backgrounds, section glows     → NOT touched (bg)
+
+  Exceptions to the text boosts:
+  • White text ON coloured/gradient CTA buttons (already white → no boost needed)
+  • The animated mockup URL bar text in WebHomePage (/30) is decorative UI chrome
+    and intentionally dim — boosted by § 1 for accessibility but excluded from
+    further specific overrides.
+*/
