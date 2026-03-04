@@ -86,6 +86,14 @@ export function BackgroundLayout({ children, particleCount }: BackgroundLayoutPr
 
   return (
     <div className={containerBg}>
+      {/* ── Skip to main content (WCAG 2.1 AA — bypass blocks) ── */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[#0BA4AA] focus:text-white focus:text-sm focus:font-semibold focus:shadow-lg focus:outline-none"
+      >
+        Skip to main content
+      </a>
+
       {/* ── Animated background blobs ── */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
         <motion.div
@@ -165,9 +173,13 @@ export function BackgroundLayout({ children, particleCount }: BackgroundLayoutPr
       )}
 
       {/* ── Page content (z-10 to sit above background) ── */}
-      <div className={`relative z-10 ${isDualScreen ? 'fold-content-safe' : ''} ${isTabletop ? 'fold-tabletop-content' : ''}`}>
+      <main
+        id="main-content"
+        className={`relative z-10 ${isDualScreen ? 'fold-content-safe' : ''} ${isTabletop ? 'fold-tabletop-content' : ''}`}
+        role="main"
+      >
         {children}
-      </div>
+      </main>
     </div>
   );
 }

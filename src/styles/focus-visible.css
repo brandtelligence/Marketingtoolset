@@ -1,0 +1,14 @@
+/* ── Global focus-visible ring styles ──────────────────────────────────────────
+   Provides consistent keyboard-navigation focus indicators across the app.
+   Kept in a separate file to avoid Tailwind v4 @theme parse conflicts.        */
+
+*:focus-visible {
+  outline: 2px solid var(--ring, #0BA4AA);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Remove double outlines on elements that already use Tailwind ring utilities */
+[class*="ring-"]:focus-visible {
+  outline: none;
+}

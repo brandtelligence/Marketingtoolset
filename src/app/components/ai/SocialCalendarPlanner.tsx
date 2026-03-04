@@ -20,10 +20,10 @@ import {
   Loader2, X, Edit3, Save, AlertTriangle, LayoutGrid,
   CheckSquare2, Square, FolderOpen, Clock, Tag, Zap,
   Globe, RefreshCw, ArrowRight, Info, Target, Mic,
-  Image as ImageIcon, Video, FileText, BarChart2,
+  Image as ImageIcon, Video, FileText, BarChart2, Linkedin,
 } from 'lucide-react';
 import {
-  SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
+  SiInstagram, SiFacebook, SiX, SiTiktok,
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit,
   SiWhatsapp, SiTelegram,
 } from 'react-icons/si';
@@ -46,7 +46,7 @@ const PLATFORMS = [
   { id: 'instagram', label: 'Instagram',      Icon: SiInstagram, color: 'text-pink-400',   bg: 'bg-pink-500/12',   border: 'border-pink-400/30' },
   { id: 'facebook',  label: 'Facebook',       Icon: SiFacebook,  color: 'text-blue-400',   bg: 'bg-blue-500/12',   border: 'border-blue-400/30' },
   { id: 'twitter',   label: 'X (Twitter)',    Icon: SiX,         color: 'text-gray-800',   bg: 'bg-gray-200',      border: 'border-gray-300',     colorDark: 'text-white',      bgDark: 'bg-white/8',       borderDark: 'border-white/15'    },
-  { id: 'linkedin',  label: 'LinkedIn',       Icon: SiLinkedin,  color: 'text-blue-300',   bg: 'bg-blue-700/12',   border: 'border-blue-400/20' },
+  { id: 'linkedin',  label: 'LinkedIn',       Icon: Linkedin,    color: 'text-blue-300',   bg: 'bg-blue-700/12',   border: 'border-blue-400/20' },
   { id: 'tiktok',    label: 'TikTok',         Icon: SiTiktok,    color: 'text-cyan-300',   bg: 'bg-cyan-500/12',   border: 'border-cyan-400/30' },
   { id: 'youtube',   label: 'YouTube',        Icon: SiYoutube,   color: 'text-red-400',    bg: 'bg-red-500/12',    border: 'border-red-400/30'  },
   { id: 'pinterest', label: 'Pinterest',      Icon: SiPinterest, color: 'text-red-400',    bg: 'bg-red-500/12',    border: 'border-red-400/30'  },

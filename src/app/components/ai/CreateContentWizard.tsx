@@ -4,10 +4,10 @@ import {
   X, ChevronRight, ChevronLeft, ChevronDown, Sparkles, Check, Lock,
   Send, Loader2, Bot, User, RotateCcw, Zap, Copy, CheckCircle,
   Save, PlusCircle, Image, Film, Music, Mic, Wand2, RefreshCw,
-  Edit3, Eye, FileCheck, Palette,
+  Edit3, Eye, FileCheck, Palette, Linkedin,
 } from 'lucide-react';
 import {
-  SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
+  SiInstagram, SiFacebook, SiX, SiTiktok,
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit, SiWhatsapp,
   SiTelegram,
 } from 'react-icons/si';
@@ -20,6 +20,7 @@ import {
   createMessageId,
   generateImage,
   refineContent,
+  wizardChat,
   type AIMessage,
   type ContentRequest,
   type MarketingChannel,
@@ -35,7 +36,7 @@ const platformBrandIcons: Record<string, React.ComponentType<{ className?: strin
   instagram: SiInstagram,
   facebook: SiFacebook,
   twitter: SiX,
-  linkedin: SiLinkedin,
+  linkedin: Linkedin,
   tiktok: SiTiktok,
   youtube: SiYoutube,
   pinterest: SiPinterest,
@@ -411,7 +412,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     actions: selectedActions,
   }), [projectName, projectDescription, selectedChannel, selectedPlatforms, selectedActions]);
 
-  const startAIChat = useCallback(() => {
+  const startAIChat = useCallback(async () => {
     setStep('chat');
     setIsGenerating(true);
 
@@ -423,9 +424,49 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     };
     setMessages([systemMsg]);
 
-    // Simulate AI thinking delay
-    setTimeout(() => {
-      const request = getContentRequest();
+    const request = getContentRequest();
+
+    // Build the initial user message describing what the user wants
+    const channelName = marketingChannels.find(c => c.id === request.channel)?.name || request.channel;
+    const platformNames = request.platforms.map(id => socialPlatforms.find(p => p.id === id)?.name || id).join(', ');
+    const actionNames = request.actions.map(id => contentActions.find(a => a.id === id)?.name || id).join(', ');
+
+    let initialPrompt = `Generate comprehensive ${channelName} content for my project "${request.projectName}".`;
+    if (request.projectDescription) initialPrompt += ` Project description: ${request.projectDescription}.`;
+    if (request.platforms.length > 0) initialPrompt += ` Target platforms: ${platformNames}.`;
+    initialPrompt += ` I need the following: ${actionNames}.`;
+    initialPrompt += ` Please provide detailed, immediately usable content for each requested action.`;
+
+    try {
+      const result = await wizardChat({
+        messages: [{ role: 'user', content: initialPrompt }],
+        channel: request.channel,
+        platforms: request.platforms,
+        actions: request.actions,
+        projectName: request.projectName,
+        projectDescription: request.projectDescription,
+      });
+
+      const aiMsg: AIMessage = {
+        id: createMessageId(),
+        role: 'assistant',
+        content: result.output,
+        timestamp: new Date(),
+      };
+      // Store the initial user message in messages state (hidden from UI but used for GPT-4o context)
+      const userContextMsg: AIMessage = {
+        id: createMessageId(),
+        role: 'user',
+        content: initialPrompt,
+        timestamp: new Date(),
+        hidden: true,
+      };
+      setMessages(prev => [...prev, userContextMsg, aiMsg]);
+      setIsGenerating(false);
+    } catch (err: any) {
+      console.error('[startAIChat] GPT-4o error, falling back to mock:', err);
+      toast.error(`AI generation failed: ${err.message || 'Unknown error'}. Using offline preview.`);
+      // Fallback to mock so the wizard is still usable
       const response = generateInitialResponse(request);
       const aiMsg: AIMessage = {
         id: createMessageId(),
@@ -435,10 +476,10 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       };
       setMessages(prev => [...prev, aiMsg]);
       setIsGenerating(false);
-    }, 2000);
+    }
   }, [projectName, getContentRequest]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!inputValue.trim() || isGenerating) return;
 
     const userMsg: AIMessage = {
@@ -451,9 +492,37 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
     setInputValue('');
     setIsGenerating(true);
 
-    // Simulate AI response delay
-    setTimeout(() => {
-      const request = getContentRequest();
+    const request = getContentRequest();
+
+    // Build conversation history for GPT-4o context
+    // Use a functional state getter via a ref-like pattern
+    const currentMessages = [...messages, userMsg];
+    const chatHistory = currentMessages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+    try {
+      const result = await wizardChat({
+        messages: chatHistory,
+        channel: request.channel,
+        platforms: request.platforms,
+        actions: request.actions,
+        projectName: request.projectName,
+        projectDescription: request.projectDescription,
+      });
+
+      const aiMsg: AIMessage = {
+        id: createMessageId(),
+        role: 'assistant',
+        content: result.output,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsGenerating(false);
+    } catch (err: any) {
+      console.error('[sendMessage] GPT-4o error, falling back to mock:', err);
+      toast.error(`AI response failed: ${err.message || 'Unknown error'}. Using offline preview.`);
+      // Fallback to mock
       const response = generateChatResponse(userMsg.content, request);
       const aiMsg: AIMessage = {
         id: createMessageId(),
@@ -463,7 +532,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
       };
       setMessages(prev => [...prev, aiMsg]);
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -767,31 +836,84 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
         setReviewRefineMessages(prev => [...prev, { role: 'ai', text: result.output }]);
 
         // Try to auto-apply: check if the AI response contains item-keyed captions
-        // Pattern: "**ItemName:** new caption" or "ItemName: new caption"
+        // Pattern: "**ItemName:** new caption" — supports multi-line captions with paragraphs
         let appliedCount = 0;
-        for (let idx = 0; idx < itemIds.length; idx++) {
-          const pid = itemIds[idx];
-          const pNameRaw = itemNames[idx];
-          if (!pNameRaw) continue;
-          const pName = escRx(pNameRaw);
-          // Match "**ItemName:** caption" or "ItemName: caption"
-          const regex = new RegExp(`\\*?\\*?${pName}\\*?\\*?:\\s*["']?(.+?)["']?(?=\\n\\*?\\*?\\w|$)`, 'is');
-          const match = result.output.match(regex);
-          if (match && match[1]?.trim()) {
-            const newCaption = match[1].trim().replace(/^["']|["']$/g, '');
-            const currentCaption = reviewCaptions[pid] || '';
-            if (currentCaption) pushUndo(pid, currentCaption);
-            setReviewCaptions(prev => ({ ...prev, [pid]: newCaption }));
-            appliedCount++;
+
+        // Commentary patterns to strip from captured captions
+        const commentaryOpeners = /^(I've |I have |Here'?s |Sure[,!.]|Of course|Note:|Summary:|Changes? |Updated |This |The change|Let me know|Hope this|Feel free|Done!?$|Ready)/i;
+        const cleanArtifacts = (text: string): string =>
+          text
+            .replace(/^```[\w]*\n?|```$/gm, '')   // strip markdown code fences
+            .replace(/^>\s?/gm, '')                // strip blockquote > markers
+            .replace(/^["']|["']$/g, '')           // strip wrapping quotes
+            .trim();
+        const stripCommentary = (text: string): string => {
+          const cleaned = cleanArtifacts(text);
+          const paras = cleaned.split(/\n{2,}/);
+          const content = paras.filter(p => {
+            const t = p.trim();
+            return t && !commentaryOpeners.test(t) && !(t.length < 15 && /^(Let me know|Hope this|Feel free|Done|Ready)/i.test(t));
+          });
+          return (content.length > 0 ? content.join('\n\n') : cleaned).trim();
+        };
+
+        // Build a combined regex that finds all **PlatformName:** entries and their positions
+        const namePatternStr = itemNames.map(n => escRx(n)).join('|');
+        const entryRegex = new RegExp(`\\*{1,2}(${namePatternStr})\\*{1,2}:\\s*`, 'gi');
+        const entries: { pid: string; start: number }[] = [];
+        let entryMatch;
+        while ((entryMatch = entryRegex.exec(result.output)) !== null) {
+          const matchedName = entryMatch[1];
+          const nameIdx = itemNames.findIndex(n => n.toLowerCase() === matchedName.toLowerCase());
+          if (nameIdx >= 0) {
+            entries.push({ pid: itemIds[nameIdx], start: entryMatch.index + entryMatch[0].length });
+          }
+        }
+
+        if (entries.length > 0) {
+          for (let e = 0; e < entries.length; e++) {
+            const { pid, start } = entries[e];
+            const end = e + 1 < entries.length
+              ? result.output.lastIndexOf('\n', entries[e + 1].start)
+              : result.output.length;
+            let rawCaption = result.output.slice(start, end >= start ? end : result.output.length).trim();
+            // Strip code fences, blockquotes, quotes; last entry also strips commentary
+            rawCaption = e === entries.length - 1
+              ? stripCommentary(rawCaption)
+              : cleanArtifacts(rawCaption);
+            if (rawCaption.length > 5) {
+              const currentCaption = reviewCaptions[pid] || '';
+              if (currentCaption) pushUndo(pid, currentCaption);
+              setReviewCaptions(prev => ({ ...prev, [pid]: rawCaption }));
+              appliedCount++;
+            }
+          }
+        } else {
+          // Fallback: try simple regex per item (GPT didn't use bold formatting)
+          for (let idx = 0; idx < itemIds.length; idx++) {
+            const pid = itemIds[idx];
+            const pNameRaw = itemNames[idx];
+            if (!pNameRaw) continue;
+            const pName = escRx(pNameRaw);
+            const regex = new RegExp(`${pName}:\\s*["']?(.+?)["']?(?=\\n\\*{2}[A-Za-z]|$)`, 'is');
+            const match = result.output.match(regex);
+            if (match && match[1]?.trim()) {
+              const newCaption = stripCommentary(match[1].trim().replace(/^["']|["']$/g, ''));
+              if (newCaption.length > 5) {
+                const currentCaption = reviewCaptions[pid] || '';
+                if (currentCaption) pushUndo(pid, currentCaption);
+                setReviewCaptions(prev => ({ ...prev, [pid]: newCaption }));
+                appliedCount++;
+              }
+            }
           }
         }
 
         // For non-social single-item channels, try direct auto-apply if no pattern match
         if (appliedCount === 0 && !isCurrentSocial && itemIds.length === 1) {
-          // Strip AI commentary: split by double-newline, drop paragraphs that
-          // look like meta-commentary rather than actual caption/content.
-          const commentaryOpeners = /^(I've |I have |Here'?s |Sure[,!.]|Of course|Note:|Summary:|Changes? |Updated |This |The change)/i;
-          const paragraphs = result.output.split(/\n{2,}/);
+          // Strip code fences/blockquotes first, then filter commentary paragraphs
+          const artifactCleaned = cleanArtifacts(result.output);
+          const paragraphs = artifactCleaned.split(/\n{2,}/);
           const contentParagraphs = paragraphs.filter(p => {
             const trimmed = p.trim();
             if (!trimmed) return false;
@@ -800,9 +922,8 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
             return true;
           });
           // Recombine; also strip any leading **Header:** that isn't the channel name
-          let cleaned = (contentParagraphs.length > 0 ? contentParagraphs.join('\n\n') : result.output)
+          let cleaned = (contentParagraphs.length > 0 ? contentParagraphs.join('\n\n') : artifactCleaned)
             .replace(/^\*{1,2}[^*\n]+\*{1,2}:\s*/m, '')
-            .replace(/^["']|["']$/g, '')
             .trim();
           if (cleaned.length > 10 && cleaned.length < 5000) {
             const pid = itemIds[0];
@@ -889,8 +1010,12 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
 
       if (result.success && result.output) {
         // Auto-apply the refined text directly into the caption field
-        // Strip any trailing AI commentary that slipped past the "Return ONLY" instruction
-        let cleaned = result.output.replace(/^["']|["']$/g, '').trim();
+        // Strip code fences, blockquote markers, quotes, and trailing AI commentary
+        let cleaned = result.output
+          .replace(/^```[\w]*\n?|```$/gm, '')        // strip markdown code fences
+          .replace(/^>\s?/gm, '')                     // strip blockquote > markers
+          .replace(/^["']|["']$/g, '')                // strip wrapping quotes
+          .trim();
         const trailingCommentary = /\n{2,}(I've |I have |Here'?s |Note:|Summary:|Changes? made|The \w+ has been)/i;
         const commentaryIdx = cleaned.search(trailingCommentary);
         if (commentaryIdx > 20) cleaned = cleaned.slice(0, commentaryIdx).trim();
@@ -1342,7 +1467,7 @@ export function CreateContentWizard({ projectId, projectName, projectDescription
 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
-                  {messages.map(msg => (
+                  {messages.filter(msg => !msg.hidden).map(msg => (
                     <motion.div
                       key={msg.id}
                       initial={{ opacity: 0, y: 10 }}

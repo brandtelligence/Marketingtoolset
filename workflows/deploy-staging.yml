@@ -1,0 +1,68 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - develop
+      - staging
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build-and-deploy-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging           # Requires "staging" environment in GitHub repo settings
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies (clean install)
+        run: npm ci
+
+      - name: Build project (staging)
+        run: npm run build
+        env:
+          VITE_APP_ENV: staging
+
+      - name: Validate build output
+        run: |
+          if [ ! -f ./dist/index.html ]; then
+            echo "::error::Build output missing — dist/index.html not found"
+            exit 1
+          fi
+          echo "Build output validated ✅"
+
+      - name: Deploy to Staging via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: /public_html/staging.brand-telligence.com/
+          exclude: |
+            **/*.map
+            **/.git*
+
+      - name: Post-deploy staging health check
+        run: |
+          sleep 10
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            "https://staging.brand-telligence.com/" 2>/dev/null || echo "000")
+          echo "Staging health check HTTP status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "304" ]; then
+            echo "✅ Staging site is live"
+          else
+            echo "::warning::Staging health check returned $HTTP_STATUS"
+          fi

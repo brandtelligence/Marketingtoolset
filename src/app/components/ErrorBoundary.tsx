@@ -38,47 +38,118 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
 
+      // Use inline styles as a safety net — if Tailwind CSS failed to load
+      // (which could itself be the cause of a "blank" page), this fallback
+      // must still be visible without any CSS framework dependency.
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-950 to-black text-white px-4">
-          <div className="text-center max-w-md mx-auto">
-            <div className="mb-6">
-              <span className="text-6xl font-black bg-gradient-to-br from-red-400 to-orange-500 bg-clip-text text-transparent select-none">
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #111827, #030712)',
+            color: '#fff',
+            padding: '1rem',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          }}
+        >
+          <div style={{ textAlign: 'center', maxWidth: '28rem', margin: '0 auto' }}>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <span
+                style={{
+                  fontSize: '3.75rem',
+                  fontWeight: 900,
+                  background: 'linear-gradient(135deg, #f87171, #f97316)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  userSelect: 'none',
+                }}
+              >
                 Oops
               </span>
             </div>
 
-            <h1 className="text-xl font-bold mb-3">Something went wrong</h1>
-            <p className="text-white/50 mb-4 text-sm leading-relaxed">
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.75rem' }}>
+              Something went wrong
+            </h1>
+            <p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: '1rem', fontSize: '0.875rem', lineHeight: 1.6 }}>
               An unexpected error occurred. This has been logged for investigation.
             </p>
 
             {this.state.error && (
-              <details className="mb-6 text-left">
-                <summary className="text-white/40 text-xs cursor-pointer hover:text-white/60 transition-colors">
+              <details style={{ marginBottom: '1.5rem', textAlign: 'left' }}>
+                <summary
+                  style={{
+                    color: 'rgba(255,255,255,0.4)',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                  }}
+                >
                   Error details
                 </summary>
-                <pre className="mt-2 p-3 rounded-lg bg-white/5 border border-white/10 text-red-300/70 text-[11px] font-mono whitespace-pre-wrap break-words max-h-32 overflow-auto">
+                <pre
+                  style={{
+                    marginTop: '0.5rem',
+                    padding: '0.75rem',
+                    borderRadius: '0.5rem',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(252,165,165,0.7)',
+                    fontSize: '0.6875rem',
+                    fontFamily: 'monospace',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    maxHeight: '8rem',
+                    overflow: 'auto',
+                  }}
+                >
                   {this.state.error.message}
                 </pre>
               </details>
             )}
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}>
               <button
                 onClick={this.handleReset}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-purple-600 text-white font-semibold text-sm shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 transition-all"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.625rem 1.25rem',
+                  borderRadius: '0.75rem',
+                  background: 'linear-gradient(90deg, #14b8a6, #9333ea)',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(147,51,234,0.2)',
+                }}
               >
                 Try again
               </button>
               <button
                 onClick={() => { window.location.href = '/'; }}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 border border-white/15 text-white/70 font-medium text-sm hover:bg-white/15 transition-all"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.625rem 1.25rem',
+                  borderRadius: '0.75rem',
+                  background: 'rgba(255,255,255,0.1)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  color: 'rgba(255,255,255,0.7)',
+                  fontWeight: 500,
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                }}
               >
                 Go to homepage
               </button>
             </div>
 
-            <p className="mt-10 text-white/25 text-xs">
+            <p style={{ marginTop: '2.5rem', color: 'rgba(255,255,255,0.25)', fontSize: '0.75rem' }}>
               Brandtelligence Platform
             </p>
           </div>

@@ -7,10 +7,27 @@ import { DashboardThemeProvider } from './components/saas/DashboardThemeContext'
 import { WebThemeProvider } from './contexts/WebThemeContext';
 import { ThemedToaster } from './components/ThemedToaster';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { reportWebVitals } from './utils/webVitals';
 
 // Gate 4 — start collecting Core Web Vitals on app load (logs to DevTools Console)
-reportWebVitals();
+try {
+  import('./utils/webVitals').then(({ reportWebVitals }) => {
+    reportWebVitals();
+  }).catch(() => {
+    // Non-critical — never let vitals crash the app
+  });
+} catch {
+  // Ignore
+}
+
+// Global unhandled error + rejection logging (helps diagnose blank screens)
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (e) => {
+    console.error('[Global] Uncaught error:', e.error ?? e.message);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error('[Global] Unhandled promise rejection:', e.reason);
+  });
+}
 
 export default function App() {
   return (

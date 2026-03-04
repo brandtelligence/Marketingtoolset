@@ -5,7 +5,7 @@ import {
   FileText, CalendarDays, Check, XCircle,
   Heart, MessageCircle, Repeat2, Eye, Timer,
   Upload, X, AlertCircle, Download, Loader2,
-  RefreshCw, Wifi,
+  RefreshCw, Wifi, Linkedin,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -13,7 +13,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 import {
-  SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
+  SiInstagram, SiFacebook, SiX, SiTiktok,
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit, SiWhatsapp,
   SiTelegram,
 } from 'react-icons/si';
@@ -29,7 +29,7 @@ import { useDashboardTheme } from '../saas/DashboardThemeContext';
 
 const platformIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   instagram: SiInstagram, facebook: SiFacebook, twitter: SiX,
-  linkedin: SiLinkedin, tiktok: SiTiktok, youtube: SiYoutube,
+  linkedin: Linkedin, tiktok: SiTiktok, youtube: SiYoutube,
   pinterest: SiPinterest, snapchat: SiSnapchat, threads: SiThreads,
   reddit: SiReddit, whatsapp: SiWhatsapp, telegram: SiTelegram,
 };

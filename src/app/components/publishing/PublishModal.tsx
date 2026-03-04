@@ -13,11 +13,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Send, Check, AlertCircle, Loader2, ExternalLink,
   ImageIcon, Video, ChevronDown, ChevronUp, Edit3,
-  Plus, RefreshCw,
+  Plus, RefreshCw, Linkedin,
 } from 'lucide-react';
 import {
   SiTelegram, SiWhatsapp, SiFacebook,
-  SiInstagram, SiX, SiLinkedin,
+  SiInstagram, SiX,
 } from 'react-icons/si';
 import { toast } from 'sonner';
 import { useAuth } from '../AuthContext';
@@ -41,7 +41,7 @@ const PLATFORM_META: Record<string, {
   facebook:  { Icon: SiFacebook,  color: 'text-blue-400',  bg: 'bg-blue-500/15',  border: 'border-blue-400/30'  },
   instagram: { Icon: SiInstagram, color: 'text-pink-400',  bg: 'bg-pink-500/15',  border: 'border-pink-400/30'  },
   twitter:   { Icon: SiX,         color: 'text-white',     bg: 'bg-white/8',      border: 'border-white/15'     },
-  linkedin:  { Icon: SiLinkedin,  color: 'text-blue-300',  bg: 'bg-blue-700/15',  border: 'border-blue-400/25'  },
+  linkedin:  { Icon: Linkedin,    color: 'text-blue-300',  bg: 'bg-blue-700/15',  border: 'border-blue-400/25'  },
 };
 
 // ─── Publish status per connection ────────────────────────────────────────────

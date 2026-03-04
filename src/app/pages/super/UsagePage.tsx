@@ -19,7 +19,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { BarChart2, Sparkles, TrendingUp, TrendingDown, Minus, Building2, Zap, Settings2 } from 'lucide-react';
+import { BarChart2, Sparkles, TrendingUp, TrendingDown, Minus, Building2, Zap, Settings2, Clock, Send, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -28,8 +28,9 @@ import { PageHeader, Card, StatCard } from '../../components/saas/SaasLayout';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { useSEO } from '../../hooks/useSEO';
 import {
-  fetchUsageData, fetchTenants, fetchPlatformAIUsage,
+  fetchUsageData, fetchTenants, fetchPlatformAIUsage, fetchCronStats,
   type UsageDataPoint, type PlatformAIUsageResult, type TenantAIUsageSummary,
+  type CronStatsResult,
 } from '../../utils/apiClient';
 
 
@@ -249,11 +250,24 @@ export function UsagePage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError,   setAiError]   = useState<string | null>(null);
 
+  // Cron stats state
+  const [cronStats,   setCronStats]   = useState<CronStatsResult | null>(null);
+  const [cronLoading, setCronLoading] = useState(false);
+
   // Load existing platform usage
   useEffect(() => { fetchTenants().then(setTenants); }, []);
   useEffect(() => {
     fetchUsageData(tenantFilter === 'all' ? undefined : tenantFilter).then(setChartData);
   }, [tenantFilter]);
+
+  // Load cron stats
+  useEffect(() => {
+    setCronLoading(true);
+    fetchCronStats()
+      .then(setCronStats)
+      .catch(err => console.error('[SuperUsagePage] Cron stats load error:', err))
+      .finally(() => setCronLoading(false));
+  }, []);
 
   // Load AI platform overview
   useEffect(() => {
@@ -358,6 +372,165 @@ export function UsagePage() {
           color={totalPct > 30 ? 'orange' as any : 'teal'}
           icon={<Sparkles className="w-8 h-8" />}
         />
+      </div>
+
+      {/* ── Cron Job Status — Auto-Publish & Engagement Sync ─────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        {/* Auto-Publish Card */}
+        <div className={`rounded-xl border p-5 ${th.s1} ${th.border}`}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(11,164,170,0.12)' }}>
+                <Send className="w-4.5 h-4.5" style={{ color: '#0BA4AA' }} />
+              </div>
+              <div>
+                <h3 className={`${th.text} text-sm font-semibold`}>Auto-Publish Cron</h3>
+                <p className={`${th.textFaint} text-[10px]`}>Every 5 min via GitHub Actions</p>
+              </div>
+            </div>
+            {cronStats?.autoPublish.latest ? (
+              <span className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${th.isDark ? 'bg-emerald-500/12 text-emerald-400 border border-emerald-500/25' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
+                <CheckCircle2 className="w-3 h-3" /> Active
+              </span>
+            ) : (
+              <span className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${th.isDark ? 'bg-gray-500/12 text-gray-400 border border-gray-500/25' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
+                <Clock className="w-3 h-3" /> No runs yet
+              </span>
+            )}
+          </div>
+
+          {cronLoading ? (
+            <div className={`${th.textFaint} text-xs`}>Loading cron stats...</div>
+          ) : cronStats?.autoPublish.latest ? (
+            <div className="space-y-3">
+              {/* Last run */}
+              <div className="flex items-center gap-2">
+                <Clock className={`w-3.5 h-3.5 shrink-0 ${th.isDark ? 'text-gray-400' : 'text-gray-500'}`} />
+                <span className={`${th.textMd} text-xs`}>
+                  Last run: <span className={`${th.text} font-medium`}>
+                    {new Date(cronStats.autoPublish.latest.lastRunAt).toLocaleString()}
+                  </span>
+                </span>
+              </div>
+              {/* Today's stats */}
+              {cronStats.autoPublish.today && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className={`rounded-lg px-3 py-2.5 text-center ${th.isDark ? 'bg-white/[0.04]' : 'bg-gray-50'}`}>
+                    <p className={`${th.text} text-lg font-bold tabular-nums`}>{cronStats.autoPublish.today.runs}</p>
+                    <p className={`${th.textFaint} text-[10px]`}>Runs today</p>
+                  </div>
+                  <div className={`rounded-lg px-3 py-2.5 text-center ${th.isDark ? 'bg-white/[0.04]' : 'bg-gray-50'}`}>
+                    <p className="text-lg font-bold tabular-nums" style={{ color: '#0BA4AA' }}>{cronStats.autoPublish.today.published}</p>
+                    <p className={`${th.textFaint} text-[10px]`}>Published</p>
+                  </div>
+                  <div className={`rounded-lg px-3 py-2.5 text-center ${th.isDark ? 'bg-white/[0.04]' : 'bg-gray-50'}`}>
+                    <p className={`text-lg font-bold tabular-nums ${(cronStats.autoPublish.today.failed ?? 0) > 0 ? 'text-red-500' : th.isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {cronStats.autoPublish.today.failed ?? 0}
+                    </p>
+                    <p className={`${th.textFaint} text-[10px]`}>Failed</p>
+                  </div>
+                </div>
+              )}
+              {/* Yesterday comparison */}
+              {cronStats.autoPublish.yesterday && (
+                <div className={`flex items-center gap-1.5 ${th.textFaint} text-[10px]`}>
+                  <span>Yesterday:</span>
+                  <span className={`${th.textMd} font-medium`}>
+                    {cronStats.autoPublish.yesterday.published} published
+                  </span>
+                  <span>/</span>
+                  <span className={`${cronStats.autoPublish.yesterday.failed > 0 ? 'text-red-400' : th.textMd} font-medium`}>
+                    {cronStats.autoPublish.yesterday.failed} failed
+                  </span>
+                  <span>across {cronStats.autoPublish.yesterday.runs} runs</span>
+                </div>
+              )}
+              {/* Alert if failures */}
+              {cronStats.autoPublish.today && (cronStats.autoPublish.today.failed ?? 0) > 0 && (
+                <div className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${th.isDark ? 'bg-red-500/8 text-red-400 border border-red-500/20' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{cronStats.autoPublish.today.failed} card(s) failed to publish today. Check the Audit Log for details.</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className={`${th.textFaint} text-xs`}>
+              No auto-publish data yet. The cron will start populating stats on its first run.
+            </p>
+          )}
+        </div>
+
+        {/* Engagement Sync Card */}
+        <div className={`rounded-xl border p-5 ${th.s1} ${th.border}`}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(244,122,32,0.12)' }}>
+                <RefreshCw className="w-4.5 h-4.5" style={{ color: '#F47A20' }} />
+              </div>
+              <div>
+                <h3 className={`${th.text} text-sm font-semibold`}>Engagement Sync</h3>
+                <p className={`${th.textFaint} text-[10px]`}>Every 6 hours — pull platform metrics</p>
+              </div>
+            </div>
+            {cronStats?.engagementSync.latest ? (
+              <span className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${th.isDark ? 'bg-emerald-500/12 text-emerald-400 border border-emerald-500/25' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
+                <CheckCircle2 className="w-3 h-3" /> Active
+              </span>
+            ) : (
+              <span className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${th.isDark ? 'bg-gray-500/12 text-gray-400 border border-gray-500/25' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
+                <Clock className="w-3 h-3" /> No runs yet
+              </span>
+            )}
+          </div>
+
+          {cronLoading ? (
+            <div className={`${th.textFaint} text-xs`}>Loading cron stats...</div>
+          ) : cronStats?.engagementSync.latest ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Clock className={`w-3.5 h-3.5 shrink-0 ${th.isDark ? 'text-gray-400' : 'text-gray-500'}`} />
+                <span className={`${th.textMd} text-xs`}>
+                  Last sync: <span className={`${th.text} font-medium`}>
+                    {new Date(cronStats.engagementSync.latest.lastRunAt).toLocaleString()}
+                  </span>
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className={`rounded-lg px-3 py-2.5 text-center ${th.isDark ? 'bg-white/[0.04]' : 'bg-gray-50'}`}>
+                  <p className={`${th.text} text-lg font-bold tabular-nums`}>{cronStats.engagementSync.latest.tenantsProcessed}</p>
+                  <p className={`${th.textFaint} text-[10px]`}>Tenants</p>
+                </div>
+                <div className={`rounded-lg px-3 py-2.5 text-center ${th.isDark ? 'bg-white/[0.04]' : 'bg-gray-50'}`}>
+                  <p className="text-lg font-bold tabular-nums" style={{ color: '#F47A20' }}>{cronStats.engagementSync.latest.totalSynced ?? 0}</p>
+                  <p className={`${th.textFaint} text-[10px]`}>Posts synced</p>
+                </div>
+                <div className={`rounded-lg px-3 py-2.5 text-center ${th.isDark ? 'bg-white/[0.04]' : 'bg-gray-50'}`}>
+                  <p className={`text-lg font-bold tabular-nums ${(cronStats.engagementSync.latest.totalErrors ?? 0) > 0 ? 'text-red-500' : th.isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {cronStats.engagementSync.latest.totalErrors ?? 0}
+                  </p>
+                  <p className={`${th.textFaint} text-[10px]`}>Errors</p>
+                </div>
+              </div>
+              {/* Time since last sync */}
+              {(() => {
+                const elapsed = Date.now() - new Date(cronStats.engagementSync.latest.lastRunAt).getTime();
+                const hours = Math.floor(elapsed / 3600000);
+                const mins = Math.floor((elapsed % 3600000) / 60000);
+                const isOverdue = hours >= 7; // Expected every 6 hours
+                return (
+                  <div className={`flex items-center gap-1.5 text-[10px] ${isOverdue ? (th.isDark ? 'text-amber-400' : 'text-amber-600') : th.textFaint}`}>
+                    {isOverdue && <AlertTriangle className="w-3 h-3" />}
+                    <span>{hours}h {mins}m since last sync{isOverdue ? ' (overdue — expected every 6h)' : ''}</span>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <p className={`${th.textFaint} text-xs`}>
+              No engagement sync data yet. The cron runs every 6 hours to pull platform metrics.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── Existing: Activity + API Trends ─────────────────────────────────── */}

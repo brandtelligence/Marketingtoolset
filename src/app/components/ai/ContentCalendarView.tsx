@@ -2,10 +2,10 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronLeft, ChevronRight, CalendarDays,
-  Clock, ExternalLink, FileText,
+  Clock, ExternalLink, FileText, Linkedin,
 } from 'lucide-react';
 import {
-  SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
+  SiInstagram, SiFacebook, SiX, SiTiktok,
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit, SiWhatsapp,
   SiTelegram,
 } from 'react-icons/si';
@@ -17,7 +17,7 @@ import { employeeTheme } from '../../utils/employeeTheme';
 
 const platformIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   instagram: SiInstagram, facebook: SiFacebook, twitter: SiX,
-  linkedin:  SiLinkedin,  tiktok:   SiTiktok,   youtube:  SiYoutube,
+  linkedin:  Linkedin,    tiktok:   SiTiktok,   youtube:  SiYoutube,
   pinterest: SiPinterest, snapchat: SiSnapchat,  threads:  SiThreads,
   reddit:    SiReddit,    whatsapp: SiWhatsapp,  telegram: SiTelegram,
 };

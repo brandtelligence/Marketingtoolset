@@ -1,75 +1,167 @@
 import { createBrowserRouter, redirect } from "react-router";
+import { lazy, Suspense, createElement, type ComponentType } from "react";
 
-// ── Existing pages ──────────────────────────────────────────────────────────
-import { LoginPage } from "./pages/LoginPage";
-import { ProjectsPage } from "./pages/ProjectsPage";
-import { ProjectDetailPage } from "./pages/ProjectDetailPage";
-import { VCardProject } from "./pages/VCardProject";
+// ── Lazy wrapper — wraps a dynamic import in Suspense with a loading spinner ──
+function lazyPage(
+  importFn: () => Promise<{ [key: string]: ComponentType<any> }>,
+  exportName = "default"
+) {
+  const Lazy = lazy(async () => {
+    try {
+      const mod = await importFn();
+      const Comp = (mod as any)[exportName] || mod.default;
+      if (!Comp) {
+        console.error(`[routes] Export "${exportName}" not found in module`, mod);
+        return {
+          default: () =>
+            createElement("div", {
+              style: { padding: "2rem", color: "#f87171", fontFamily: "sans-serif", textAlign: "center" },
+            }, `Missing export: ${exportName}`),
+        };
+      }
+      return { default: Comp };
+    } catch (err) {
+      console.error(`[routes] Failed to load page (export="${exportName}"):`, err);
+      return {
+        default: () =>
+          createElement(
+            "div",
+            {
+              style: {
+                minHeight: "100vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#0a0615",
+                color: "#fff",
+                padding: "2rem",
+                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+              },
+            },
+            createElement(
+              "div",
+              { style: { maxWidth: "32rem", textAlign: "center" } },
+              createElement("h1", { style: { fontSize: "1.5rem", fontWeight: 700, color: "#f87171", marginBottom: "1rem" } }, "Page Load Error"),
+              createElement("p", { style: { color: "rgba(255,255,255,0.6)", marginBottom: "1rem", fontSize: "0.875rem", lineHeight: 1.6 } }, String(err)),
+              createElement("button", {
+                style: {
+                  padding: "0.5rem 1rem",
+                  background: "#9333ea",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "0.5rem",
+                  cursor: "pointer",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                },
+                onClick: () => window.location.reload(),
+              }, "Reload Page")
+            )
+          ),
+      };
+    }
+  });
+
+  return function LazyPageWrapper() {
+    return createElement(
+      Suspense,
+      {
+        fallback: createElement("div", {
+          style: {
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          },
+          children: createElement("div", {
+            style: {
+              width: "2rem",
+              height: "2rem",
+              border: "2px solid #0BA4AA",
+              borderTopColor: "transparent",
+              borderRadius: "50%",
+              animation: "spin 1s linear infinite",
+            },
+          }),
+        }),
+      },
+      createElement(Lazy)
+    );
+  };
+}
+
+// ── Layout components (loaded eagerly — they're small and always needed) ─────
 import { RootLayout } from "./components/RootLayout";
 
-// ── New public page ─────────────────────────────────────────────────────────
-import { RequestAccessPage } from "./pages/RequestAccessPage";
-import { MFAEnrollPage } from "./pages/MFAEnrollPage";
-import { AuthCallbackPage } from "./pages/AuthCallbackPage";
+// ── Lazy-loaded pages ────────────────────────────────────────────────────────
 
-// ── Template Showcase ────────────────────────────────────────────────────────
-import { TemplateShowcase } from "./pages/TemplateShowcase";
+// Public marketing website
+const WebLayout         = lazyPage(() => import("./pages/web/WebLayout"),         "WebLayout");
+const WebHomePage       = lazyPage(() => import("./pages/web/WebHomePage"),       "WebHomePage");
+const WebProductPage    = lazyPage(() => import("./pages/web/WebProductPage"),    "WebProductPage");
+const WebFeaturesPage   = lazyPage(() => import("./pages/web/WebFeaturesPage"),   "WebFeaturesPage");
+const WebPricingPage    = lazyPage(() => import("./pages/web/WebPricingPage"),    "WebPricingPage");
+const WebAboutPage      = lazyPage(() => import("./pages/web/WebAboutPage"),      "WebAboutPage");
+const WebContactPage    = lazyPage(() => import("./pages/web/WebContactPage"),    "WebContactPage");
+const WebFAQPage        = lazyPage(() => import("./pages/web/WebFAQPage"),        "WebFAQPage");
+const WebTestimonialsPage = lazyPage(() => import("./pages/web/WebTestimonialsPage"), "WebTestimonialsPage");
+const WebBlogPage       = lazyPage(() => import("./pages/web/WebBlogPage"),       "WebBlogPage");
+const WebPrivacyPage    = lazyPage(() => import("./pages/web/WebLegalPage"),      "WebPrivacyPage");
+const WebTermsPage      = lazyPage(() => import("./pages/web/WebLegalPage"),      "WebTermsPage");
+const WebCookiesPage    = lazyPage(() => import("./pages/web/WebLegalPage"),      "WebCookiesPage");
 
-// ── Client Review Portal (public, no auth) ───────────────────────────────────
-import { ClientReviewPage } from "./pages/ClientReviewPage";
+// Auth & standalone
+const LoginPage         = lazyPage(() => import("./pages/LoginPage"),             "LoginPage");
+const AuthCallbackPage  = lazyPage(() => import("./pages/AuthCallbackPage"),      "AuthCallbackPage");
+const RequestAccessPage = lazyPage(() => import("./pages/RequestAccessPage"),     "RequestAccessPage");
+const MFAEnrollPage     = lazyPage(() => import("./pages/MFAEnrollPage"),         "MFAEnrollPage");
+const TemplateShowcase  = lazyPage(() => import("./pages/TemplateShowcase"),      "TemplateShowcase");
+const ClientReviewPage  = lazyPage(() => import("./pages/ClientReviewPage"),      "ClientReviewPage");
+const NotFoundPage      = lazyPage(() => import("./pages/NotFoundPage"),          "NotFoundPage");
 
-// ── Super Admin dashboard ───────────────────────────────────────────────────
-import { SuperLayout } from "./pages/super/SuperLayout";
-import { RequestsPage } from "./pages/super/RequestsPage";
-import { TenantsPage } from "./pages/super/TenantsPage";
-import { ModulesPage } from "./pages/super/ModulesPage";
-import { BillingPage } from "./pages/super/BillingPage";
-import { UsagePage } from "./pages/super/UsagePage";
-import { AuditPage } from "./pages/super/AuditPage";
-import { SupportPage } from "./pages/super/SupportPage";
-import { SettingsPage } from "./pages/super/SettingsPage";
-import { EmailTemplatesPage } from "./pages/super/EmailTemplatesPage";
-import { InboxPage } from "./pages/super/InboxPage";
+// Employee portal
+const ProjectsPage      = lazyPage(() => import("./pages/ProjectsPage"),          "ProjectsPage");
+const ProjectDetailPage = lazyPage(() => import("./pages/ProjectDetailPage"),     "ProjectDetailPage");
+const VCardProject      = lazyPage(() => import("./pages/VCardProject"),          "VCardProject");
+const DashboardPage     = lazyPage(() => import("./pages/employee/DashboardPage"),       "DashboardPage");
+const EmployeeProfilePage = lazyPage(() => import("./pages/employee/ProfilePage"),       "EmployeeProfilePage");
+const EmployeeModulesPage = lazyPage(() => import("./pages/employee/EmployeeModulesPage"), "EmployeeModulesPage");
+const ContentGenPage    = lazyPage(() => import("./pages/employee/ContentGenPage"),      "ContentGenPage");
+const ContentBoardPage  = lazyPage(() => import("./pages/employee/ContentBoardPage"),    "ContentBoardPage");
+const SocialPublishPage = lazyPage(() => import("./pages/employee/SocialPublishPage"),   "SocialPublishPage");
+const CampaignPlannerPage = lazyPage(() => import("./pages/employee/CampaignPlannerPage"), "CampaignPlannerPage");
+const ActivityFeedPage  = lazyPage(() => import("./pages/employee/ActivityFeedPage"),    "ActivityFeedPage");
+const ChannelDashboardPage = lazyPage(() => import("./pages/employee/ChannelDashboardPage"), "ChannelDashboardPage");
 
-// ── Tenant Admin dashboard ──────────────────────────────────────────────────
-import { TenantLayout } from "./pages/tenant/TenantLayout";
-import { TenantOverviewPage } from "./pages/tenant/OverviewPage";
-import { TenantCompanyPage } from "./pages/tenant/CompanyPage";
-import { TenantUsersPage } from "./pages/tenant/UsersPage";
-import { TenantModulesPage } from "./pages/tenant/ModulesPage";
-import { TenantInvoicesPage } from "./pages/tenant/InvoicesPage";
-import { TenantUsagePage } from "./pages/tenant/UsagePage";
-import { TenantAuditPage } from "./pages/tenant/AuditPage";
-import { TenantSettingsPage } from "./pages/tenant/SettingsPage";
+// Analytics & Calendar (previously orphaned)
+const ContentAnalyticsPage = lazyPage(() => import("./pages/employee/ContentAnalyticsPage"), "ContentAnalyticsPage");
+const ContentCalendarPage  = lazyPage(() => import("./pages/employee/ContentCalendarPage"),  "ContentCalendarPage");
 
-// ── Employee sub-pages ──────────────────────────────────────────────────────
-import { EmployeeProfilePage }  from "./pages/employee/ProfilePage";
-import { EmployeeModulesPage }  from "./pages/employee/EmployeeModulesPage";
-import { ContentGenPage }       from "./pages/employee/ContentGenPage";
-import { SocialPublishPage }    from "./pages/employee/SocialPublishPage";
-import { CampaignPlannerPage }  from "./pages/employee/CampaignPlannerPage";
+// Super Admin portal
+const SuperLayout       = lazyPage(() => import("./pages/super/SuperLayout"),     "SuperLayout");
+const RequestsPage      = lazyPage(() => import("./pages/super/RequestsPage"),    "RequestsPage");
+const TenantsPage       = lazyPage(() => import("./pages/super/TenantsPage"),     "TenantsPage");
+const ModulesPage       = lazyPage(() => import("./pages/super/ModulesPage"),     "ModulesPage");
+const BillingPage       = lazyPage(() => import("./pages/super/BillingPage"),     "BillingPage");
+const UsagePage         = lazyPage(() => import("./pages/super/UsagePage"),       "UsagePage");
+const AuditPage         = lazyPage(() => import("./pages/super/AuditPage"),       "AuditPage");
+const SupportPage       = lazyPage(() => import("./pages/super/SupportPage"),     "SupportPage");
+const SettingsPage      = lazyPage(() => import("./pages/super/SettingsPage"),    "SettingsPage");
+const EmailTemplatesPage = lazyPage(() => import("./pages/super/EmailTemplatesPage"), "EmailTemplatesPage");
+const InboxPage         = lazyPage(() => import("./pages/super/InboxPage"),       "InboxPage");
 
-// ── Team Activity Feed ──────────────────────────────────────────────────────
-import { ActivityFeedPage }     from "./pages/employee/ActivityFeedPage";
+// Tenant Admin portal
+const TenantLayout      = lazyPage(() => import("./pages/tenant/TenantLayout"),   "TenantLayout");
+const TenantOverviewPage = lazyPage(() => import("./pages/tenant/OverviewPage"),  "TenantOverviewPage");
+const TenantCompanyPage = lazyPage(() => import("./pages/tenant/CompanyPage"),    "TenantCompanyPage");
+const TenantUsersPage   = lazyPage(() => import("./pages/tenant/UsersPage"),      "TenantUsersPage");
+const TenantModulesPage = lazyPage(() => import("./pages/tenant/ModulesPage"),    "TenantModulesPage");
+const TenantInvoicesPage = lazyPage(() => import("./pages/tenant/InvoicesPage"),  "TenantInvoicesPage");
+const TenantUsagePage   = lazyPage(() => import("./pages/tenant/UsagePage"),      "TenantUsagePage");
+const TenantAuditPage   = lazyPage(() => import("./pages/tenant/AuditPage"),      "TenantAuditPage");
+const TenantSettingsPage = lazyPage(() => import("./pages/tenant/SettingsPage"),  "TenantSettingsPage");
 
-// ── Channel Module Dashboard ────────────────────────────────────────────────
-import { ChannelDashboardPage } from "./pages/employee/ChannelDashboardPage";
-
-// ── 404 Not Found page ──────────────────────────────────────────────────────
-import { NotFoundPage } from "./pages/NotFoundPage";
-
-// ── Public marketing website (now at root /*) ───────────────────────────────
-import { WebLayout }           from "./pages/web/WebLayout";
-import { WebHomePage }         from "./pages/web/WebHomePage";
-import { WebProductPage }      from "./pages/web/WebProductPage";
-import { WebFeaturesPage }     from "./pages/web/WebFeaturesPage";
-import { WebPricingPage }      from "./pages/web/WebPricingPage";
-import { WebAboutPage }        from "./pages/web/WebAboutPage";
-import { WebContactPage }      from "./pages/web/WebContactPage";
-import { WebFAQPage }          from "./pages/web/WebFAQPage";
-import { WebTestimonialsPage } from "./pages/web/WebTestimonialsPage";
-import { WebBlogPage }         from "./pages/web/WebBlogPage";
-import { WebPrivacyPage, WebTermsPage, WebCookiesPage } from "./pages/web/WebLegalPage";
+// ── Router ───────────────────────────────────────────────────────────────────
 
 export const router = createBrowserRouter([
   // ── Public marketing website (root) ─────────────────────────────────────
@@ -122,7 +214,8 @@ export const router = createBrowserRouter([
     path: "/app",
     Component: RootLayout,
     children: [
-      { index: true,                 loader: () => redirect("/app/projects") },
+      { index: true,                 loader: () => redirect("/app/dashboard") },
+      { path: "dashboard",            Component: DashboardPage       },
       { path: "projects",            Component: ProjectsPage      },
       { path: "projects/vcard-saas", Component: VCardProject      },
       { path: "projects/:slug",      Component: ProjectDetailPage },
@@ -130,10 +223,13 @@ export const router = createBrowserRouter([
       { path: "modules",             Component: EmployeeModulesPage },
       { path: "modules/:key",        Component: ChannelDashboardPage },
       { path: "content",             Component: ContentGenPage      },
+      { path: "board",               Component: ContentBoardPage    },
       { path: "publish",             Component: SocialPublishPage   },
       { path: "campaign",            Component: CampaignPlannerPage },
       { path: "activity",            Component: ActivityFeedPage    },
-      { path: "*",                   loader: () => redirect("/app/projects") },
+      { path: "analytics",           Component: ContentAnalyticsPage },
+      { path: "calendar",            Component: ContentCalendarPage  },
+      { path: "*",                   loader: () => redirect("/app/dashboard") },
     ],
   },
 

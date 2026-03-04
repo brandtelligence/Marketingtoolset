@@ -16,10 +16,10 @@ import { useParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   CheckCircle2, MessageSquare, Send, Loader2, AlertTriangle,
-  Clock, Check, X, ChevronDown, ChevronUp, Link2,
+  Clock, Check, X, ChevronDown, ChevronUp, Link2, Linkedin,
 } from 'lucide-react';
 import {
-  SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
+  SiInstagram, SiFacebook, SiX, SiTiktok,
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit,
   SiWhatsapp, SiTelegram,
 } from 'react-icons/si';
@@ -38,7 +38,7 @@ const PLATFORM_META: Record<string, { label: string; color: string; bg: string; 
   instagram: { label: 'Instagram',          color: 'text-pink-500',   bg: 'bg-pink-50',   border: 'border-pink-200',   Icon: SiInstagram },
   facebook:  { label: 'Facebook',           color: 'text-blue-600',   bg: 'bg-blue-50',   border: 'border-blue-200',   Icon: SiFacebook  },
   twitter:   { label: 'X (Twitter)',        color: 'text-slate-900',  bg: 'bg-slate-50',  border: 'border-slate-200',  Icon: SiX         },
-  linkedin:  { label: 'LinkedIn',           color: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-200',   Icon: SiLinkedin  },
+  linkedin:  { label: 'LinkedIn',           color: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-200',   Icon: Linkedin    },
   tiktok:    { label: 'TikTok',             color: 'text-slate-900',  bg: 'bg-slate-50',  border: 'border-slate-200',  Icon: SiTiktok    },
   youtube:   { label: 'YouTube',            color: 'text-red-600',    bg: 'bg-red-50',    border: 'border-red-200',    Icon: SiYoutube   },
   pinterest: { label: 'Pinterest',          color: 'text-red-600',    bg: 'bg-red-50',    border: 'border-red-200',    Icon: SiPinterest },

@@ -4,8 +4,10 @@
  * Glassmorphism top navigation bar for the employee portal (/app/*).
  *
  * Links:
+ *   🏠 Dashboard   →  /app/dashboard
  *   📂 Projects    →  /app/projects
  *   ✨ AI Studio   →  /app/content
+ *   📋 Board       →  /app/board
  *   📅 Campaign    →  /app/campaign
  *   📤 Publish Hub →  /app/publish
  *   📊 Activity    →  /app/activity
@@ -26,6 +28,7 @@ import {
   Bell, X, ExternalLink, CheckCheck, Send, Activity,
   CheckCircle, XCircle, Check, Clock, AlertTriangle,
   RotateCw, Loader2, CalendarDays, Sun, Moon,
+  LayoutDashboard, Columns3, BarChart3, Calendar,
 } from 'lucide-react';
 import brandLogo from 'figma:asset/250842c5232a8611aa522e6a3530258e858657d5.png';
 import { useAuth } from './AuthContext';
@@ -46,8 +49,12 @@ const PLATFORM_EMOJI: Record<string, string> = {
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
+  { path: '/app/dashboard', label: 'Dashboard',  icon: <LayoutDashboard className="w-4 h-4" /> },
   { path: '/app/projects',  label: 'Projects',    icon: <FolderKanban className="w-4 h-4" /> },
   { path: '/app/content',   label: 'AI Studio',   icon: <Sparkles className="w-4 h-4" /> },
+  { path: '/app/board',     label: 'Board',        icon: <Columns3 className="w-4 h-4" /> },
+  { path: '/app/analytics', label: 'Analytics',   icon: <BarChart3 className="w-4 h-4" /> },
+  { path: '/app/calendar',  label: 'Calendar',    icon: <Calendar className="w-4 h-4" /> },
   { path: '/app/campaign',  label: 'Campaign',    icon: <CalendarDays className="w-4 h-4" /> },
   { path: '/app/publish',   label: 'Publish Hub', icon: <Send className="w-4 h-4" /> },
   { path: '/app/activity',  label: 'Activity',    icon: <Activity className="w-4 h-4" /> },
@@ -483,7 +490,7 @@ function ApprovalBell() {
                                 Retry
                               </button>
                               <button
-                                onClick={() => { setOpen(false); navigate('/app/content'); }}
+                                onClick={() => { setOpen(false); navigate('/app/board'); }}
                                 aria-label={`View ${f.cardTitle} in content board`}
                                 className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border transition-all ${isDark ? 'text-white/30 hover:text-white/60 bg-white/5 hover:bg-white/10 border-white/10' : 'text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 border-gray-200'}`}
                               >
@@ -499,7 +506,7 @@ function ApprovalBell() {
                     {/* Footer */}
                     <div className={`px-4 py-2.5 border-t text-center ${isDark ? 'border-white/8' : 'border-gray-100'}`}>
                       <button
-                        onClick={() => { setOpen(false); navigate('/app/content'); }}
+                        onClick={() => { setOpen(false); navigate('/app/board'); }}
                         className={`w-full text-center text-xs transition-colors py-0.5 ${isDark ? 'text-red-300/60 hover:text-red-200' : 'text-red-400 hover:text-red-500'}`}
                       >
                         Open Content Board →
@@ -566,11 +573,11 @@ export function EmployeeNav() {
           <div className={`w-px h-5 shrink-0 ${isDark ? 'bg-white/20' : 'bg-gray-300'}`} />
 
           {/* Nav links */}
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-none" role="menubar">
             {NAV_ITEMS.map(item => (
-              <NavLink key={item.path} to={item.path}>
+              <NavLink key={item.path} to={item.path} aria-label={item.label}>
                 {({ isActive }) => (
-                  <span className={linkCls(isActive)}>
+                  <span className={linkCls(isActive)} role="menuitem">
                     {item.icon}
                     <span className="hidden sm:inline">{item.label}</span>
                   </span>

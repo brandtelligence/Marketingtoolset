@@ -508,6 +508,99 @@ export async function publishToChannel(
   }
 }
 
+// ─── OAuth Token Refresh ──────────────────────────────────────────────────────
+
+/**
+ * Refresh an expired OAuth access_token using the stored refresh_token.
+ * Returns new credentials to merge, or null if the platform doesn't support refresh.
+ */
+async function refreshOAuthToken(
+  platform: SocialPlatform,
+  creds: Record<string, string>,
+): Promise<Record<string, string> | null> {
+  const refreshToken = creds.refresh_token;
+  if (!refreshToken) return null;
+
+  switch (platform) {
+    case 'facebook':
+    case 'instagram': {
+      const appId     = Deno.env.get('FACEBOOK_APP_ID');
+      const appSecret = Deno.env.get('FACEBOOK_APP_SECRET');
+      if (!appId || !appSecret) throw new Error('FACEBOOK_APP_ID or FACEBOOK_APP_SECRET not configured');
+
+      const r = await fetch(
+        `https://graph.facebook.com/v18.0/oauth/access_token?` +
+        `grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}` +
+        `&fb_exchange_token=${encodeURIComponent(refreshToken)}`,
+      );
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error?.message ?? `Facebook token refresh failed: ${r.status}`);
+      return {
+        access_token: d.access_token,
+        expires_at: String(Math.floor(Date.now() / 1000) + (d.expires_in ?? 5184000)),
+      };
+    }
+
+    case 'linkedin': {
+      const clientId     = Deno.env.get('LINKEDIN_CLIENT_ID');
+      const clientSecret = Deno.env.get('LINKEDIN_CLIENT_SECRET');
+      if (!clientId || !clientSecret) throw new Error('LINKEDIN_CLIENT_ID or LINKEDIN_CLIENT_SECRET not configured');
+
+      const r = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error_description ?? `LinkedIn token refresh failed: ${r.status}`);
+      return {
+        access_token: d.access_token,
+        refresh_token: d.refresh_token ?? refreshToken,
+        expires_at: String(Math.floor(Date.now() / 1000) + (d.expires_in ?? 5184000)),
+      };
+    }
+
+    case 'twitter': {
+      const clientId     = Deno.env.get('TWITTER_CLIENT_ID');
+      const clientSecret = Deno.env.get('TWITTER_CLIENT_SECRET');
+      if (!clientId || !clientSecret) throw new Error('TWITTER_CLIENT_ID or TWITTER_CLIENT_SECRET not configured');
+
+      const r = await fetch('https://api.twitter.com/2/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error_description ?? `Twitter token refresh failed: ${r.status}`);
+      return {
+        access_token: d.access_token,
+        refresh_token: d.refresh_token ?? refreshToken,
+        expires_at: String(Math.floor(Date.now() / 1000) + (d.expires_in ?? 7200)),
+      };
+    }
+
+    // Telegram and WhatsApp use permanent bot tokens — no refresh needed
+    case 'telegram':
+    case 'whatsapp':
+      return null;
+
+    default:
+      return null;
+  }
+}
+
 // ─── Per-platform Analytics Fetch ─────────────────────────────────────────────
 
 interface EngagementMetrics {
@@ -1366,6 +1459,192 @@ export function registerSocialRoutes(app: Hono) {
     } catch (err) {
       console.log(`[oauth/callback] ${errMsg(err)}`);
       return c.html(oauthResultPage(false, errMsg(err)));
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // AUTO-PUBLISH SCHEDULER — publishes scheduled cards whose time has passed
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // POST /social/auto-publish
+  // Scans content_cards where status = 'scheduled' or 'approved' and
+  // scheduledDate+scheduledTime <= now, then publishes each via the matching
+  // social connection.  Can be invoked manually or via an external cron.
+  //
+  // Body: { tenantId }
+  // Returns: { processed, published, failed, results: [...] }
+
+  app.post(`${PFX}/auto-publish`, async (c) => {
+    try {
+      const { tenantId } = await c.req.json();
+      if (!tenantId) return c.json({ error: 'tenantId required' }, 400);
+
+      const guard = await requireTenantScope(c, tenantId);
+      if (guard instanceof Response) return guard;
+
+      const { data: rows, error: qErr } = await supabaseAdmin
+        .from('content_cards')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .in('status', ['scheduled', 'approved']);
+      if (qErr) throw qErr;
+      if (!rows || rows.length === 0) {
+        return c.json({ processed: 0, published: 0, failed: 0, results: [], message: 'No scheduled/approved cards found' });
+      }
+
+      const now = new Date();
+      const results: Array<{ cardId: string; title: string; platform: string; status: string; error?: string }> = [];
+
+      const dueCards = rows.filter((r: any) => {
+        const meta = r.metadata ?? {};
+        const sd = meta.scheduledDate;
+        const st = meta.scheduledTime;
+        if (!sd) return false;
+        const scheduled = new Date(`${sd}T${st || '00:00'}:00`);
+        return scheduled <= now;
+      });
+
+      if (dueCards.length === 0) {
+        return c.json({ processed: 0, published: 0, failed: 0, results: [], message: 'No cards are due for publishing yet' });
+      }
+
+      const conns = await getConnections(tenantId);
+      let published = 0;
+      let failed = 0;
+
+      for (const row of dueCards) {
+        const platform  = row.platform ?? 'general';
+        const caption   = row.body ?? '';
+        const hashtags  = row.hashtags ?? [];
+        const mediaUrl  = row.media_url ?? undefined;
+        const mediaType = (row.metadata ?? {}).mediaType ?? undefined;
+        const title     = row.title ?? 'Untitled';
+
+        const conn = conns.find((x: SocialConnection) => x.platform === platform);
+        if (!conn) {
+          console.log(`[auto-publish] No connection for platform=${platform} card=${row.id}`);
+          results.push({ cardId: row.id, title, platform, status: 'skipped', error: `No ${platform} connection configured` });
+          failed++;
+          continue;
+        }
+
+        try {
+          const pubResult = await publishToChannel(conn, caption, hashtags, mediaUrl, mediaType);
+          if (pubResult.ok) {
+            const updatedMeta = { ...(row.metadata ?? {}), autoPublished: true, autoPublishedAt: now.toISOString() };
+            await supabaseAdmin
+              .from('content_cards')
+              .update({ status: 'published', published_at: now.toISOString(), metadata: updatedMeta })
+              .eq('id', row.id);
+
+            const record: PublishRecord = {
+              id:             crypto.randomUUID(),
+              cardTitle:      title,
+              platform,
+              connectionName: conn.displayName,
+              status:         'success',
+              publishedAt:    now.toISOString(),
+              publishedBy:    'Auto-Scheduler',
+              postUrl:        pubResult.postUrl,
+            };
+            await appendHistory(tenantId, record);
+            results.push({ cardId: row.id, title, platform, status: 'published' });
+            published++;
+          } else {
+            results.push({ cardId: row.id, title, platform, status: 'error', error: pubResult.error });
+            failed++;
+          }
+        } catch (err) {
+          results.push({ cardId: row.id, title, platform, status: 'error', error: errMsg(err) });
+          failed++;
+        }
+      }
+
+      console.log(`[auto-publish] tenant=${tenantId} processed=${dueCards.length} published=${published} failed=${failed}`);
+      logSecurityEvent({
+        ts: now.toISOString(),
+        action: 'AUTO_PUBLISH_RUN',
+        route: '/social/auto-publish',
+        detail: `tenantId=${tenantId} processed=${dueCards.length} published=${published} failed=${failed}`,
+      });
+
+      return c.json({ processed: dueCards.length, published, failed, results });
+    } catch (err) {
+      console.log(`[auto-publish] ${errMsg(err)}`);
+      return c.json({ error: `auto-publish error: ${errMsg(err)}` }, 500);
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // OAUTH TOKEN REFRESH — refresh expired access tokens for social platforms
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // POST /social/refresh-tokens
+  // For each connection that has a refresh_token and whose access_token may
+  // be expired (or about to expire), attempt a token refresh.
+  //
+  // Body: { tenantId }
+  // Returns: { refreshed: number, failed: number, results: [...] }
+
+  app.post(`${PFX}/refresh-tokens`, async (c) => {
+    try {
+      const { tenantId } = await c.req.json();
+      if (!tenantId) return c.json({ error: 'tenantId required' }, 400);
+
+      const guard = await requireTenantScope(c, tenantId);
+      if (guard instanceof Response) return guard;
+
+      const conns = await getConnections(tenantId);
+      const results: Array<{ connectionId: string; platform: string; status: string; error?: string }> = [];
+      let refreshed = 0;
+      let failed = 0;
+
+      for (const conn of conns) {
+        const creds = conn.credentials;
+        if (!creds.refresh_token) continue;
+
+        if (creds.expires_at) {
+          const expiresAt = parseInt(creds.expires_at, 10) * 1000;
+          const bufferMs  = 5 * 60 * 1000;
+          if (Date.now() < expiresAt - bufferMs) continue;
+        }
+
+        try {
+          const newTokens = await refreshOAuthToken(conn.platform, creds);
+          if (newTokens) {
+            conn.credentials = { ...creds, ...newTokens };
+            conn.lastTestedAt = new Date().toISOString();
+            conn.lastTestStatus = 'ok';
+            results.push({ connectionId: conn.id, platform: conn.platform, status: 'refreshed' });
+            refreshed++;
+          } else {
+            results.push({ connectionId: conn.id, platform: conn.platform, status: 'skipped', error: 'No refresh mechanism for this platform' });
+          }
+        } catch (err) {
+          conn.lastTestedAt = new Date().toISOString();
+          conn.lastTestStatus = 'error';
+          conn.lastTestError = errMsg(err);
+          results.push({ connectionId: conn.id, platform: conn.platform, status: 'error', error: errMsg(err) });
+          failed++;
+        }
+      }
+
+      if (refreshed > 0 || failed > 0) {
+        await saveConnections(tenantId, conns);
+      }
+
+      console.log(`[refresh-tokens] tenant=${tenantId} refreshed=${refreshed} failed=${failed}`);
+      logSecurityEvent({
+        ts: new Date().toISOString(),
+        action: 'OAUTH_TOKEN_REFRESH',
+        route: '/social/refresh-tokens',
+        detail: `tenantId=${tenantId} refreshed=${refreshed} failed=${failed}`,
+      });
+
+      return c.json({ refreshed, failed, results });
+    } catch (err) {
+      console.log(`[refresh-tokens] ${errMsg(err)}`);
+      return c.json({ error: `refresh-tokens error: ${errMsg(err)}` }, 500);
     }
   });
 }

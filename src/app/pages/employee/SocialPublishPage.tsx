@@ -7,11 +7,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Send, Plus, Trash2, RefreshCw, Check, AlertCircle,
   Loader2, ExternalLink, Clock, CheckCircle2, XCircle,
-  Settings, Wifi, WifiOff, History,
+  Settings, Wifi, WifiOff, History, Play, KeyRound, Linkedin,
 } from 'lucide-react';
 import {
   SiTelegram, SiWhatsapp, SiFacebook,
-  SiInstagram, SiX, SiLinkedin,
+  SiInstagram, SiX,
 } from 'react-icons/si';
 import { toast } from 'sonner';
 import { useAuth } from '../../components/AuthContext';
@@ -25,6 +25,7 @@ import { EmployeeNav } from '../../components/EmployeeNav';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { employeeTheme } from '../../utils/employeeTheme';
 import { useSEO } from '../../hooks/useSEO';
+import { triggerAutoPublish, refreshSocialTokens } from '../../utils/apiClient';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-309fe679`;
 
@@ -39,7 +40,7 @@ const PM: Record<SocialPlatform, {
   facebook:  { Icon: SiFacebook,  label: 'Facebook Page',      color: 'text-blue-400',  bg: 'bg-blue-500/12',  border: 'border-blue-400/25'  },
   instagram: { Icon: SiInstagram, label: 'Instagram',          color: 'text-pink-400',  bg: 'bg-pink-500/12',  border: 'border-pink-400/25'  },
   twitter:   { Icon: SiX,         label: 'X (Twitter)',        color: 'text-white',     bg: 'bg-white/6',      border: 'border-white/12'     },
-  linkedin:  { Icon: SiLinkedin,  label: 'LinkedIn',           color: 'text-blue-300',  bg: 'bg-blue-700/12',  border: 'border-blue-400/20'  },
+  linkedin:  { Icon: Linkedin,     label: 'LinkedIn',           color: 'text-blue-300',  bg: 'bg-blue-700/12',  border: 'border-blue-400/20'  },
 };
 
 // ─── History record type ──────────────────────────────────────────────────────
@@ -245,6 +246,8 @@ export function SocialPublishPage() {
   const [drawerOpen,   setDrawerOpen]   = useState(false);
   const [editingConn,  setEditingConn]  = useState<SocialConnection | undefined>();
   const [testingId,    setTestingId]    = useState<string | null>(null);
+  const [autoPublishing, setAutoPublishing] = useState(false);
+  const [refreshingTokens, setRefreshingTokens] = useState(false);
 
   const fetchConnections = useCallback(async () => {
     if (IS_DEMO_MODE) { setConnections(DEMO_CONNECTIONS); setLoading(false); return; }
@@ -331,6 +334,60 @@ export function SocialPublishPage() {
     setEditingConn(undefined);
   };
 
+  // ── Auto-publish: publish all due scheduled cards ──
+  const handleAutoPublish = async () => {
+    if (IS_DEMO_MODE) {
+      toast.success('Auto-publish ran (demo) — 0 cards were due');
+      return;
+    }
+    setAutoPublishing(true);
+    try {
+      const result = await triggerAutoPublish(tenantId);
+      if (result.published > 0) {
+        toast.success(`Published ${result.published} card${result.published > 1 ? 's' : ''} successfully`);
+        await fetchHistory(); // refresh history to show new records
+      } else if (result.message) {
+        toast.info(result.message);
+      } else {
+        toast.info(`Processed ${result.processed} cards — ${result.failed} failed, 0 published`);
+      }
+      if (result.failed > 0) {
+        const failNames = result.results.filter(r => r.status === 'error').map(r => r.title).join(', ');
+        toast.error(`Failed to publish: ${failNames}`);
+      }
+    } catch (err: any) {
+      console.error('[SocialPublishPage] autoPublish error:', err);
+      toast.error(`Auto-publish error: ${err.message}`);
+    } finally {
+      setAutoPublishing(false);
+    }
+  };
+
+  // ── Refresh OAuth tokens for all connections ──
+  const handleRefreshTokens = async () => {
+    if (IS_DEMO_MODE) {
+      toast.success('OAuth tokens refreshed (demo)');
+      return;
+    }
+    setRefreshingTokens(true);
+    try {
+      const result = await refreshSocialTokens(tenantId);
+      if (result.refreshed > 0) {
+        toast.success(`Refreshed ${result.refreshed} token${result.refreshed > 1 ? 's' : ''}`);
+        await fetchConnections(); // refresh connection statuses
+      } else if (result.failed > 0) {
+        toast.error(`Token refresh failed for ${result.failed} connection${result.failed > 1 ? 's' : ''}`);
+      } else {
+        toast.info('All tokens are still valid — nothing to refresh');
+      }
+    } catch (err: any) {
+      console.error('[SocialPublishPage] refreshTokens error:', err);
+      toast.error(`Token refresh error: ${err.message}`);
+    } finally {
+      setRefreshingTokens(false);
+    }
+  };
+
   const successCount = history.filter(h => h.status === 'success').length;
   const errorCount   = history.filter(h => h.status === 'error').length;
 
@@ -356,6 +413,34 @@ export function SocialPublishPage() {
               hover:from-teal-400 hover:to-teal-500 text-white text-sm font-bold shadow-lg shadow-teal-500/20 transition-all shrink-0"
           >
             <Plus className="w-4 h-4" /> Add Channel
+          </button>
+        </div>
+
+        {/* Quick actions row */}
+        <div className="flex items-center gap-2 mb-6">
+          <button
+            onClick={handleAutoPublish}
+            disabled={autoPublishing}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50
+              ${isDark
+                ? 'bg-purple-500/12 border border-purple-400/25 text-purple-300 hover:bg-purple-500/20'
+                : 'bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100'}`}
+            title="Publish all scheduled cards whose time has passed"
+          >
+            {autoPublishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+            Run Auto-Publish
+          </button>
+          <button
+            onClick={handleRefreshTokens}
+            disabled={refreshingTokens || connections.length === 0}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50
+              ${isDark
+                ? 'bg-amber-500/12 border border-amber-400/25 text-amber-300 hover:bg-amber-500/20'
+                : 'bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100'}`}
+            title="Refresh expired OAuth tokens for connected accounts"
+          >
+            {refreshingTokens ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+            Refresh Tokens
           </button>
         </div>
 

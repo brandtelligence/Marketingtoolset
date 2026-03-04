@@ -1,0 +1,88 @@
+name: Cron — Auto-Publish Scheduled Cards
+
+on:
+  schedule:
+    # Every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {} # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  auto-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Trigger auto-publish cron endpoint
+        run: |
+          HTTP_STATUS=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            -X POST "${{ secrets.SUPABASE_FUNCTIONS_URL }}/make-server-309fe679/cron/auto-publish" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+
+          echo "HTTP Status: $HTTP_STATUS"
+          cat /tmp/response.json | jq . 2>/dev/null || cat /tmp/response.json
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Auto-publish cron failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
+
+          # Extract stats for workflow summary
+          PUBLISHED=$(cat /tmp/response.json | jq -r '.totalPublished // 0')
+          FAILED=$(cat /tmp/response.json | jq -r '.totalFailed // 0')
+          TENANTS=$(cat /tmp/response.json | jq -r '.tenantsProcessed // 0')
+          echo "### Auto-Publish Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tenants processed | $TENANTS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cards published | $PUBLISHED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cards failed | $FAILED |" >> $GITHUB_STEP_SUMMARY
+
+  sync-engagement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Only run engagement sync every 6 hours (at 00, 06, 12, 18 UTC)
+    # The 5-min schedule triggers both jobs, but this one skips most runs.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && contains(fromJSON('["0","6","12","18"]'), format('{0}', github.event.schedule)))
+
+    steps:
+      - name: Check if engagement sync hour
+        id: check
+        run: |
+          HOUR=$(date -u +%H)
+          MINUTE=$(date -u +%M)
+          # Only run at the top of every 6th hour (or manual dispatch)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || ([ "$MINUTE" -lt 6 ] && ([ "$HOUR" = "00" ] || [ "$HOUR" = "06" ] || [ "$HOUR" = "12" ] || [ "$HOUR" = "18" ])); then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "Skipping engagement sync — not a 6-hour boundary"
+          fi
+
+      - name: Trigger engagement sync cron endpoint
+        if: steps.check.outputs.should_run == 'true'
+        run: |
+          HTTP_STATUS=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            -X POST "${{ secrets.SUPABASE_FUNCTIONS_URL }}/make-server-309fe679/cron/sync-engagement" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+
+          echo "HTTP Status: $HTTP_STATUS"
+          cat /tmp/response.json | jq . 2>/dev/null || cat /tmp/response.json
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::warning::Engagement sync failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "### Engagement Sync Results" >> $GITHUB_STEP_SUMMARY
+          SYNCED=$(cat /tmp/response.json | jq -r '.totalSynced // 0')
+          ERRORS=$(cat /tmp/response.json | jq -r '.totalErrors // 0')
+          TENANTS=$(cat /tmp/response.json | jq -r '.tenantsProcessed // 0')
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tenants synced | $TENANTS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Posts synced | $SYNCED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY

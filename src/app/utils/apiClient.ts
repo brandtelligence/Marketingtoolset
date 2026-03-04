@@ -534,6 +534,35 @@ export async function refineContent(
   });
 }
 
+// ── AI Wizard Chat (multi-turn GPT-4o conversation) ─────────────────────────
+
+export interface WizardChatParams {
+  messages:           Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  channel:            string;
+  platforms:          string[];
+  actions:            string[];
+  projectName:        string;
+  projectDescription: string;
+  tone?:              string;
+}
+
+export interface WizardChatResult {
+  success:    boolean;
+  output:     string;
+  tokensUsed: number;
+  model:      string;
+  usage:      ContentGenUsageSummary;
+}
+
+export async function wizardChat(
+  params: WizardChatParams,
+): Promise<WizardChatResult> {
+  return api<WizardChatResult>('/ai/wizard-chat', {
+    method: 'POST',
+    body:   JSON.stringify(params),
+  });
+}
+
 export async function fetchContentHistory(
   tenantId: string,
   limit = 20,
@@ -1437,4 +1466,106 @@ export async function postActivityEvent(event: {
     console.error('[apiClient] postActivityEvent error:', err);
     return null;
   }
+}
+
+// ─── Social Auto-Publish Scheduler ──────────────────────────────────────────
+
+export interface AutoPublishResult {
+  processed: number;
+  published: number;
+  failed:    number;
+  message?:  string;
+  results:   Array<{
+    cardId:   string;
+    title:    string;
+    platform: string;
+    status:   string;
+    error?:   string;
+  }>;
+}
+
+/**
+ * Trigger auto-publish for all due scheduled/approved cards for a tenant.
+ * Calls POST /social/auto-publish.
+ */
+export async function triggerAutoPublish(tenantId: string): Promise<AutoPublishResult> {
+  return api<AutoPublishResult>('/social/auto-publish', {
+    method: 'POST',
+    body:   JSON.stringify({ tenantId }),
+  });
+}
+
+// ─── OAuth Token Refresh ────────────────────────────────────────────────────
+
+export interface RefreshTokensResult {
+  refreshed: number;
+  failed:    number;
+  results:   Array<{
+    connectionId: string;
+    platform:     string;
+    status:       string;
+    error?:       string;
+  }>;
+}
+
+/**
+ * Refresh expired OAuth tokens for all social connections of a tenant.
+ * Calls POST /social/refresh-tokens.
+ */
+export async function refreshSocialTokens(tenantId: string): Promise<RefreshTokensResult> {
+  return api<RefreshTokensResult>('/social/refresh-tokens', {
+    method: 'POST',
+    body:   JSON.stringify({ tenantId }),
+  });
+}
+
+// ─── Cron Stats (Super Admin) ─────────────────────────────────────────────────
+
+export interface CronDayStat {
+  runs:              number;
+  published:         number;
+  failed:            number;
+  firstRunAt:        string;
+  lastRunAt:         string;
+  tenantsProcessed:  number;
+}
+
+export interface CronLatestRun {
+  lastRunAt:         string;
+  tenantsProcessed:  number;
+  totalPublished?:   number;
+  totalFailed?:      number;
+  totalSynced?:      number;
+  totalErrors?:      number;
+}
+
+export interface CronStatsResult {
+  autoPublish: {
+    latest:    CronLatestRun | null;
+    today:     CronDayStat   | null;
+    yesterday: CronDayStat   | null;
+  };
+  engagementSync: {
+    latest: CronLatestRun | null;
+  };
+}
+
+export async function fetchCronStats(): Promise<CronStatsResult> {
+  if (!IS_PRODUCTION) {
+    // Demo mode — return plausible mock data
+    const now = new Date();
+    const fiveMinAgo = new Date(now.getTime() - 5 * 60000).toISOString();
+    const sixHoursAgo = new Date(now.getTime() - 6 * 3600000).toISOString();
+    return {
+      autoPublish: {
+        latest: { lastRunAt: fiveMinAgo, tenantsProcessed: 3, totalPublished: 2, totalFailed: 0 },
+        today:  { runs: 288, published: 14, failed: 1, firstRunAt: now.toISOString().slice(0, 10) + 'T00:00:05Z', lastRunAt: fiveMinAgo, tenantsProcessed: 3 },
+        yesterday: { runs: 288, published: 8, failed: 0, firstRunAt: '', lastRunAt: '', tenantsProcessed: 3 },
+      },
+      engagementSync: {
+        latest: { lastRunAt: sixHoursAgo, tenantsProcessed: 3, totalSynced: 42, totalErrors: 0 },
+      },
+    };
+  }
+  return api<CronStatsResult>('/cron/stats');
 }

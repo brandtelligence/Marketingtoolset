@@ -1,6 +1,13 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+@import './focus-visible.css';
 @import './web-light.css';
 @import './dashboard-light.css';
 @import './dashboard-dark.css';
+
+/* Safety-net keyframe — ensures the lazy-loading spinner animates
+   even if Tailwind's preflight hasn't loaded yet. */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

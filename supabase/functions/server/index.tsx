@@ -1036,7 +1036,24 @@ function rowToUsageStat(r: any) {
 // HEALTH + BOOTSTRAP ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.get("/make-server-309fe679/health", (c) => c.json({ status: "ok" }));
+const SERVER_START_TIME = new Date().toISOString();
+const SERVER_VERSION    = '1.0.0';
+
+app.get("/make-server-309fe679/health", (c) =>
+  c.json({
+    status:    "ok",
+    version:   SERVER_VERSION,
+    timestamp: new Date().toISOString(),
+    startedAt: SERVER_START_TIME,
+    uptime:    `${Math.round((Date.now() - new Date(SERVER_START_TIME).getTime()) / 1000)}s`,
+    env: {
+      hasSupabaseUrl:    !!Deno.env.get("SUPABASE_URL"),
+      hasServiceRoleKey: !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+      hasOpenAiKey:      !!Deno.env.get("OPENAI_API_KEY"),
+      hasAppUrl:         !!Deno.env.get("APP_URL"),
+    },
+  })
+);
 
 // ── CSRF Token + Signing Key Endpoint (Phase 2.3) ────────────────────────────
 // Returns a stateless CSRF token and HMAC signing key for the authenticated user.
@@ -1074,9 +1091,9 @@ app.post("/make-server-309fe679/bootstrap-super-admin", async (c) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────��──────────────────────────────────────────────
 // TENANTS  (Postgres: tenants)
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────���─────────────────────────────────────────────────────
 
 app.get("/make-server-309fe679/tenants", async (c) => {
   try {
@@ -5061,6 +5078,256 @@ import {
 } from './social.tsx';
 registerSocialRoutes(app);
 
+// ══════════════════════════════════════════════════════════════════════════════
+// CRON TRIGGER — secret-authenticated endpoint for external schedulers
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// POST /cron/auto-publish
+// Header: Authorization: Bearer <CRON_SECRET>
+// Body:   { tenantIds: string[] }  (or omit to process ALL active tenants)
+//
+// Designed to be called by an external cron (GitHub Actions, cPanel cron,
+// Supabase scheduler) every 1-5 minutes.
+
+app.post('/make-server-309fe679/cron/auto-publish', async (c) => {
+  try {
+    const cronSecret = Deno.env.get('CRON_SECRET') || Deno.env.get('SUPER_ADMIN_PASSWORD');
+    const bearer = c.req.header('Authorization')?.replace('Bearer ', '');
+    if (!cronSecret || bearer !== cronSecret) {
+      return c.json({ error: 'Unauthorized — invalid or missing CRON_SECRET' }, 401);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    let tenantIds: string[] = body.tenantIds ?? [];
+
+    if (tenantIds.length === 0) {
+      const { data: tenants } = await supabaseAdmin
+        .from('tenants')
+        .select('id')
+        .eq('status', 'active');
+      tenantIds = (tenants ?? []).map((t: any) => t.id);
+    }
+
+    const allResults: Array<{
+      tenantId: string; published: number; failed: number; errors: string[];
+    }> = [];
+
+    for (const tenantId of tenantIds) {
+      const entry = { tenantId, published: 0, failed: 0, errors: [] as string[] };
+
+      try {
+        const { data: rows } = await supabaseAdmin
+          .from('content_cards')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .in('status', ['scheduled', 'approved']);
+
+        if (rows && rows.length > 0) {
+          const now = new Date();
+          const dueCards = rows.filter((r: any) => {
+            const meta = r.metadata ?? {};
+            if (!meta.scheduledDate) return false;
+            return new Date(`${meta.scheduledDate}T${meta.scheduledTime || '00:00'}:00`) <= now;
+          });
+
+          const conns = await getSocialConnections(tenantId);
+
+          for (const row of dueCards) {
+            const platform = row.platform ?? 'general';
+            const conn = conns.find((x: any) => x.platform === platform);
+            if (!conn) {
+              entry.failed++;
+              entry.errors.push(`No ${platform} connection for card ${row.id}`);
+              continue;
+            }
+
+            try {
+              const result = await publishToChannel(
+                conn, row.body ?? '', row.hashtags ?? [],
+                row.media_url ?? undefined,
+                (row.metadata ?? {}).mediaType ?? undefined,
+              );
+
+              if (result.ok) {
+                await supabaseAdmin
+                  .from('content_cards')
+                  .update({
+                    status: 'published',
+                    published_at: now.toISOString(),
+                    metadata: { ...(row.metadata ?? {}), autoPublished: true, autoPublishedAt: now.toISOString() },
+                  })
+                  .eq('id', row.id);
+
+                await appendSocialHistory(tenantId, {
+                  id: crypto.randomUUID(),
+                  cardTitle: row.title ?? 'Untitled',
+                  platform,
+                  connectionName: conn.displayName,
+                  status: 'success',
+                  publishedAt: now.toISOString(),
+                  publishedBy: 'Cron-Scheduler',
+                  postUrl: result.postUrl,
+                });
+                entry.published++;
+              } else {
+                entry.failed++;
+                entry.errors.push(`card ${row.id}: ${result.error}`);
+              }
+            } catch (err) {
+              entry.failed++;
+              entry.errors.push(`card ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+        }
+      } catch (err) {
+        entry.errors.push(`auto-publish: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      allResults.push(entry);
+    }
+
+    const totalPublished = allResults.reduce((s, r) => s + r.published, 0);
+    const totalFailed    = allResults.reduce((s, r) => s + r.failed, 0);
+
+    console.log(`[cron/auto-publish] tenants=${tenantIds.length} published=${totalPublished} failed=${totalFailed}`);
+    logSecurityEvent({
+      ts: new Date().toISOString(),
+      action: 'CRON_AUTO_PUBLISH',
+      route: '/cron/auto-publish',
+      detail: `tenants=${tenantIds.length} published=${totalPublished} failed=${totalFailed}`,
+    });
+
+    // ── Persist run stats in KV for the Super Admin dashboard widget ──
+    const now2 = new Date();
+    const todayKey = `cron_stats:auto_publish:${now2.toISOString().slice(0, 10)}`;
+    try {
+      const existingRaw = await kv.get(todayKey);
+      const existing = existingRaw ? JSON.parse(existingRaw as string) : { runs: 0, published: 0, failed: 0, firstRunAt: now2.toISOString() };
+      existing.runs      += 1;
+      existing.published += totalPublished;
+      existing.failed    += totalFailed;
+      existing.lastRunAt  = now2.toISOString();
+      existing.tenantsProcessed = tenantIds.length;
+      await kv.set(todayKey, JSON.stringify(existing));
+      await kv.set('cron_stats:auto_publish:latest', JSON.stringify({
+        lastRunAt: now2.toISOString(), tenantsProcessed: tenantIds.length, totalPublished, totalFailed,
+      }));
+    } catch (kvErr) {
+      console.log(`[cron/auto-publish] KV stats write error: ${errMsg(kvErr)}`);
+    }
+
+    return c.json({ ok: true, tenantsProcessed: tenantIds.length, totalPublished, totalFailed, results: allResults });
+  } catch (err) {
+    console.log(`[cron/auto-publish] ${err instanceof Error ? err.message : String(err)}`);
+    return c.json({ error: `cron error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CRON TRIGGER — Engagement Sync (secret-authenticated, external scheduler)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// POST /cron/sync-engagement
+// Header: Authorization: Bearer <CRON_SECRET>
+// Body:   { tenantIds: string[] }  (or omit to process ALL active tenants)
+
+app.post('/make-server-309fe679/cron/sync-engagement', async (c) => {
+  try {
+    const cronSecret = Deno.env.get('CRON_SECRET') || Deno.env.get('SUPER_ADMIN_PASSWORD');
+    const bearer = c.req.header('Authorization')?.replace('Bearer ', '');
+    if (!cronSecret || bearer !== cronSecret) {
+      return c.json({ error: 'Unauthorized — invalid or missing CRON_SECRET' }, 401);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    let tenantIds: string[] = body.tenantIds ?? [];
+
+    if (tenantIds.length === 0) {
+      const { data: tenants } = await supabaseAdmin
+        .from('tenants')
+        .select('id')
+        .eq('status', 'active');
+      tenantIds = (tenants ?? []).map((t: any) => t.id);
+    }
+
+    let totalSynced = 0;
+    let totalErrors = 0;
+    const results: Array<{ tenantId: string; synced: number; errors: number }> = [];
+
+    for (const tenantId of tenantIds) {
+      try {
+        const result = await syncEngagementForTenant(tenantId);
+        totalSynced += result.synced;
+        totalErrors += result.errors;
+        results.push({ tenantId, synced: result.synced, errors: result.errors });
+      } catch (err) {
+        totalErrors++;
+        results.push({ tenantId, synced: 0, errors: 1 });
+        console.log(`[cron/sync-engagement] tenant=${tenantId} error: ${errMsg(err)}`);
+      }
+    }
+
+    console.log(`[cron/sync-engagement] tenants=${tenantIds.length} synced=${totalSynced} errors=${totalErrors}`);
+    logSecurityEvent({
+      ts: new Date().toISOString(),
+      action: 'CRON_SYNC_ENGAGEMENT',
+      route: '/cron/sync-engagement',
+      detail: `tenants=${tenantIds.length} synced=${totalSynced} errors=${totalErrors}`,
+    });
+
+    try {
+      await kv.set('cron_stats:sync_engagement:latest', JSON.stringify({
+        lastRunAt: new Date().toISOString(),
+        tenantsProcessed: tenantIds.length,
+        totalSynced,
+        totalErrors,
+      }));
+    } catch (kvErr) {
+      console.log(`[cron/sync-engagement] KV stats write error: ${errMsg(kvErr)}`);
+    }
+
+    return c.json({ ok: true, tenantsProcessed: tenantIds.length, totalSynced, totalErrors, results });
+  } catch (err) {
+    console.log(`[cron/sync-engagement] ${err instanceof Error ? err.message : String(err)}`);
+    return c.json({ error: `cron error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CRON STATS — Super Admin dashboard widget data
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/make-server-309fe679/cron/stats', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+    const [latestPublish, todayPublish, yesterdayPublish, latestEngagement] = await Promise.all([
+      kv.get('cron_stats:auto_publish:latest'),
+      kv.get(`cron_stats:auto_publish:${today}`),
+      kv.get(`cron_stats:auto_publish:${yesterday}`),
+      kv.get('cron_stats:sync_engagement:latest'),
+    ]);
+
+    return c.json({
+      autoPublish: {
+        latest:    latestPublish    ? JSON.parse(latestPublish as string)    : null,
+        today:     todayPublish     ? JSON.parse(todayPublish as string)     : null,
+        yesterday: yesterdayPublish ? JSON.parse(yesterdayPublish as string) : null,
+      },
+      engagementSync: {
+        latest: latestEngagement ? JSON.parse(latestEngagement as string) : null,
+      },
+    });
+  } catch (err) {
+    console.log(`[cron/stats] ${errMsg(err)}`);
+    return c.json({ error: `cron stats error: ${errMsg(err)}` }, 500);
+  }
+});
+
 // ──────────────────────────────────────���──────────────────────────────────────
 // CLIENT REVIEW PORTAL
 // Shareable tokenised review links for external clients (no login required).
@@ -6526,6 +6793,221 @@ IMPORTANT RESPONSE FORMAT:
   } catch (err) {
     console.log(`[ai/refine-content] ${errMsg(err)}`);
     return c.json({ error: `refine-content error: ${errMsg(err)}` }, 500);
+  }
+});
+
+// ── POST /ai/wizard-chat ──────────────────────────────────────────────────────
+// Multi-turn conversational endpoint for the AI Content Studio wizard.
+// Accepts the full message history so GPT-4o has context of the conversation.
+// Used by CreateContentWizard's startAIChat() and sendMessage().
+//
+// Body: {
+//   messages:           Array<{ role: 'user'|'assistant'|'system', content: string }>,
+//   channel:            string,
+//   platforms:          string[],
+//   actions:            string[],
+//   projectName:        string,
+//   projectDescription: string,
+//   tone?:              string,
+// }
+// Returns: { success, output, tokensUsed, model, usage }
+
+app.post("/make-server-309fe679/ai/wizard-chat", async (c) => {
+  try {
+    const limited = rateLimit(c, 'ai:wizard-chat', 25, 60_000);
+    if (limited) return limited;
+
+    const authResult = await requireAuth(c);
+    if (authResult instanceof Response) return authResult;
+    const { userId, email, tenantId } = authResult as AuthIdentity;
+    const kvKey = tenantId ?? userId;
+
+    if (tenantId) {
+      const { data: tenantRow } = await supabaseAdmin
+        .from("tenants").select("modules_enabled").eq("id", tenantId).maybeSingle();
+      const enabledModules: string[] = tenantRow?.modules_enabled ?? [];
+      if (enabledModules.length > 0 && !enabledModules.includes("m2")) {
+        return c.json({
+          error: "AI Content Studio module is not enabled for your organisation.",
+        }, 403);
+      }
+    }
+
+    const period      = aiCurrentPeriod();
+    const usage       = await aiLoadUsage(kvKey, period);
+    const tenantLimit = await aiTenantLimit(tenantId ?? kvKey);
+    if (usage.tokens >= tenantLimit) {
+      return c.json({
+        error: `Monthly AI token limit of ${tenantLimit.toLocaleString()} reached. Resets 1st of next month.`,
+        tokensUsed: usage.tokens, tokenLimit: tenantLimit, period,
+      }, 429);
+    }
+
+    const body = sanitizeObject(
+      await c.req.json(),
+      new Set(['prompt', 'content', 'projectDescription']),
+    );
+    const {
+      messages           = [],
+      channel            = 'social-media',
+      platforms          = [],
+      actions            = [],
+      projectName        = '',
+      projectDescription = '',
+      tone               = 'professional',
+    } = body;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return c.json({ error: "messages array is required and must not be empty" }, 400);
+    }
+
+    const channelNames: Record<string, string> = {
+      'social-media': 'Social Media', 'seo': 'SEO', 'sem': 'SEM',
+      'email': 'Email Marketing', 'content': 'Content Marketing',
+      'display': 'Display Advertising', 'affiliate': 'Affiliate Marketing',
+      'video': 'Video Marketing', 'mobile': 'Mobile Marketing',
+      'programmatic': 'Programmatic Advertising', 'influencer': 'Influencer Marketing',
+      'pr_media': 'Public Relations & Media',
+    };
+    const actionNames: Record<string, string> = {
+      'calendar': 'Social Media Calendar', 'content-plan': 'Content Plan',
+      'copywriting': 'Copywriting & Captions', 'image-creation': 'Image & Graphic Creation',
+      'video-creation': 'Video Creation', 'voiceover': 'Voice Over Creation',
+      'animation': 'Animation', 'music': 'Music & Audio',
+      'research': 'Internet Research & Trends',
+    };
+
+    const chName     = channelNames[channel] ?? channel;
+    const platList   = (platforms as string[]).join(', ') || 'general';
+    const actionList = (actions as string[]).map((a: string) => actionNames[a] ?? a).join(', ') || 'content creation';
+
+    const toneMap: Record<string, string> = {
+      professional: "professional, authoritative, and data-driven",
+      conversational: "friendly, approachable, and conversational",
+      creative: "creative, playful, and trend-forward",
+      authoritative: "expert-level, thought leadership, commanding",
+      humorous: "witty, humorous, and entertaining",
+      inspirational: "uplifting, motivating, and emotionally resonant",
+    };
+    const toneDesc = toneMap[tone] ?? "professional and engaging";
+
+    const systemPrompt =
+      `You are an expert marketing content strategist and copywriter at Brandtelligence, ` +
+      `a leading Malaysian digital marketing agency. ` +
+      `Write content that is ${toneDesc}. Use Malaysian English where culturally appropriate. ` +
+      `Currency is Malaysian Ringgit (RM with comma as thousand separator).\n\n` +
+      `CONTEXT:\n` +
+      `- Project/Brand: ${projectName || 'Unnamed Project'}\n` +
+      (projectDescription ? `- Description: ${projectDescription}\n` : '') +
+      `- Marketing Channel: ${chName}\n` +
+      (platforms.length > 0 ? `- Target Platforms: ${platList}\n` : '') +
+      `- Requested Actions: ${actionList}\n\n` +
+      `INSTRUCTIONS:\n` +
+      `1. Generate comprehensive, immediately usable content for each requested action.\n` +
+      `2. Use markdown formatting: ## for sections, ### for subsections, tables, bullet lists.\n` +
+      `3. For calendar/plan actions, use tables with specific dates, platforms, and content types.\n` +
+      `4. For copywriting actions, provide ready-to-post copy with platform-specific formatting.\n` +
+      `5. Include relevant hashtags, CTAs, and timing recommendations.\n` +
+      `6. When the user asks for modifications, refine the previous content accordingly.\n` +
+      `7. Be specific, creative, and actionable — no generic filler.\n` +
+      `8. Respect platform character limits (Twitter/X: 280, Instagram caption: 2200, LinkedIn: 3000).`;
+
+    const openAIMessages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+    for (const msg of messages as Array<{ role: string; content: string }>) {
+      if (msg.role === 'system') continue;
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        openAIMessages.push({ role: msg.role, content: msg.content });
+      }
+    }
+
+    const isInitial = openAIMessages.filter(m => m.role === 'user').length <= 1;
+    const maxTokens = isInitial ? 3_000 : 2_000;
+
+    const openAIKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAIKey) return c.json({ error: "OPENAI_API_KEY not configured on this server." }, 500);
+
+    const model = "gpt-4o";
+    const openAIRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openAIKey}` },
+      body: JSON.stringify({
+        model,
+        messages: openAIMessages,
+        max_tokens: maxTokens,
+        temperature: 0.75,
+      }),
+    });
+
+    if (!openAIRes.ok) {
+      const errBody = await openAIRes.json().catch(() => ({}));
+      const errText = (errBody as any)?.error?.message ?? `OpenAI returned HTTP ${openAIRes.status}`;
+      console.log(`[ai/wizard-chat] OpenAI API error: ${errText}`);
+      return c.json({ error: `OpenAI error: ${errText}` }, 502);
+    }
+
+    const openAIData = await openAIRes.json() as {
+      choices: Array<{ message: { content: string } }>;
+      usage:   { total_tokens: number };
+    };
+
+    const output     = openAIData.choices?.[0]?.message?.content ?? "";
+    const tokensUsed = openAIData.usage?.total_tokens ?? 0;
+
+    const userName = email.split("@")[0] ?? "Unknown";
+    const record: GenerationRecord = {
+      id:         crypto.randomUUID(),
+      tenantId:   kvKey,
+      userId,
+      userName,
+      template:   'wizard_chat',
+      platform:   platList,
+      tone,
+      prompt:     (messages as any[]).filter((m: any) => m.role === 'user').map((m: any) => m.content).join(' | ').slice(0, 500),
+      output,
+      tokensUsed,
+      model,
+      createdAt:  new Date().toISOString(),
+    };
+    const history = await aiLoadHistory(kvKey);
+    history.unshift(record);
+    await aiSaveHistory(kvKey, history);
+
+    const updatedUsage: ContentGenUsage = {
+      tokens:      usage.tokens   + tokensUsed,
+      requests:    usage.requests + 1,
+      lastUpdated: new Date().toISOString(),
+    };
+    await aiSaveUsage(kvKey, period, updatedUsage);
+
+    console.log(
+      `[ai/wizard-chat] tenant=${kvKey} user=${userId} ` +
+      `channel=${channel} msgCount=${messages.length} tokens=${tokensUsed} monthTotal=${updatedUsage.tokens}`
+    );
+    logSecurityEvent({
+      ts: new Date().toISOString(), userId,
+      action: 'AI_WIZARD_CHAT',
+      route: '/ai/wizard-chat',
+      detail: `channel=${channel} platforms=${platList} actions=${actionList} tokens=${tokensUsed} tenantKey=${kvKey}`,
+    });
+
+    return c.json({
+      success:    true,
+      output,
+      tokensUsed,
+      model,
+      usage: {
+        tokens:   updatedUsage.tokens,
+        requests: updatedUsage.requests,
+        limit:    tenantLimit,
+        period,
+      },
+    });
+
+  } catch (err) {
+    console.log(`[ai/wizard-chat] ${errMsg(err)}`);
+    return c.json({ error: `wizard-chat error: ${errMsg(err)}` }, 500);
   }
 });
 

@@ -5,10 +5,10 @@ import {
   Clock, CalendarDays, ChevronDown, ChevronUp,
   Image as ImageIcon, Video, Music, FileText, User,
   CheckCircle, AlertTriangle, Shield, Eye, RotateCcw, Mail, Loader2,
-  Zap, Sparkles, Heart, MessageCircle, Repeat2, TrendingUp, Timer,
+  Zap, Sparkles, Heart, MessageCircle, Repeat2, TrendingUp, Timer, Linkedin,
 } from 'lucide-react';
 import {
-  SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
+  SiInstagram, SiFacebook, SiX, SiTiktok,
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit, SiWhatsapp,
   SiTelegram,
 } from 'react-icons/si';
@@ -115,7 +115,7 @@ function notifyCreator(
 
 const platformIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   instagram: SiInstagram, facebook: SiFacebook, twitter: SiX,
-  linkedin: SiLinkedin, tiktok: SiTiktok, youtube: SiYoutube,
+  linkedin: Linkedin, tiktok: SiTiktok, youtube: SiYoutube,
   pinterest: SiPinterest, snapchat: SiSnapchat, threads: SiThreads,
   reddit: SiReddit, whatsapp: SiWhatsapp, telegram: SiTelegram,
 };

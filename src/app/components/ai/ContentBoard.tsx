@@ -5,10 +5,10 @@ import {
   FileText, Clock, CheckCircle, CalendarDays, Check, XCircle, Loader2,
   ChevronLeft, ChevronRight, CheckSquare2, Square, X,
   ShieldCheck, AlertTriangle, BarChart2, Users, Trophy, Sparkles, Timer,
-  Share2,
+  Share2, Linkedin,
 } from 'lucide-react';
 import {
-  SiInstagram, SiFacebook, SiX, SiLinkedin, SiTiktok,
+  SiInstagram, SiFacebook, SiX, SiTiktok,
   SiYoutube, SiPinterest, SiSnapchat, SiThreads, SiReddit, SiWhatsapp,
   SiTelegram,
 } from 'react-icons/si';
@@ -41,7 +41,7 @@ import { useSlaConfig } from '../../hooks/useSlaConfig';
 
 const platformIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   instagram: SiInstagram, facebook: SiFacebook, twitter: SiX,
-  linkedin: SiLinkedin, tiktok: SiTiktok, youtube: SiYoutube,
+  linkedin: Linkedin, tiktok: SiTiktok, youtube: SiYoutube,
   pinterest: SiPinterest, snapchat: SiSnapchat, threads: SiThreads,
   reddit: SiReddit, whatsapp: SiWhatsapp, telegram: SiTelegram,
 };

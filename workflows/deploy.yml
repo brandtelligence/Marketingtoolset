@@ -1,0 +1,67 @@
+name: Deploy to cPanel via FTP
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production        # Requires "production" environment in GitHub repo settings
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies (clean install)
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+        env:
+          # Build-time env vars — set these in GitHub repo → Settings → Secrets
+          VITE_APP_ENV: production
+
+      - name: Validate build output
+        run: |
+          if [ ! -f ./dist/index.html ]; then
+            echo "::error::Build output missing — dist/index.html not found"
+            exit 1
+          fi
+          echo "Build output validated ✅"
+          echo "Files in dist/:"
+          ls -lh ./dist/
+
+      - name: Deploy to cPanel via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: /public_html/brand-telligence.com/it/
+          # Exclude source maps and dev artifacts from production deploy
+          exclude: |
+            **/*.map
+            **/.git*
+
+      - name: Post-deploy health check
+        run: |
+          sleep 10
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            "https://brand-telligence.com/it/" 2>/dev/null || echo "000")
+          echo "Production health check HTTP status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "304" ]; then
+            echo "✅ Production site is live"
+          else
+            echo "::warning::Health check returned $HTTP_STATUS — verify deployment manually"
+          fi

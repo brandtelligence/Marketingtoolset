@@ -624,6 +624,11 @@ export function ContentProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error('[ContentContext] Failed to load from Supabase:', error);
+        // Surface the failure to the user — an empty board with no explanation is confusing.
+        toast.error(
+          'Could not load content board — check your connection and refresh the page.',
+          { duration: 6000, id: 'content-load-fail' }  // id prevents duplicate toasts on re-renders
+        );
         // Production: remain with empty array — do NOT fall back to mock data
         setCards([]);
       } finally {

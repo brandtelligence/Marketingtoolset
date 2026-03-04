@@ -9,11 +9,11 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Save, Loader2, Check, AlertCircle, Eye, EyeOff,
-  ExternalLink, Info, HelpCircle,
+  ExternalLink, Info, HelpCircle, Linkedin,
 } from 'lucide-react';
 import {
   SiTelegram, SiWhatsapp, SiFacebook,
-  SiInstagram, SiX, SiLinkedin,
+  SiInstagram, SiX,
 } from 'react-icons/si';
 import { toast } from 'sonner';
 import { useAuth } from '../AuthContext';
@@ -125,7 +125,7 @@ const PLATFORMS: PlatformDef[] = [
   },
   {
     id: 'linkedin', label: 'LinkedIn', color: 'text-blue-300', bg: 'bg-blue-700/15 border-blue-400/25',
-    Icon: SiLinkedin, guide: 'https://learn.microsoft.com/en-us/linkedin/marketing/getting-started',
+    Icon: Linkedin, guide: 'https://learn.microsoft.com/en-us/linkedin/marketing/getting-started',
     gist: 'Share text posts to a LinkedIn personal profile or company page.',
     fields: [
       { key: 'accessToken', label: 'Access Token', placeholder: 'AQX…', secret: true, mono: true,
