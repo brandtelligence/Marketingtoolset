@@ -1949,14 +1949,20 @@ app.get("/make-server-309fe679/compliance-status", async (c) => {
     const now = new Date();
     const integrityResults: { date: string; action: string; detail: string; ts: string }[] = [];
 
-    for (let i = 0; i < 14; i++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      const raw = await kv.get(`security_audit_log:${dateStr}`);
-      if (!raw) continue;
-      const entries = typeof raw === "string" ? JSON.parse(raw) : raw;
+    // Optimized prefix scan for security audit logs (Performance Tuning)
+    const allRecentLogs = await kv.getByPrefix("security_audit_log:");
+    
+    // Process results into integrityResults
+    for (const logGroup of allRecentLogs) {
+      if (!logGroup.value) continue;
+      const entries = typeof logGroup.value === "string" ? JSON.parse(logGroup.value) : logGroup.value;
       if (!Array.isArray(entries)) continue;
+      
+      const dateStr = logGroup.key.split(':')[1];
+      // Only care about last 14 days
+      const logDate = new Date(dateStr);
+      if (isNaN(logDate.getTime()) || logDate < new Date(now.getTime() - 14 * 86400000)) continue;
+
       for (const e of entries) {
         if (e.action === 'AUDIT_INTEGRITY_OK' || e.action === 'AUDIT_INTEGRITY_WARNING') {
           integrityResults.push({ date: dateStr, action: e.action, detail: e.detail ?? '', ts: e.ts });

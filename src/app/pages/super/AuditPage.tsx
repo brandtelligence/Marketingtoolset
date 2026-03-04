@@ -27,6 +27,7 @@ import { StatusBadge, RoleBadge } from '../../components/saas/StatusBadge';
 import { useDashboardTheme } from '../../components/saas/DashboardThemeContext';
 import { useSEO } from '../../hooks/useSEO';
 import { PenTestChecklist } from '../../components/saas/PenTestChecklist';
+import { WCAGAudit } from '../../components/saas/WCAGAudit';
 import { BrowserQAChecklist, QA_TOTAL_ITEMS } from '../../components/saas/BrowserQAChecklist';
 import {
   fetchAuditLogs,
@@ -122,7 +123,7 @@ function actionColor(action: string, isDark: boolean): string {
   return map[action] ?? (d ? 'bg-gray-500/15 text-gray-400 border-gray-500/25' : 'bg-gray-100 text-gray-600 border-gray-200');
 }
 
-type TabKey = 'readiness' | 'compliance' | 'app' | 'security' | 'retention' | 'pentest' | 'qa';
+type TabKey = 'readiness' | 'compliance' | 'app' | 'security' | 'retention' | 'pentest' | 'qa' | 'wcag';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -163,6 +164,7 @@ export function AuditPage() {
     { key: 'retention',  label: 'Data Retention',      icon: <Database className="w-4 h-4" /> },
     { key: 'pentest',    label: 'Penetration Test',    icon: <ShieldCheck className="w-4 h-4" style={{ color: '#F47A20' }} />, badge: penTestFailCount },
     { key: 'qa',         label: 'Browser QA',          icon: <Monitor className="w-4 h-4" style={{ color: '#8b5cf6' }} />, badge: qaFailCount },
+    { key: 'wcag',       label: 'WCAG Audit',          icon: <Accessibility className="w-4 h-4" style={{ color: '#0BA4AA' }} /> },
   ], [penTestFailCount, qaFailCount]);
 
   return (
@@ -227,6 +229,11 @@ export function AuditPage() {
         {activeTab === 'qa' && (
           <motion.div key="qa" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <BrowserQAChecklist />
+          </motion.div>
+        )}
+        {activeTab === 'wcag' && (
+          <motion.div key="wcag" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <WCAGAudit />
           </motion.div>
         )}
       </AnimatePresence>
